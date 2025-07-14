@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>運転記録アプリ</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.3.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.3.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.3.1/firebase-auth-compat.js"></script>
+  <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_GOOGLE_MAPS_API_KEY&libraries=geometry"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>運転記録アプリ</h1>
+  <button id="startBtn">記録開始</button>
+  <button id="stopBtn" disabled>記録終了</button>
+  <div id="map" style="width: 100%; height: 400px;"></div>
+  <canvas id="chart" width="400" height="200"></canvas>
+  <script src="js/firebase-config.js"></script>
+  <script src="js/map.js"></script>
+  <script src="js/sensor.js"></script>
+  <script src="js/chart.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
