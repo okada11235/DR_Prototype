@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>運転記録アプリ</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  <style>
+    /* 簡易的にマップの高さ確保 */
+    #map {
+      width: 100%;
+      height: 300px;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>運転記録アプリ</h1>
+
+    <div>
+      <button onclick="startSession()">記録開始</button>
+      <button onclick="endSession()">記録終了</button>
+    </div>
+
+    <div style="margin-top: 20px;">
+        <a href="{{ url_for('sessions') }}">記録を見る</a>
+    </div>
+
+
+    <div id="metrics">
+      <p>急ブレーキ: <span id="brake-count">0</span></p>
+      <p>急発進: <span id="accel-count">0</span></p>
+      <p>無理なカーブ: <span id="turn-count">0</span></p>
+      <p>法定速度超過: <span id="violation-count">0</span></p>
+    </div>
+
+    <div>
+      <p>速度: <span id="speed">0</span> km/h</p>
+      <p>記録時間: <span id="timer">00:00</span></p>
+      <p>現在位置: <span id="position">---</span></p>
+      <p>セッションID: <span id="session_id">未開始</span></p>
+    </div>
+
+    <div id="map"></div>
+  </div>
+
+  <script src="{{ url_for('static', filename='script.js') }}"></script>
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBb7m-VxM2tA-slsA0gf3kj0GtvathFXv0&callback=initMap" async defer></script>
+</body>
+</html>
