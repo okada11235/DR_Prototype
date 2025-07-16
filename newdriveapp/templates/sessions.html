@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>走行記録一覧</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBb7m-VxM2tA-slsA0gf3kj0GtvathFXv0"></script>
+</head>
+<body>
+<div class="container">
+    <h1>走行記録一覧</h1>
+    <p><a href="{{ url_for('index') }}">戻る</a></p>
+
+    {% with messages = get_flashed_messages() %}
+    {% if messages %}
+    <ul class="flash-messages">
+        {% for message in messages %}
+        <li>{{ message }}</li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+    {% endwith %}
+
+    {% for session in sessions %}
+    <div class="session">
+        <h2>セッションID: {{ session.id }}</h2>
+        <p>開始時間: {{ session.start_time }}</p>
+        <p>終了時間: {{ session.end_time or '記録中' }}</p>
+        <p>走行距離: {{ "%.2f"|format(session.distance) }} km</p>
+        <p>急発進: {{ session.sudden_accels }} 回</p>
+        <p>急ブレーキ: {{ session.sudden_brakes }} 回</p>
+        <p>急カーブ: {{ session.sharp_turns }} 回</p>
+        <p>法定速度超過: {{ session.speed_violations }} 回</p>
+
+        <canvas id="chart-{{ session.id }}" width="400" height="100"></canvas>
+
+        <form method="post" action="{{ url_for('delete_session', sid=session.id) }}" onsubmit="return confirm('本当に削除しますか？');">
+            <button type="submit" style="background-color:#d9534f;">削除</button>
+        </form>
+
+        <div id="map-{{ session.id }}" style="width: 100%; height: 300px; margin-top: 20px;"></div>
+    </div>
+    {% endfor %}
+</div>
+
+<script>
+{% for session in sessions %}
+const ctx{{ session.id }} = document.getElementById('chart-{{ session.id }}').getContext('2d');
+const chart{{ session.id }} = new Chart(ctx{{ session.id }}, {
+    type: 'bar',
+    data: {
+        labels: ['急発進', '急ブレーキ', '急カーブ', '法定速度超過'],
+        datasets: [{
+            label: '回数',
+            data: [{{ session.sudden_accels }}, {{ session.sudden_brakes }}, {{ session.sharp_turns }}, {{ session.speed_violations }}],
+            backgroundColor: [
+                'rgba(255, 99, 132, 0.5)',
+                'rgba(54, 162, 235, 0.5)',
+                'rgba(255, 206, 86, 0.5)',
+                'rgba(75, 192, 192, 0.5)'
+            ],
+            borderColor: [
+                'rgba(255, 99, 132, 1)',
+                'rgba(54, 162, 235, 1)',
+                'rgba(255, 206, 86, 1)',
+                'rgba(75, 192, 192, 1)'
+            ],
+            borderWidth: 1
+        }]
+    },
+    options: {
+        scales: {
+            y: {
+                beginAtZero: true,
+                precision: 0
+            }
+        }
+    }
+});
+{% endfor %}
+
+function initMap() {
+{% for session in sessions %}
+    const path{{ session.id }} = [
+    {% for log in session.gps_logs %}
+        {lat: {{ log.latitude }}, lng: {{ log.longitude }}}{% if not loop.last %},{% endif %}
+    {% endfor %}
+    ];
+
+    const initialCenter{{ session.id }} = path{{ session.id }}.length > 0
+        ? path{{ session.id }}[0]
+        : {lat: 35.681236, lng: 139.767125};  // GPSログなしは東京駅
+
+    const map{{ session.id }} = new google.maps.Map(document.getElementById('map-{{ session.id }}'), {
+        zoom: 14,
+        center: initialCenter{{ session.id }}
+    });
+
+    const polyline{{ session.id }} = new google.maps.Polyline({
+        path: path{{ session.id }},
+        geodesic: true,
+        strokeColor: '#FF0000',
+        strokeOpacity: 1.0,
+        strokeWeight: 2
+    });
+
+    polyline{{ session.id }}.setMap(map{{ session.id }});
+{% endfor %}
+}
+
+window.onload = initMap;
+</script>
+</body>
+</html>
