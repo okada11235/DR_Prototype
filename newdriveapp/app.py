@@ -40,6 +40,8 @@ class GPSLog(db.Model):
     latitude = db.Column(db.Float)
     longitude = db.Column(db.Float)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    event = db.Column(db.String(50), default='normal')
+    g_y = db.Column(db.Float, default=0.0)
 
 
 @login_manager.user_loader
@@ -150,12 +152,25 @@ def log_gps():
     session_id = data['session_id']
     lat = data['latitude']
     lng = data['longitude']
+    g_y = data.get('g_y', 0.0)  # 追加
     session = DriveSession.query.get(session_id)
     if session and session.user_id == current_user.id:
-        log = GPSLog(session_id=session_id, latitude=lat, longitude=lng)
+        log = GPSLog(session_id=session_id, latitude=lat, longitude=lng, g_y=g_y)
         db.session.add(log)
         db.session.commit()
     return jsonify({'status': 'ok'})
+
+def get_gps_logs_for_session(session_id):
+    logs = GPSLog.query.filter_by(session_id=session_id).order_by(GPSLog.timestamp.asc()).all()
+    result = []
+    for log in logs:
+        # timestampはUTC datetimeなので、JavaScriptで扱いやすいミリ秒に変換
+        timestamp_ms = int(log.timestamp.timestamp() * 1000)
+        result.append({
+            "timestamp": timestamp_ms,
+            "g_y": log.g_y
+        })
+    return result
 
 
 @app.route('/sessions')
@@ -163,6 +178,20 @@ def log_gps():
 def sessions():
     sessions = DriveSession.query.filter_by(user_id=current_user.id).order_by(DriveSession.start_time.desc()).all()
     return render_template('sessions.html', sessions=sessions)
+
+# G加速度グラフページ
+@app.route('/session_gforce')
+def session_gforce():
+    session_id = request.args.get('session_id')
+    if not session_id:
+        return "Session ID が指定されていません", 400
+    
+    # DBから該当セッションのGPSログを取得。gps_logsは
+    # 例：[{"timestamp": 123456789, "g_y": 0.1}, ...]
+    gps_logs = get_gps_logs_for_session(session_id)
+
+    # 取得したgps_logsをテンプレートへ渡す
+    return render_template('session_gforce.html', session_id=session_id, gps_logs=gps_logs)
 
 
 @app.route('/delete_session/<int:sid>', methods=['POST'])
