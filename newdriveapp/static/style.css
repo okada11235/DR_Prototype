@@ -81,14 +81,9 @@ label {
     list-style: none;
 }
 
-/* セッション詳細 */
-.session {
-    border: 1px solid #ddd;
-    padding: 1rem;
-    margin-bottom: 1rem;
-    border-radius: 6px;
-    background: #fafafa;
-}
+
+
+
 
 /* リンク */
 a {
@@ -122,4 +117,14 @@ html, body {
   padding: 1rem;
   font-family: sans-serif;
 }
+
+.normal-speed {
+  color: black;
+  font-weight: normal;
+}
+.over-speed {
+  color: red;
+  font-weight: bold;
+}
+
 

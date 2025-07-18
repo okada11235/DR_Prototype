@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<title>セッション {{ session_id }} の前後G加速度グラフ</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  body { font-family: Arial, sans-serif; padding: 20px; }
+  h1 { margin-bottom: 20px; }
+  #chart-container { width: 100%; max-width: 800px; }
+</style>
+</head>
+<body>
+
+<h1>セッション {{ session_id }} の前後G加速度グラフ</h1>
+
+<div id="chart-container">
+  <canvas id="gforceChart"></canvas>
+</div>
+
+<script>
+const gpsLogs = {{ gps_logs | tojson }};
+
+const labels = gpsLogs.map(log => ((log.timestamp - gpsLogs[0].timestamp) / 1000).toFixed(1));
+const gYData = gpsLogs.map(log => log.g_y);
+
+const pointColors = gpsLogs.map(log => {
+    if (log.event === 'sudden_brake') return 'red';
+    if (log.event === 'sudden_accel') return 'green';
+    if (log.event === 'sharp_turn') return 'orange';
+    if (log.event === 'speed_violation') return 'purple';
+    return 'rgba(75, 192, 192, 1)';
+});
+
+const pointSizes = gpsLogs.map(log => (log.event && log.event !== 'normal') ? 6 : 0);
+
+const ctx = document.getElementById('gforceChart').getContext('2d');
+const chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+        labels: labels,
+        datasets: [{
+            label: '前後G加速度 (gY)',
+            data: gYData,
+            borderColor: 'rgba(75, 192, 192, 1)',
+            backgroundColor: 'rgba(75, 192, 192, 0.2)',
+            fill: true,
+            tension: 0.2,
+            pointRadius: pointSizes,
+            pointBackgroundColor: pointColors,
+        }]
+    },
+    options: {
+        scales: {
+            x: {
+                title: { display: true, text: '経過時間 (秒)' },
+                ticks: { maxRotation: 45, minRotation: 45 }
+            },
+            y: {
+                title: { display: true, text: '前後G加速度 (g)' },
+                suggestedMin: -0.5,
+                suggestedMax: 0.5
+            }
+        },
+        plugins: {
+            legend: { display: true }
+        },
+        responsive: true,
+        maintainAspectRatio: false
+    }
+});
+</script>
+
+
+</body>
+</html>

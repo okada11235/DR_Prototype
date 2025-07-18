@@ -29,10 +29,12 @@
         <p>開始時間: {{ session.start_time }}</p>
         <p>終了時間: {{ session.end_time or '記録中' }}</p>
         <p>走行距離: {{ "%.2f"|format(session.distance) }} km</p>
-        <p>急発進: {{ session.sudden_accels }} 回</p>
         <p>急ブレーキ: {{ session.sudden_brakes }} 回</p>
+        <p>急発進: {{ session.sudden_accels }} 回</p>
         <p>急カーブ: {{ session.sharp_turns }} 回</p>
         <p>法定速度超過: {{ session.speed_violations }} 回</p>
+
+        <a href="{{ url_for('session_gforce', session_id=session.id) }}" target="_blank">G加速度グラフを見る</a>
 
         <canvas id="chart-{{ session.id }}" width="400" height="100"></canvas>
 
@@ -46,6 +48,17 @@
 </div>
 
 <script>
+const colorMap = {
+    normal: '#007bff',        
+    sudden_brake: 'red', 
+    sudden_accel: 'green',    
+    sharp_turn: 'orange',     
+    speed_violation: 'purple'
+};
+
+const maps = {};
+
+// チャート描画
 {% for session in sessions %}
 const ctx{{ session.id }} = document.getElementById('chart-{{ session.id }}').getContext('2d');
 const chart{{ session.id }} = new Chart(ctx{{ session.id }}, {
@@ -54,7 +67,12 @@ const chart{{ session.id }} = new Chart(ctx{{ session.id }}, {
         labels: ['急発進', '急ブレーキ', '急カーブ', '法定速度超過'],
         datasets: [{
             label: '回数',
-            data: [{{ session.sudden_accels }}, {{ session.sudden_brakes }}, {{ session.sharp_turns }}, {{ session.speed_violations }}],
+            data: [
+                {{ session.sudden_accels }},
+                {{ session.sudden_brakes }},
+                {{ session.sharp_turns }},
+                {{ session.speed_violations }}
+            ],
             backgroundColor: [
                 'rgba(255, 99, 132, 0.5)',
                 'rgba(54, 162, 235, 0.5)',
@@ -81,36 +99,68 @@ const chart{{ session.id }} = new Chart(ctx{{ session.id }}, {
 });
 {% endfor %}
 
+// 地図初期化関数
 function initMap() {
-{% for session in sessions %}
-    const path{{ session.id }} = [
-    {% for log in session.gps_logs %}
-        {lat: {{ log.latitude }}, lng: {{ log.longitude }}}{% if not loop.last %},{% endif %}
-    {% endfor %}
+    {% for session in sessions %}
+    const logs{{ session.id }} = [
+        {% for log in session.gps_logs %}
+        {
+            lat: {{ log.latitude }},
+            lng: {{ log.longitude }},
+            event: "{{ log.event or 'normal' }}"
+        }{% if not loop.last %},{% endif %}
+        {% endfor %}
     ];
 
-    const initialCenter{{ session.id }} = path{{ session.id }}.length > 0
-        ? path{{ session.id }}[0]
-        : {lat: 35.681236, lng: 139.767125};  // GPSログなしは東京駅
+    const initialCenter{{ session.id }} = logs{{ session.id }}.length > 0
+        ? logs{{ session.id }}[0]
+        : { lat: 35.681236, lng: 139.767125 };
 
-    const map{{ session.id }} = new google.maps.Map(document.getElementById('map-{{ session.id }}'), {
+    maps[{{ session.id }}] = new google.maps.Map(document.getElementById('map-{{ session.id }}'), {
         zoom: 14,
         center: initialCenter{{ session.id }}
     });
 
-    const polyline{{ session.id }} = new google.maps.Polyline({
-        path: path{{ session.id }},
-        geodesic: true,
-        strokeColor: '#FF0000',
-        strokeOpacity: 1.0,
-        strokeWeight: 2
-    });
+    for (let i = 1; i < logs{{ session.id }}.length; i++) {
+    const prev = logs{{ session.id }}[i - 1];
+    const curr = logs{{ session.id }}[i];
 
-    polyline{{ session.id }}.setMap(map{{ session.id }});
-{% endfor %}
+    const eventPrev = (prev.event || 'normal').trim();
+    const eventCurr = (curr.event || 'normal').trim();
+
+    const priorityEvents = ['sudden_brake', 'sudden_accel', 'sharp_turn', 'speed_violation'];
+
+    let eventType = 'normal';
+    for (const e of priorityEvents) {
+        if (eventPrev === e || eventCurr === e) {
+        eventType = e;
+        break;
+        }
+    }
+
+    console.log(`Session {{ session.id }} segment ${i}: prev='${eventPrev}', curr='${eventCurr}', chosen='${eventType}'`);
+    {% for session in sessions %}
+    console.log('Session {{ session.id }} logs:');
+    {% for log in session.gps_logs %}
+    console.log('  event: "{{ log.event }}" lat:{{ log.latitude }} lng:{{ log.longitude }}');
+    {% endfor %}
+    {% endfor %}
+
+    new google.maps.Polyline({
+        path: [prev, curr],
+        geodesic: true,
+        strokeColor: colorMap[eventType],
+        strokeOpacity: 1.0,
+        strokeWeight: 4,
+        map: maps[{{ session.id }}]
+    });
+    }
+
+    {% endfor %}
 }
 
 window.onload = initMap;
 </script>
+
 </body>
 </html>
