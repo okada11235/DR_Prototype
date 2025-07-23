@@ -42,6 +42,7 @@ class GPSLog(db.Model):
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
     event = db.Column(db.String(50), default='normal')
     g_y = db.Column(db.Float, default=0.0)
+    speed = db.Column(db.Float, default=0.0)
 
 
 @login_manager.user_loader
@@ -152,10 +153,16 @@ def log_gps():
     session_id = data['session_id']
     lat = data['latitude']
     lng = data['longitude']
-    g_y = data.get('g_y', 0.0)  # 追加
+    speed = data.get('speed', 0.0) # speed も受け取って保存すると良いでしょう
+    g_y = data.get('g_y', 0.0)
+    
+    # ★ここを追加/修正: event データを受け取る
+    event_type = data.get('event', 'normal') # index.html から送られてくる 'event' キーを取得
+
     session = DriveSession.query.get(session_id)
     if session and session.user_id == current_user.id:
-        log = GPSLog(session_id=session_id, latitude=lat, longitude=lng, g_y=g_y)
+        # ★ここを修正: event_type を GPSLog に渡す
+        log = GPSLog(session_id=session_id, latitude=lat, longitude=lng, speed=speed, g_y=g_y, event=event_type)
         db.session.add(log)
         db.session.commit()
     return jsonify({'status': 'ok'})
@@ -168,7 +175,8 @@ def get_gps_logs_for_session(session_id):
         timestamp_ms = int(log.timestamp.timestamp() * 1000)
         result.append({
             "timestamp": timestamp_ms,
-            "g_y": log.g_y
+            "g_y": log.g_y,
+            "event": log.event
         })
     return result
 
@@ -192,7 +200,6 @@ def session_gforce():
 
     # 取得したgps_logsをテンプレートへ渡す
     return render_template('session_gforce.html', session_id=session_id, gps_logs=gps_logs)
-
 
 @app.route('/delete_session/<int:sid>', methods=['POST'])
 @login_required
