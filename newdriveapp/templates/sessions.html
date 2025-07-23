@@ -107,55 +107,59 @@ function initMap() {
         {
             lat: {{ log.latitude }},
             lng: {{ log.longitude }},
-            event: "{{ log.event or 'normal' }}"
+            event: "{{ log.event or 'normal' }}" // event プロパティが存在しない場合は 'normal' を使用
         }{% if not loop.last %},{% endif %}
         {% endfor %}
     ];
 
     const initialCenter{{ session.id }} = logs{{ session.id }}.length > 0
         ? logs{{ session.id }}[0]
-        : { lat: 35.681236, lng: 139.767125 };
+        : { lat: 35.681236, lng: 139.767125 }; // デフォルトの中心点
 
     maps[{{ session.id }}] = new google.maps.Map(document.getElementById('map-{{ session.id }}'), {
         zoom: 14,
         center: initialCenter{{ session.id }}
     });
 
-    for (let i = 1; i < logs{{ session.id }}.length; i++) {
-    const prev = logs{{ session.id }}[i - 1];
-    const curr = logs{{ session.id }}[i];
+    // 走行ルートの描画とイベントマーカーの追加
+    for (let i = 0; i < logs{{ session.id }}.length; i++) { // ループを0から開始し、最初の地点も考慮
+        const curr = logs{{ session.id }}[i];
+        const eventType = (curr.event || 'normal').trim(); // 現在の地点のイベントタイプを取得
 
-    const eventPrev = (prev.event || 'normal').trim();
-    const eventCurr = (curr.event || 'normal').trim();
+        // ポリラインの描画（以前のロジックを維持）
+        if (i > 0) { // 2点目以降でポリラインを描画
+            const prev = logs{{ session.id }}[i - 1];
+            // イベントタイプを決定するロジック（隣接するログのイベントを考慮する）
+            const eventPrev = (prev.event || 'normal').trim();
+            const chosenEventType = (eventType !== 'normal') ? eventType : ((eventPrev !== 'normal') ? eventPrev : 'normal');
 
-    const priorityEvents = ['sudden_brake', 'sudden_accel', 'sharp_turn', 'speed_violation'];
+            new google.maps.Polyline({
+                path: [prev, curr],
+                geodesic: true,
+                strokeColor: colorMap[chosenEventType], // 選択されたイベントタイプの色
+                strokeOpacity: 1.0,
+                strokeWeight: 4,
+                map: maps[{{ session.id }}]
+            });
+        }
 
-    let eventType = 'normal';
-    for (const e of priorityEvents) {
-        if (eventPrev === e || eventCurr === e) {
-        eventType = e;
-        break;
+        // イベントマーカーの追加
+        if (eventType !== 'normal') { // イベントがある場合のみマーカーを追加
+            new google.maps.Marker({
+                position: { lat: curr.lat, lng: curr.lng },
+                map: maps[{{ session.id }}],
+                icon: {
+                    path: google.maps.SymbolPath.CIRCLE,
+                    scale: 6,
+                    fillColor: colorMap[eventType] || 'gray', // イベントに応じた色
+                    fillOpacity: 1,
+                    strokeWeight: 1,
+                    strokeColor: '#000'
+                },
+                title: eventType // マーカーにイベントタイプを表示（ツールチップ）
+            });
         }
     }
-
-    console.log(`Session {{ session.id }} segment ${i}: prev='${eventPrev}', curr='${eventCurr}', chosen='${eventType}'`);
-    {% for session in sessions %}
-    console.log('Session {{ session.id }} logs:');
-    {% for log in session.gps_logs %}
-    console.log('  event: "{{ log.event }}" lat:{{ log.latitude }} lng:{{ log.longitude }}');
-    {% endfor %}
-    {% endfor %}
-
-    new google.maps.Polyline({
-        path: [prev, curr],
-        geodesic: true,
-        strokeColor: colorMap[eventType],
-        strokeOpacity: 1.0,
-        strokeWeight: 4,
-        map: maps[{{ session.id }}]
-    });
-    }
-
     {% endfor %}
 }
 
