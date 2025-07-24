@@ -1,170 +1,340 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>走行記録一覧</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBb7m-VxM2tA-slsA0gf3kj0GtvathFXv0"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>セッション履歴 - DriveLogger</title>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+            padding-top: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: auto;
+            background: #fff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+        h1, h2 {
+            color: #007bff;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .session-card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            padding: 20px;
+            background-color: #f9f9f9;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            transition: transform 0.2s ease-in-out;
+        }
+        .session-card:hover {
+            transform: translateY(-5px);
+        }
+        .session-card h3 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .session-card h3 span {
+            font-size: 0.9rem;
+            color: #666;
+        }
+        .session-details p {
+            margin-bottom: 8px;
+            line-height: 1.6;
+        }
+        .session-details strong {
+            color: #555;
+        }
+        .chart-container, .map-container {
+            position: relative;
+            height: 300px; /* Adjust height as needed */
+            width: 100%;
+            margin-top: 20px;
+            margin-bottom: 20px;
+            background-color: #e9e9e9;
+            border-radius: 5px;
+            overflow: hidden; /* For map */
+        }
+        .map-container {
+            height: 400px; /* Larger for map */
+        }
+        .btn-custom {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .btn-custom:hover {
+            background-color: #0056b3;
+        }
+        .btn-danger-custom {
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .btn-danger-custom:hover {
+            background-color: #c82333;
+        }
+        .logout-link {
+            display: block;
+            text-align: right;
+            margin-bottom: 20px;
+            color: #007bff;
+            text-decoration: none;
+        }
+        .logout-link:hover {
+            text-decoration: underline;
+        }
+        .no-sessions {
+            text-align: center;
+            color: #777;
+            padding: 50px;
+            border: 1px dashed #ccc;
+            border-radius: 8px;
+            margin-top: 30px;
+        }
+    </style>
 </head>
 <body>
-<div class="container">
-    <h1>走行記録一覧</h1>
-    <p><a href="{{ url_for('index') }}">戻る</a></p>
+    <div class="container">
+        <a href="{{ url_for('logout') }}" class="logout-link">ログアウト</a>
+        <h1>セッション履歴</h1>
 
-    {% with messages = get_flashed_messages() %}
-    {% if messages %}
-    <ul class="flash-messages">
-        {% for message in messages %}
-        <li>{{ message }}</li>
-        {% endfor %}
-    </ul>
-    {% endif %}
-    {% endwith %}
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                <div class="alert alert-info">
+                    {{ messages[0] }}
+                </div>
+            {% endif %}
+        {% endwith %}
 
-    {% for session in sessions %}
-    <div class="session">
-        <h2>セッションID: {{ session.id }}</h2>
-        <p>開始時間: {{ session.start_time }}</p>
-        <p>終了時間: {{ session.end_time or '記録中' }}</p>
-        <p>走行距離: {{ "%.2f"|format(session.distance) }} km</p>
-        <p>急ブレーキ: {{ session.sudden_brakes }} 回</p>
-        <p>急発進: {{ session.sudden_accels }} 回</p>
-        <p>急カーブ: {{ session.sharp_turns }} 回</p>
-        <p>法定速度超過: {{ session.speed_violations }} 回</p>
+        {% if not sessions %}
+            <div class="no-sessions">
+                <p>まだ記録されたセッションがありません。</p>
+                <p>メインページに戻って記録を開始してください。</p>
+                <a href="{{ url_for('index') }}" class="btn btn-custom">メインページに戻る</a>
+            </div>
+        {% else %}
+            {% for session in sessions %}
+            <div class="session-card">
+                <h3>
+                    セッションID: {{ session.id }}
+                    <span>開始時刻: {{ session.start_time.strftime('%Y/%m/%d %H:%M:%S') if session.start_time else 'N/A' }}</span>
+                </h3>
+                <div class="session-details">
+                    <p><strong>終了時刻:</strong> {{ session.end_time.strftime('%Y/%m/%d %H:%M:%S') if session.end_time else 'N/A' }}</p>
+                    <p><strong>走行距離:</strong> {{ "%.2f km" % session.distance if session.distance is not none else 'N/A' }}</p>
+                    <p><strong>急ブレーキ回数:</strong> {{ session.sudden_brakes if session.sudden_brakes is not none else 'N/A' }} 回</p>
+                    <p><strong>急発進回数:</strong> {{ session.sudden_accels if session.sudden_accels is not none else 'N/A' }} 回</p>
+                    <p><strong>急カーブ回数:</strong> {{ session.sharp_turns if session.sharp_turns is not none else 'N/A' }} 回</p>
+                    <p><strong>速度超過回数:</strong> {{ session.speed_violations if session.speed_violations is not none else 'N/A' }} 回</p>
 
-        <a href="{{ url_for('session_gforce', session_id=session.id) }}" target="_blank">G加速度グラフを見る</a>
+                    <h4>G加速度グラフ</h4>
+                    <div class="chart-container">
+                        <canvas id="gForceChart-{{ session.id }}"></canvas>
+                    </div>
 
-        <canvas id="chart-{{ session.id }}" width="400" height="100"></canvas>
+                    <h4>走行ルートとイベント</h4>
+                    <div class="map-container">
+                        <div id="map-{{ session.id }}" style="height: 100%; width: 100%;"></div>
+                    </div>
 
-        <form method="post" action="{{ url_for('delete_session', sid=session.id) }}" onsubmit="return confirm('本当に削除しますか？');">
-            <button type="submit" style="background-color:#d9534f;">削除</button>
-        </form>
-
-        <div id="map-{{ session.id }}" style="width: 100%; height: 300px; margin-top: 20px;"></div>
+                    <form action="{{ url_for('delete_session', sid=session.id) }}" method="post" onsubmit="return confirm('本当にこのセッションを削除しますか？');">
+                        <button type="submit" class="btn btn-danger-custom">このセッションを削除</button>
+                    </form>
+                </div>
+            </div>
+            {% endfor %}
+            <div style="text-align: center; margin-top: 30px;">
+                <a href="{{ url_for('index') }}" class="btn btn-custom">メインページに戻る</a>
+            </div>
+        {% endif %}
     </div>
-    {% endfor %}
-</div>
 
-<script>
-const colorMap = {
-    normal: '#007bff',        
-    sudden_brake: 'red', 
-    sudden_accel: 'green',    
-    sharp_turn: 'orange',     
-    speed_violation: 'purple'
-};
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <script>
+        // Google Maps APIキー
+        //const MAPS_API_KEY = 'AIzaSyBUyc6mj-SEOP8lopM2laEywMILL8qknvo';
 
-const maps = {};
-
-// チャート描画
-{% for session in sessions %}
-const ctx{{ session.id }} = document.getElementById('chart-{{ session.id }}').getContext('2d');
-const chart{{ session.id }} = new Chart(ctx{{ session.id }}, {
-    type: 'bar',
-    data: {
-        labels: ['急発進', '急ブレーキ', '急カーブ', '法定速度超過'],
-        datasets: [{
-            label: '回数',
-            data: [
-                {{ session.sudden_accels }},
-                {{ session.sudden_brakes }},
-                {{ session.sharp_turns }},
-                {{ session.speed_violations }}
-            ],
-            backgroundColor: [
-                'rgba(255, 99, 132, 0.5)',
-                'rgba(54, 162, 235, 0.5)',
-                'rgba(255, 206, 86, 0.5)',
-                'rgba(75, 192, 192, 0.5)'
-            ],
-            borderColor: [
-                'rgba(255, 99, 132, 1)',
-                'rgba(54, 162, 235, 1)',
-                'rgba(255, 206, 86, 1)',
-                'rgba(75, 192, 192, 1)'
-            ],
-            borderWidth: 1
-        }]
-    },
-    options: {
-        scales: {
-            y: {
-                beginAtZero: true,
-                precision: 0
-            }
+        // Google Maps APIが完全に読み込まれた後に呼び出される関数
+        function initAllSessionMaps() {
+            console.log("Google Maps API loaded and initAllSessionMaps callback initiated.");
+            
+            // 各セッションのデータをループ処理し、地図とグラフを初期化
+            {% for session in sessions %}
+            {% if session.gps_logs %}
+            const gpsLogs_{{ session.id }} = {{ session.gps_logs | tojson }};
+            
+            // G加速度グラフの描画
+            renderGForceChart('gForceChart-{{ session.id }}', gpsLogs_{{ session.id }});
+            
+            // 地図の描画
+            initSessionMap('map-{{ session.id }}', gpsLogs_{{ session.id }});
+            {% else %}
+            console.log("GPSログがありません: Session ID {{ session.id }}");
+            document.getElementById('gForceChart-{{ session.id }}').parentNode.innerHTML = '<p style="text-align: center; margin-top: 20px;">このセッションにはGPSログがありません。</p>';
+            document.getElementById('map-{{ session.id }}').parentNode.innerHTML = '<p style="text-align: center; margin-top: 20px;">このセッションにはGPSログがありません。</p>';
+            {% endif %}
+            {% endfor %}
         }
-    }
-});
-{% endfor %}
 
-// 地図初期化関数
-function initMap() {
-    {% for session in sessions %}
-    const logs{{ session.id }} = [
-        {% for log in session.gps_logs %}
-        {
-            lat: {{ log.latitude }},
-            lng: {{ log.longitude }},
-            event: "{{ log.event or 'normal' }}" // event プロパティが存在しない場合は 'normal' を使用
-        }{% if not loop.last %},{% endif %}
-        {% endfor %}
-    ];
+        function renderGForceChart(canvasId, gpsLogs) {
+            const timestamps = gpsLogs.map(log => {
+                const date = new Date(log.timestamp);
+                return date.toLocaleTimeString('ja-JP'); // 時刻のみ表示
+            });
+            const gxData = gpsLogs.map(log => log.g_x);
+            const gyData = gpsLogs.map(log => log.g_y);
 
-    const initialCenter{{ session.id }} = logs{{ session.id }}.length > 0
-        ? logs{{ session.id }}[0]
-        : { lat: 35.681236, lng: 139.767125 }; // デフォルトの中心点
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: timestamps,
+                    datasets: [
+                        {
+                            label: '前後G (g_y)',
+                            data: gyData,
+                            borderColor: 'rgba(75, 192, 192, 1)',
+                            backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                            tension: 0.1,
+                            pointRadius: 0 // ポイントを非表示
+                        },
+                        {
+                            label: '左右G (g_x)',
+                            data: gxData,
+                            borderColor: 'rgba(153, 102, 255, 1)',
+                            backgroundColor: 'rgba(153, 102, 255, 0.2)',
+                            tension: 0.1,
+                            pointRadius: 0 // ポイントを非表示
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: '時間'
+                            },
+                            ticks: {
+                                autoSkip: true,
+                                maxTicksLimit: 20 // 表示するティックの数を制限
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'G (重力加速度)'
+                            },
+                            beginAtZero: false
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false
+                        }
+                    }
+                }
+            });
+        }
 
-    maps[{{ session.id }}] = new google.maps.Map(document.getElementById('map-{{ session.id }}'), {
-        zoom: 14,
-        center: initialCenter{{ session.id }}
-    });
+        function initSessionMap(mapId, gpsLogs) {
+            if (gpsLogs.length === 0) {
+                // GPSログがない場合のメッセージは、initAllSessionMaps 関数内で処理済みのため、ここでは不要
+                // document.getElementById(mapId).parentNode.innerHTML = '<p style="text-align: center; margin-top: 20px;">このセッションにはGPSログがありません。</p>';
+                return;
+            }
 
-    // 走行ルートの描画とイベントマーカーの追加
-    for (let i = 0; i < logs{{ session.id }}.length; i++) { // ループを0から開始し、最初の地点も考慮
-        const curr = logs{{ session.id }}[i];
-        const eventType = (curr.event || 'normal').trim(); // 現在の地点のイベントタイプを取得
+            const path = gpsLogs.map(log => ({ lat: log.latitude, lng: log.longitude }));
+            const firstPoint = path[0];
 
-        // ポリラインの描画（以前のロジックを維持）
-        if (i > 0) { // 2点目以降でポリラインを描画
-            const prev = logs{{ session.id }}[i - 1];
-            // イベントタイプを決定するロジック（隣接するログのイベントを考慮する）
-            const eventPrev = (prev.event || 'normal').trim();
-            const chosenEventType = (eventType !== 'normal') ? eventType : ((eventPrev !== 'normal') ? eventPrev : 'normal');
+            // google が定義されていることを確認
+            if (typeof google === 'undefined' || typeof google.maps === 'undefined') {
+                console.error("Google Maps API is not loaded yet when initSessionMap is called for mapId:", mapId);
+                // エラーメッセージを表示するなど
+                document.getElementById(mapId).innerHTML = '<p style="text-align: center; margin-top: 20px; color: red;">地図の読み込みに失敗しました。APIキーまたはネットワーク設定を確認してください。</p>';
+                return;
+            }
 
-            new google.maps.Polyline({
-                path: [prev, curr],
+            const map = new google.maps.Map(document.getElementById(mapId), {
+                zoom: 15,
+                center: firstPoint
+            });
+
+            const polyline = new google.maps.Polyline({
+                path: path,
                 geodesic: true,
-                strokeColor: colorMap[chosenEventType], // 選択されたイベントタイプの色
+                strokeColor: '#007bff',
                 strokeOpacity: 1.0,
                 strokeWeight: 4,
-                map: maps[{{ session.id }}]
+                map: map
+            });
+
+            // イベントマーカーの追加
+            gpsLogs.forEach(log => {
+                const position = { lat: log.latitude, lng: log.longitude };
+                let color = 'gray'; // デフォルト
+
+                switch (log.event) {
+                    case 'sudden_brake':
+                        color = 'red';
+                        break;
+                    case 'sudden_accel':
+                        color = 'green';
+                        break;
+                    case 'sharp_turn':
+                        color = 'orange';
+                        break;
+                    case 'speed_violation':
+                        color = 'purple';
+                        break;
+                    default:
+                        // normal イベントの場合はマーカーを表示しない
+                        return; 
+                }
+
+                new google.maps.Marker({
+                    position: position,
+                    map: map,
+                    icon: {
+                        path: google.maps.SymbolPath.CIRCLE,
+                        scale: 6,
+                        fillColor: color,
+                        fillOpacity: 1,
+                        strokeWeight: 1,
+                        strokeColor: '#000'
+                    },
+                    title: log.event.replace('_', ' ') // マーカーにイベント名を表示
+                });
             });
         }
-
-        // イベントマーカーの追加
-        if (eventType !== 'normal') { // イベントがある場合のみマーカーを追加
-            new google.maps.Marker({
-                position: { lat: curr.lat, lng: curr.lng },
-                map: maps[{{ session.id }}],
-                icon: {
-                    path: google.maps.SymbolPath.CIRCLE,
-                    scale: 6,
-                    fillColor: colorMap[eventType] || 'gray', // イベントに応じた色
-                    fillOpacity: 1,
-                    strokeWeight: 1,
-                    strokeColor: '#000'
-                },
-                title: eventType // マーカーにイベントタイプを表示（ツールチップ）
-            });
-        }
-    }
-    {% endfor %}
-}
-
-window.onload = initMap;
-</script>
-
+    </script>
+    <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBUyc6mj-SEOP8lopM2laEywMILL8qknvo&callback=initAllSessionMaps"></script>
 </body>
 </html>
