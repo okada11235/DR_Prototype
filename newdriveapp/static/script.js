@@ -23,87 +23,116 @@ let latestGY = 0; // 加速度センサーからの最新のY軸G値
 // 現在位置を示すマーカーをグローバルで管理
 let currentPositionMarker = null;
 
+// (既存の startSession 関数)
 function startSession() {
     console.log('startSession called');
     requestMotionPermission(() => {
         console.log('Motion permission granted');
-        startMotionDetection(); // 加速度センサーのデータ取得を開始
+        startMotionDetection();
+        // サーバー側でセッションIDを生成し、そのIDをFirestoreのドキュメントIDとして使用
         fetch('/start', { method: 'POST' })
             .then(res => {
-                console.log('Response received from /start');
+                if (!res.ok) { // サーバーからのエラーレスポンスをチェック
+                    return res.json().then(err => { throw new Error(err.message || 'サーバーエラー'); });
+                }
                 return res.json();
             })
             .then(data => {
-                console.log('Session ID:', data.session_id);
-                sessionId = data.session_id;
-                document.getElementById('session_id').textContent = sessionId;
-                startTime = Date.now();
-                startTimer();
-                initMap();
-                watchPosition(); // GPSとイベント判定を開始
-                resetCounters();
-                alert('記録を開始しました');
+                if (data.session_id) {
+                    sessionId = data.session_id; // サーバーからセッションIDを取得
+                    document.getElementById('session_id').textContent = sessionId;
+                    startTime = Date.now();
+                    startTimer();
+                    initMap();
+                    watchPosition();
+                    resetCounters();
+                    alert('記録を開始しました');
+                } else {
+                    throw new Error('サーバーからのセッションIDが不正です。');
+                }
             })
             .catch(err => {
-                console.error('Error during /start fetch:', err);
-                alert('記録開始時にエラーが発生しました');
+                console.error('Error during /start fetch or response handling:', err);
+                alert('記録開始時にエラーが発生しました: ' + err.message); // エラーメッセージを詳細化
             });
     });
 }
 
+// endSession 関数内 (最初のチェックだけで十分)
 function endSession() {
     if (!sessionId) {
         alert('まだ記録が開始されていません');
         return;
     }
+
     stopTimer();
     if (watchId !== null) {
         navigator.geolocation.clearWatch(watchId);
         watchId = null;
     }
-    // DeviceMotionEventリスナーも停止
     if (window.DeviceMotionEvent) {
         window.removeEventListener('devicemotion', handleDeviceMotion);
     }
 
-    // 記録中のセッションIDと統計情報をサーバに送信
     const distance = calculateDistance(path);
+
+    // ★ここを修正します: /end エンドポイントにデータをPOSTで送信する
     fetch('/end', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+            'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
             session_id: sessionId,
-            distance,
+            distance: distance,
             sudden_accels: suddenAccels,
             sudden_brakes: suddenBrakes,
             sharp_turns: sharpTurns,
-            speed_violations: speedViolations
-        })
-    }).then(res => res.json())
-    .then(res => {
-        if (res.status === 'ok') {
+            speed_violations: speedViolations,
+            // stabilityは現在JSで計算されていないが、必要なら追加
+            // stability: 0.0 // 例: デフォルト値
+        }),
+    })
+    .then(response => {
+        // サーバーからのHTTPステータスが200番台以外ならエラーとして処理
+        if (!response.ok) {
+            return response.json().then(errorData => {
+                // サーバーからエラーメッセージがあればそれを使う
+                throw new Error(errorData.message || '記録終了時にサーバーエラーが発生しました');
+            });
+        }
+        return response.json(); // 成功レスポンスをJSONとしてパース
+    })
+    .then(data => {
+        // サーバーからのレスポンスが成功を示しているか確認
+        if (data.status === 'ok') {
             alert('記録を終了しました');
             sessionId = null;
             document.getElementById('session_id').textContent = '未開始';
             document.getElementById('speed').textContent = '0';
             document.getElementById('timer').textContent = '00:00';
-            resetCounters();
-            // マーカーや線を消したい場合はここで処理を追加可能
+
+            // UIリセットとカウンターリセット
+            resetCounters(); 
             if (polyline) polyline.setPath([]);
-            if (currentPositionMarker) currentPositionMarker.setMap(null);
-            // マーカーを全て消去する処理（必要に応じて）
-            // map.data.forEach(function(feature) {
-            //     map.data.remove(feature);
-            // });
+            if (currentPositionMarker) currentPositionMarker.setMap(null); // 現在位置マーカーはクリア
+            path = []; // パスもリセット
+
+            // ★ここに追加します: イベントマーカーを全て削除
+            eventMarkers.forEach(marker => marker.setMap(null));
+            eventMarkers = []; // 配列もリセット
+
         } else {
-            alert('エラー：' + res.message);
+            // サーバーから 'status: error' が返された場合
+            alert('記録終了に失敗しました: ' + (data.message || '不明なエラー'));
         }
-    }).catch(err => {
-        console.error('終了リクエスト失敗:', err);
-        alert('終了処理中にエラーが発生しました');
+    })
+    .catch(error => {
+        // ネットワークエラーやJSONパースエラーなど
+        console.error('記録終了中にエラーが発生しました:', error);
+        alert('記録終了中にネットワークまたは処理エラーが発生しました: ' + error.message);
     });
 }
-
 
 function requestMotionPermission(callback) {
     if (typeof DeviceMotionEvent !== 'undefined' &&
@@ -145,6 +174,7 @@ function startMotionDetection() {
     }
 }
 
+// addEventMarker 関数内で、イベントマーカーを配列に追加するように変更
 function addEventMarker(lat, lng, type) {
     const colors = {
         sudden_brake: 'red',
@@ -152,7 +182,7 @@ function addEventMarker(lat, lng, type) {
         sharp_turn: 'orange',
         speed_violation: 'purple'
     };
-    new google.maps.Marker({
+    const marker = new google.maps.Marker({ // marker 変数に格納
         position: { lat, lng },
         map,
         icon: {
@@ -164,57 +194,36 @@ function addEventMarker(lat, lng, type) {
             strokeColor: '#000'
         }
     });
+    eventMarkers.push(marker); // 新しく作成したマーカーを配列に追加
 }
+
+let eventMarkers = []; 
 
 function initMap() {
     const mapDiv = document.getElementById('map');
-    path = [];
-    // マップが既に存在する場合は初期化しない
-    if (map) {
-        polyline.setPath([]); // 既存の線をクリア
-        if (currentPositionMarker) currentPositionMarker.setMap(null); // 既存のマーカーをクリア
-        return;
-    }
+    path = []; // 新しいセッションなのでパスを空にする
 
-    navigator.geolocation.getCurrentPosition(position => {
-        const userLatLng = { lat: position.coords.latitude, lng: position.coords.longitude };
-        map = new google.maps.Map(mapDiv, { zoom: 16, center: userLatLng });
+    // 既存のマップがあれば、ポリラインとマーカーをクリアし、イベントマーカーもクリア
+    if (map) {
+        polyline.setPath([]);
+        if (currentPositionMarker) currentPositionMarker.setMap(null);
+        
+        // 既存のイベントマーカーも全て削除
+        eventMarkers.forEach(marker => marker.setMap(null));
+        eventMarkers = []; // 配列もリセット
+    } else {
+        // マップがまだない場合のみ新規作成
+        map = new google.maps.Map(mapDiv, { zoom: 16, center: { lat: 35.681236, lng: 139.767125 } }); // デフォルトのセンター
         polyline = new google.maps.Polyline({
-            path,
+            path: [], // 初期パスは空
             geodesic: true,
             strokeColor: '#007bff',
             strokeOpacity: 1.0,
             strokeWeight: 4,
-            map
-        });
-        // 現在位置マーカーの初期化
-        currentPositionMarker = new google.maps.Marker({
-            position: userLatLng,
-            map: map,
-            icon: {
-                path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-                scale: 6,
-                fillColor: 'blue',
-                fillOpacity: 0.8,
-                strokeWeight: 1,
-                strokeColor: '#fff',
-                rotation: 0 // 最初は0
-            }
-        });
-    }, () => {
-        // 許可されなかった場合のデフォルト位置（東京駅）
-        const defaultLatLng = { lat: 35.681236, lng: 139.767125 };
-        map = new google.maps.Map(mapDiv, { zoom: 16, center: defaultLatLng });
-        polyline = new google.maps.Polyline({
-            path,
-            geodesic: true,
-            strokeColor: '#007bff',
-            strokeOpacity: 1.0,
-            strokeWeight: 4,
-            map
+            map: map // mapを明示的に指定
         });
         currentPositionMarker = new google.maps.Marker({
-            position: defaultLatLng,
+            position: { lat: 35.681236, lng: 139.767125 }, // デフォルト位置
             map: map,
             icon: {
                 path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
@@ -226,6 +235,16 @@ function initMap() {
                 rotation: 0
             }
         });
+    }
+
+    // 初期位置の設定とマップの中心移動
+    navigator.geolocation.getCurrentPosition(position => {
+        const userLatLng = { lat: position.coords.latitude, lng: position.coords.longitude };
+        map.setCenter(userLatLng);
+        currentPositionMarker.setPosition(userLatLng);
+    }, () => {
+        // 許可されなかった場合やエラーの場合、デフォルト位置のまま
+        console.warn("Geolocation permission denied or error. Using default map center.");
     });
 }
 
@@ -269,7 +288,7 @@ function calculateDistance(path) {
     return dist;
 }
 
-const Maps_API_KEY = 'YOUR_Maps_API_KEY'; // ここに実際のAPIキーを設定
+const Maps_API_KEY = 'AIzaSyBUyc6mj-SEOP8lopM2laEywMILL8qknvo'; // ここに実際のAPIキーを設定
 
 async function fetchSpeedLimit(lat, lng) {
     try {
@@ -406,19 +425,36 @@ function watchPosition() {
             polyline.setPath(path);
         }
 
-        // GPSログをサーバーに送信
+        // GPSログをサーバーに送信 (Firestoreへ直接ではなく、Flaskサーバーへ)
         fetch('/log_gps', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+            },
             body: JSON.stringify({
-                session_id: sessionId,
+                session_id: sessionId, // サーバーにセッションIDを渡す
                 latitude: lat,
                 longitude: lng,
                 speed: speed,
-                g_x: latestGX, // X軸G値も送信
-                g_y: latestGY, // Y軸G値も送信
+                g_x: latestGX,
+                g_y: latestGY,
                 event: currentEvent
-            })
+                // timestamp はサーバー側で生成されるため不要
+            }),
+        })
+        .then(response => {
+            if (!response.ok) {
+                return response.json().then(errorData => {
+                    throw new Error(errorData.message || 'GPSログ送信エラー');
+                });
+            }
+            return response.json();
+        })
+        .then(data => {
+            // console.log("GPS log sent to server successfully:", data);
+        })
+        .catch(error => {
+            console.error("Error sending GPS log to server:", error);
         });
 
         // 次の計算のために現在の値を保存

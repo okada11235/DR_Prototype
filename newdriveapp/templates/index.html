@@ -49,7 +49,31 @@
     <div id="map"></div>
   </div>
 
-  <script src="{{ url_for('static', filename='script.js') }}"></script>
+  
   <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBUyc6mj-SEOP8lopM2laEywMILL8qknvo&callback=initMap" async defer></script>
+  <script src="https://www.gstatic.com/firebasejs/10.x.x/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.x.x/firebase-firestore-compat.js"></script>
+  <script>
+    // ここに、Firebaseプロジェクト設定でコピーした firebaseConfig オブジェクトを貼り付けます
+    const firebaseConfig = {
+      apiKey: "AIzaSyCEuouICKd32x3-4y5QzA_2ovq8pydvez4",
+      authDomain: "drive-prototype-32ef0.firebaseapp.com",
+      projectId: "drive-prototype-32ef0",
+      storageBucket: "drive-prototype-32ef0.firebasestorage.app",
+      messagingSenderId: "500916744769",
+      appId: "1:500916744769:web:d5a529ef05d15bb2934cc0",
+      measurementId: "G-9CH5CGYCFM"
+    };
+
+    // Firebaseを初期化
+    firebase.initializeApp(firebaseConfig);
+
+    // Initialize Cloud Firestore and get a reference to the service
+    var db = firebase.firestore(); // ★★★ これが script.js で参照される 'db' 変数です ★★★
+
+    // Firestoreサービスへの参照を取得
+    const auth = firebase.auth();
+  </script>
+  <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>
