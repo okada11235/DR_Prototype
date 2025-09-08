@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="ja">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -14,47 +15,60 @@
     }
   </style>
 </head>
+
 <body>
   <div class="container">
     <h1>運転記録アプリ</h1>
 
-    <div>
-      <button onclick="startSession()">記録開始</button>
-      <button onclick="endSession()">記録終了</button>
+    <label for="orientation">スマホの設置向き:</label>
+    <select id="orientation">
+      <option value="default">縦置き・画面は運転者側</option>
+      <option value="default_right">縦置き（画面は車の右側を向く）</option>
+      <option value="default_left">縦置き（画面は車の左側を向く）</option>
+      <option value="landscape_left">横置き（画面は運転者側・左側面が上）</option>
+      <option value="landscape_right">横置き（画面は運転者側・右側面が上）</option>
+      <option value="camera_screen_left">横置き（上辺が進行方向・画面は車の左側を向く）</option>
+      <option value="camera_screen_right">横置き（上辺が進行方向・画面は車の右側を向く）</option>
+      <option value="upside_down">逆さま</option>
+      <option value="flat_screen_down">水平置き（上辺が進行方向・画面下向き）</option>
+      <option value="flat_screen_up">水平置き（上辺が進行方向・画面上向き）</option>
+      <option value="flat_screen_down_top_front">水平置き（上辺が進行方向と逆・画面下向き）</option>
+      <option value="flat_screen_up_top_front">水平置き（上辺が進行方向と逆・画面上向き）</option>
+    </select>
+
+    <div id="button-container">
+      <button id="start-button" onclick="startSession()">記録開始</button>
+      <button id="end-button" onclick="endSession()" style="display: none;">記録終了</button>
     </div>
 
     <div style="margin-top: 20px;">
-        <a href="{{ url_for('sessions') }}">記録を見る</a>
+      <a href="{{ url_for('sessions') }}">記録を見る</a>
     </div>
 
-
     <div id="metrics">
-      <p>急ブレーキ: <span id="brake-count">0</span></p>
-      <p>急発進: <span id="accel-count">0</span></p>
-      <p>急カーブ: <span id="turn-count">0</span></p>
-      <p>法定速度超過: <span id="violation-count">0</span></p>
+      <p>急ブレーキ🔴： <span id="brake-count">0</span></p>
+      <p>急発進🟢： <span id="accel-count">0</span></p>
+      <p>急カーブ🟡： <span id="turn-count">0</span></p>
     </div>
 
     <div>
       <p>速度: <span id="speed" class="normal-speed">0</span> km/h</p>
-      <p>制限速度: <span id="speed_limit">取得中...</span> km/h</p>
-      <p>記録時間: <span id="timer">00:00</span></p>
-      <p>現在位置: <span id="position">---</span></p>
-      <p>横G (X): <span id="g-x">0.00</span></p>
-      <p>縦G (Y): <span id="g-y">0.00</span></p>
-      <p>上下G (Z): <span id="g-z">0.00</span></p>
-      <p>セッションID: <span id="session_id">未開始</span></p>
+      <p>記録時間：<span id="timer">00:00</span></p>
+      <p>現在位置：<span id="position">---</span></p>
+      <p>横G (X)：<span id="g-x">0.00</span></p>
+      <p>上下G (Y)：<span id="g-y">0.00</span></p>
+      <p>前後G (Z)：<span id="g-z">0.00</span></p>
+      <p>セッションID：<span id="session_id">未開始</span></p>
     </div>
 
     <div id="map"></div>
   </div>
 
-  
-  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBUyc6mj-SEOP8lopM2laEywMILL8qknvo&callback=initMap" async defer></script>
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBUyc6mj-SEOP8lopM2laEywMILL8qknvo&callback=initMap"
+    async defer></script>
   <script src="https://www.gstatic.com/firebasejs/10.x.x/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.x.x/firebase-firestore-compat.js"></script>
   <script>
-    // ここに、Firebaseプロジェクト設定でコピーした firebaseConfig オブジェクトを貼り付けます
     const firebaseConfig = {
       apiKey: "AIzaSyCEuouICKd32x3-4y5QzA_2ovq8pydvez4",
       authDomain: "drive-prototype-32ef0.firebaseapp.com",
@@ -64,16 +78,11 @@
       appId: "1:500916744769:web:d5a529ef05d15bb2934cc0",
       measurementId: "G-9CH5CGYCFM"
     };
-
-    // Firebaseを初期化
     firebase.initializeApp(firebaseConfig);
-
-    // Initialize Cloud Firestore and get a reference to the service
-    var db = firebase.firestore(); // ★★★ これが script.js で参照される 'db' 変数です ★★★
-
-    // Firestoreサービスへの参照を取得
+    var db = firebase.firestore();
     const auth = firebase.auth();
   </script>
   <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
+
 </html>

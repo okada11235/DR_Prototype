@@ -1,4 +1,5 @@
 // script.js - 完全修正版 + 走行中にイベントマーカーを地図上に表示
+// 法定速度の検査と取得に関する部分を削除
 
 let sessionId = null;
 let timerInterval = null;
@@ -9,19 +10,69 @@ let map, polyline, path = [];
 let suddenBrakes = 0;
 let suddenAccels = 0;
 let sharpTurns = 0;
-let speedViolations = 0;
+let speedViolations = 0; // 法定速度チェックがなくなるため、このカウンターは使われなくなるが、残しておく
+
+// ★★★ 判定閾値とクールダウン期間の定数化 ★★★
+const COOLDOWN_MS = 2000; // イベント発生後のクールダウン期間（ミリ秒）
+
+// 急発進・急ブレーキのG値閾値 (GPS計算G値とデバイスG値の両方に適用)
+const ACCEL_BRAKE_G_THRESHOLD = 0.3;
+
+// 急カーブのG値閾値 (デバイスの横Gに適用)
+const SHARP_TURN_G_THRESHOLD = 0.4;
 
 let lastBrakeTime = 0;
 let lastAccelTime = 0;
 let lastTurnTime = 0;
 let lastSpeedViolationTime = 0;
-const cooldownMs = 3000;
 
 let latestGX = 0; // 加速度センサーからの最新のX軸G値
 let latestGY = 0; // 加速度センサーからの最新のY軸G値
+let latestGZ = 0; // 加速度センサーからの最新のZ軸G値
 
 // 現在位置を示すマーカーをグローバルで管理
 let currentPositionMarker = null;
+let eventMarkers = []; // イベントマーカーを管理する配列
+
+let orientationMode = "default";
+
+// 選択した向きを保持
+document.getElementById("orientation").addEventListener("change", (e) => {
+    orientationMode = e.target.value;
+    console.log("選択された設置向き:", orientationMode);
+});
+
+// センサー値を補正
+function adjustOrientation(ax, ay, az) {
+    switch (orientationMode) {
+        case "default": // 縦置き・画面は運転者側
+            return { forward: -az, side: ax, up: -ay };
+        case "default_right": // 縦置き（画面は車の右側を向く）
+            return { forward: ax, side: az, up: -ay };
+        case "default_left": // 縦置き（画面は車の左側を向く）
+            return { forward: -ax, side: -az, up: -ay };
+        case "landscape_left": // 横置き（画面は運転者側・左側面が上）
+            return { forward: -az, side: ay, up: -ax };
+        case "landscape_right": // 横置き（画面は運転者側・右側面が上）
+            return { forward: -az, side: -ay, up: ax };
+        case "camera_screen_left": // 横置き（上辺が進行方向・画面は車の左側を向く）
+            return { forward: ay, side: -az, up: ax };
+        case "camera_screen_right": // 横置き（上辺が進行方向・画面は車の右側を向く）
+            return { forward: ay, side: az, up: -ax };
+        case "upside_down": // 逆さま
+            return { forward: -az, side: -ax, up: ay };
+        case "flat_screen_down": // 水平置き（上辺が進行方向・画面下向き）
+            return { forward: ay, side: ax, up: -az };
+        case "flat_screen_up": // 水平置き（上辺が進行方向・画面上向き）
+            return { forward: ay, side: ax, up: az };
+        case "flat_screen_down_top_front": // 水平置き（上辺が進行方向と逆・画面下向き）
+            return { forward: -ay, side: -ax, up: -az };
+        case "flat_screen_up_top_front": // 水平置き（上辺が進行方向と逆・画面上向き）
+            return { forward: -ay, side: -ax, up: az };
+        default:
+            return { forward: -az, side: ax, up: -ay };
+    }
+}
 
 // (既存の startSession 関数)
 function startSession() {
@@ -29,31 +80,39 @@ function startSession() {
     requestMotionPermission(() => {
         console.log('Motion permission granted');
         startMotionDetection();
-        // サーバー側でセッションIDを生成し、そのIDをFirestoreのドキュメントIDとして使用
         fetch('/start', { method: 'POST' })
             .then(res => {
-                if (!res.ok) { // サーバーからのエラーレスポンスをチェック
+                if (!res.ok) {
                     return res.json().then(err => { throw new Error(err.message || 'サーバーエラー'); });
                 }
                 return res.json();
             })
             .then(data => {
                 if (data.session_id) {
-                    sessionId = data.session_id; // サーバーからセッションIDを取得
+                    sessionId = data.session_id;
                     document.getElementById('session_id').textContent = sessionId;
                     startTime = Date.now();
                     startTimer();
                     initMap();
                     watchPosition();
+                    const speedLimitSpan = document.getElementById('speed_limit');
+                    if (speedLimitSpan) {
+                        speedLimitSpan.textContent = '－';
+                    }
                     resetCounters();
                     alert('記録を開始しました');
+
+                    // ★★★ 修正箇所: 開始ボタンを非表示にし、終了ボタンを表示 ★★★
+                    document.getElementById('start-button').style.display = 'none';
+                    document.getElementById('end-button').style.display = 'block';
+
                 } else {
                     throw new Error('サーバーからのセッションIDが不正です。');
                 }
             })
             .catch(err => {
                 console.error('Error during /start fetch or response handling:', err);
-                alert('記録開始時にエラーが発生しました: ' + err.message); // エラーメッセージを詳細化
+                alert('記録開始時にエラーが発生しました: ' + err.message);
             });
     });
 }
@@ -76,7 +135,6 @@ function endSession() {
 
     const distance = calculateDistance(path);
 
-    // ★ここを修正します: /end エンドポイントにデータをPOSTで送信する
     fetch('/end', {
         method: 'POST',
         headers: {
@@ -89,50 +147,48 @@ function endSession() {
             sudden_brakes: suddenBrakes,
             sharp_turns: sharpTurns,
             speed_violations: speedViolations,
-            // stabilityは現在JSで計算されていないが、必要なら追加
-            // stability: 0.0 // 例: デフォルト値
         }),
     })
-    .then(response => {
-        // サーバーからのHTTPステータスが200番台以外ならエラーとして処理
-        if (!response.ok) {
-            return response.json().then(errorData => {
-                // サーバーからエラーメッセージがあればそれを使う
-                throw new Error(errorData.message || '記録終了時にサーバーエラーが発生しました');
-            });
-        }
-        return response.json(); // 成功レスポンスをJSONとしてパース
-    })
-    .then(data => {
-        // サーバーからのレスポンスが成功を示しているか確認
-        if (data.status === 'ok') {
-            alert('記録を終了しました');
-            sessionId = null;
-            document.getElementById('session_id').textContent = '未開始';
-            document.getElementById('speed').textContent = '0';
-            document.getElementById('timer').textContent = '00:00';
+        .then(response => {
+            if (!response.ok) {
+                return response.json().then(errorData => {
+                    throw new Error(errorData.message || '記録終了時にサーバーエラーが発生しました');
+                });
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.status === 'ok') {
+                alert('記録を終了しました');
+                sessionId = null;
+                document.getElementById('session_id').textContent = '未開始';
+                document.getElementById('speed').textContent = '0';
+                document.getElementById('timer').textContent = '00:00';
+                resetCounters();
+                if (polyline) polyline.setPath([]);
+                if (currentPositionMarker) currentPositionMarker.setMap(null);
+                path = [];
+                eventMarkers.forEach(marker => marker.setMap(null));
+                eventMarkers = [];
+                const speedLimitSpan = document.getElementById('speed_limit');
+                if (speedLimitSpan) {
+                    speedLimitSpan.textContent = '－';
+                }
 
-            // UIリセットとカウンターリセット
-            resetCounters(); 
-            if (polyline) polyline.setPath([]);
-            if (currentPositionMarker) currentPositionMarker.setMap(null); // 現在位置マーカーはクリア
-            path = []; // パスもリセット
+                // ★★★ 修正箇所: 終了ボタンを非表示にし、開始ボタンを表示 ★★★
+                document.getElementById('start-button').style.display = 'block';
+                document.getElementById('end-button').style.display = 'none';
 
-            // ★ここに追加します: イベントマーカーを全て削除
-            eventMarkers.forEach(marker => marker.setMap(null));
-            eventMarkers = []; // 配列もリセット
-
-        } else {
-            // サーバーから 'status: error' が返された場合
-            alert('記録終了に失敗しました: ' + (data.message || '不明なエラー'));
-        }
-    })
-    .catch(error => {
-        // ネットワークエラーやJSONパースエラーなど
-        console.error('記録終了中にエラーが発生しました:', error);
-        alert('記録終了中にネットワークまたは処理エラーが発生しました: ' + error.message);
-    });
+            } else {
+                alert('記録終了に失敗しました: ' + (data.message || '不明なエラー'));
+            }
+        })
+        .catch(error => {
+            console.error('記録終了中にエラーが発生しました:', error);
+            alert('記録終了中にネットワークまたは処理エラーが発生しました: ' + error.message);
+        });
 }
+
 
 function requestMotionPermission(callback) {
     if (typeof DeviceMotionEvent !== 'undefined' &&
@@ -151,20 +207,21 @@ function requestMotionPermission(callback) {
 
 // DeviceMotionイベントハンドラを分離
 function handleDeviceMotion(event) {
-    // console.log("DeviceMotion event received:", event);
     const acc = event.acceleration || event.accelerationIncludingGravity;
-    if (!acc) {
-        // console.warn("Acceleration data is null or undefined."); 
-        return; // 加速度データがない場合は処理をスキップ
-    }
-    const x = acc.x || 0, y = acc.y || 0, z = acc.z || 0;
-    latestGX = x / 9.8;
-    latestGY = y / 9.8;
+    if (!acc) return;
+
+    const { forward, side, up } = adjustOrientation(acc.x || 0, acc.y || 0, acc.z || 0);
+
+    // forward（前後G）、side（横G）、up（上下G）
+    latestGZ = forward / 9.8; // 急加速・急ブレーキ用
+    latestGX = side / 9.8;    // 急カーブ用
+    latestGY = up / 9.8; 
 
     document.getElementById('g-x').textContent = latestGX.toFixed(2);
+    document.getElementById('g-z').textContent = latestGZ.toFixed(2);
     document.getElementById('g-y').textContent = latestGY.toFixed(2);
-    document.getElementById('g-z').textContent = (z/9.8).toFixed(2);
 }
+
 
 function startMotionDetection() {
     if (window.DeviceMotionEvent) {
@@ -180,7 +237,7 @@ function addEventMarker(lat, lng, type) {
         sudden_brake: 'red',
         sudden_accel: 'green',
         sharp_turn: 'orange',
-        speed_violation: 'purple'
+        // speed_violation: 'purple' // 法定速度チェックがなくなるため、このタイプは使われなくなる
     };
     const marker = new google.maps.Marker({ // marker 変数に格納
         position: { lat, lng },
@@ -197,8 +254,6 @@ function addEventMarker(lat, lng, type) {
     eventMarkers.push(marker); // 新しく作成したマーカーを配列に追加
 }
 
-let eventMarkers = []; 
-
 function initMap() {
     const mapDiv = document.getElementById('map');
     path = []; // 新しいセッションなのでパスを空にする
@@ -207,7 +262,7 @@ function initMap() {
     if (map) {
         polyline.setPath([]);
         if (currentPositionMarker) currentPositionMarker.setMap(null);
-        
+
         // 既存のイベントマーカーも全て削除
         eventMarkers.forEach(marker => marker.setMap(null));
         eventMarkers = []; // 配列もリセット
@@ -265,11 +320,11 @@ function resetCounters() {
     suddenBrakes = 0;
     suddenAccels = 0;
     sharpTurns = 0;
-    speedViolations = 0;
+    speedViolations = 0; // 使われなくなるが、リセットは残す
     document.getElementById('brake-count').textContent = '0';
     document.getElementById('accel-count').textContent = '0';
     document.getElementById('turn-count').textContent = '0';
-    document.getElementById('violation-count').textContent = '0';
+    //document.getElementById('violation-count').textContent = '0'; // 使われなくなるが、リセットは残す
 }
 
 function calculateDistance(path) {
@@ -288,37 +343,9 @@ function calculateDistance(path) {
     return dist;
 }
 
-const Maps_API_KEY = 'AIzaSyBUyc6mj-SEOP8lopM2laEywMILL8qknvo'; // ここに実際のAPIキーを設定
+// Maps_API_KEY と fetchSpeedLimit 関数を削除
 
-async function fetchSpeedLimit(lat, lng) {
-    try {
-        const snapResponse = await fetch(`https://roads.googleapis.com/v1/snapToRoads?path=${lat},${lng}&key=${Maps_API_KEY}`);
-        if (!snapResponse.ok) throw new Error(`SnapToRoads API エラー: ${snapResponse.statusText}`);
-        const snapData = await snapResponse.json();
-
-        if (!snapData.snappedPoints || snapData.snappedPoints.length === 0) {
-            return null;
-        }
-
-        const placeId = snapData.snappedPoints[0].placeId;
-
-        const speedLimitResponse = await fetch(`https://roads.googleapis.com/v1/speedLimits?placeId=${placeId}&key=${Maps_API_KEY}`);
-        if (!speedLimitResponse.ok) throw new Error(`SpeedLimits API エラー: ${speedLimitResponse.statusText}`);
-        const speedLimitData = await speedLimitResponse.json();
-
-        if (speedLimitData.speedLimits && speedLimitData.speedLimits.length > 0) {
-            const speedLimitKmh = speedLimitData.speedLimits[0].speedLimit;
-            return speedLimitKmh;
-        }
-        return null;
-    } catch (error) {
-        console.error('速度制限取得エラー:', error);
-        return null;
-    }
-}
-
-let prevSpeed = null, prevLatLng = null, prevTime = null; // prevPrevLatLngは不要になりました
-let lastSharpTurnTime = 0; // すでに定義済み
+let prevSpeed = null, prevLatLng = null, prevTime = null;
 
 function watchPosition() {
     watchId = navigator.geolocation.watchPosition(async position => {
@@ -337,7 +364,6 @@ function watchPosition() {
             currentPositionMarker.setPosition(currentLatLng);
             map.setCenter(currentLatLng);
         } else {
-            // マーカーがまだない場合は作成
             currentPositionMarker = new google.maps.Marker({
                 position: currentLatLng,
                 map: map,
@@ -348,35 +374,18 @@ function watchPosition() {
                     fillOpacity: 0.8,
                     strokeWeight: 1,
                     strokeColor: '#fff',
-                    rotation: 0 // 適切な回転角度を設定することも可能
+                    rotation: 0
                 }
             });
         }
-        
-        // ★イベントタイプを保持する変数。デフォルトは 'normal'
+
         let currentEvent = 'normal';
 
-        // 速度制限の取得と超過判定
-        const limit = await fetchSpeedLimit(lat, lng);
-        const speedLimitSpan = document.getElementById('speed_limit');
-        if (limit !== null) {
-            speedLimitSpan.textContent = limit;
-            if (speed > limit + 5 && now - lastSpeedViolationTime > cooldownMs) {
-                speedViolations++;
-                document.getElementById('violation-count').textContent = speedViolations;
-                lastSpeedViolationTime = now;
-                document.getElementById('speed').classList.add('over-speed');
-                addEventMarker(lat, lng, 'speed_violation');
-                currentEvent = 'speed_violation';
-            } else {
-                document.getElementById('speed').classList.remove('over-speed');
-            }
-        } else {
-            speedLimitSpan.textContent = '不明';
-            document.getElementById('speed').classList.remove('over-speed');
-        }
+        // 速度制限の取得と超過判定に関する部分を全て削除
+        // UIの速度表示からover-speedクラスを削除
+        document.getElementById('speed').classList.remove('over-speed');
 
-        // 急発進、急ブレーキの判定 (GPSの速度変化から)
+        // 急発進、急ブレーキの判定 (GPSの速度変化と加速度センサーのG値から)
         if (prevSpeed !== null && prevTime !== null) {
             const dt = (now - prevTime) / 1000; // 時間差（秒）
             if (dt > 0) {
@@ -384,38 +393,36 @@ function watchPosition() {
                 const gAccel = accel / 9.8; // G単位の加速度
 
                 // 急発進
-                // 加速度センサーのgYも考慮することで、より正確な縦方向のGを判定できる
-                if (gAccel > 0.3 && latestGY > 0.3 && now - lastAccelTime > cooldownMs) {
+                if (gAccel > ACCEL_BRAKE_G_THRESHOLD && latestGZ > ACCEL_BRAKE_G_THRESHOLD && now - lastAccelTime > COOLDOWN_MS) {
                     suddenAccels++;
                     document.getElementById('accel-count').textContent = suddenAccels;
                     lastAccelTime = now;
                     addEventMarker(lat, lng, 'sudden_accel');
-                    if (currentEvent === 'normal' || currentEvent === 'speed_violation') {
+                    // currentEvent の更新ロジックを簡略化（speed_violationがなくなったため）
+                    if (currentEvent === 'normal') {
                         currentEvent = 'sudden_accel';
                     }
                 }
                 // 急ブレーキ
-                // 加速度センサーのgYも考慮
-                if (gAccel < -0.3 && latestGY < -0.3 && now - lastBrakeTime > cooldownMs) {
+                if (gAccel < -ACCEL_BRAKE_G_THRESHOLD && latestGZ < -ACCEL_BRAKE_G_THRESHOLD && now - lastBrakeTime > COOLDOWN_MS) {
                     suddenBrakes++;
                     document.getElementById('brake-count').textContent = suddenBrakes;
                     lastBrakeTime = now;
                     addEventMarker(lat, lng, 'sudden_brake');
-                    if (currentEvent === 'normal' || currentEvent === 'speed_violation' || currentEvent === 'sudden_accel') {
+                    // currentEvent の更新ロジックを簡略化（speed_violationがなくなったため）
+                    if (currentEvent === 'normal' || currentEvent === 'sudden_accel') {
                         currentEvent = 'sudden_brake';
                     }
                 }
             }
         }
-        
+
         // 急カーブ判定 (加速度センサーの横Gと速度から)
-        // ある程度の速度が出ていて、かつ横Gが強い場合
-        if (Math.abs(latestGX) > 0.6 && speed > 5 && now - lastSharpTurnTime > cooldownMs) {
+        if (Math.abs(latestGX) > SHARP_TURN_G_THRESHOLD && speed > 15 && now - lastTurnTime > COOLDOWN_MS) {
             sharpTurns++;
             document.getElementById('turn-count').textContent = sharpTurns;
-            lastSharpTurnTime = now;
+            lastTurnTime = now;
             addEventMarker(lat, lng, 'sharp_turn');
-            // 急カーブは他のイベントより優先度が高いとして、現在のイベントを上書き
             currentEvent = 'sharp_turn';
         }
 
@@ -432,30 +439,30 @@ function watchPosition() {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                session_id: sessionId, // サーバーにセッションIDを渡す
+                session_id: sessionId,
                 latitude: lat,
                 longitude: lng,
                 speed: speed,
                 g_x: latestGX,
                 g_y: latestGY,
-                event: currentEvent
-                // timestamp はサーバー側で生成されるため不要
+                g_z: latestGZ,
+                event: currentEvent // イベントタイプは送信を継続
             }),
         })
-        .then(response => {
-            if (!response.ok) {
-                return response.json().then(errorData => {
-                    throw new Error(errorData.message || 'GPSログ送信エラー');
-                });
-            }
-            return response.json();
-        })
-        .then(data => {
-            // console.log("GPS log sent to server successfully:", data);
-        })
-        .catch(error => {
-            console.error("Error sending GPS log to server:", error);
-        });
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(errorData => {
+                        throw new Error(errorData.message || 'GPSログ送信エラー');
+                    });
+                }
+                return response.json();
+            })
+            .then(data => {
+                // console.log("GPS log sent to server successfully:", data);
+            })
+            .catch(error => {
+                console.error("Error sending GPS log to server:", error);
+            });
 
         // 次の計算のために現在の値を保存
         prevLatLng = currentLatLng;
