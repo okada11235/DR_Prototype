@@ -20,22 +20,6 @@
   <div class="container">
     <h1>運転記録アプリ</h1>
 
-    <label for="orientation">スマホの設置向き:</label>
-    <select id="orientation">
-      <option value="default">縦置き・画面は運転者側</option>
-      <option value="default_right">縦置き（画面は車の右側を向く）</option>
-      <option value="default_left">縦置き（画面は車の左側を向く）</option>
-      <option value="landscape_left">横置き（画面は運転者側・左側面が上）</option>
-      <option value="landscape_right">横置き（画面は運転者側・右側面が上）</option>
-      <option value="camera_screen_left">横置き（上辺が進行方向・画面は車の左側を向く）</option>
-      <option value="camera_screen_right">横置き（上辺が進行方向・画面は車の右側を向く）</option>
-      <option value="upside_down">逆さま</option>
-      <option value="flat_screen_down">水平置き（上辺が進行方向・画面下向き）</option>
-      <option value="flat_screen_up">水平置き（上辺が進行方向・画面上向き）</option>
-      <option value="flat_screen_down_top_front">水平置き（上辺が進行方向と逆・画面下向き）</option>
-      <option value="flat_screen_up_top_front">水平置き（上辺が進行方向と逆・画面上向き）</option>
-    </select>
-
     <div id="button-container">
       <button id="start-button" onclick="startSession()">記録開始</button>
       <button id="end-button" onclick="endSession()" style="display: none;">記録終了</button>

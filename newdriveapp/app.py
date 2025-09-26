@@ -4,6 +4,7 @@ import os
 from flask import Flask, render_template, request, redirect, url_for, jsonify, flash
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from datetime import datetime
+import zoneinfo
 import json
 import uuid
 
@@ -13,6 +14,8 @@ from flask_bcrypt import Bcrypt
 
 from google.cloud.firestore_v1.base_query import FieldFilter
 from dotenv import load_dotenv  # ← 追加
+
+JST = zoneinfo.ZoneInfo("Asia/Tokyo")
 
 # --- 環境変数をロード ---
 load_dotenv()
@@ -32,7 +35,7 @@ login_manager = LoginManager(app)
 login_manager.login_view = 'login'
 bcrypt = Bcrypt(app)
 
-# Flask-LoginのUserMixinを使用しつつ、データはFirestoreから取得するように変更
+# Flask-LoginのUserMixinを使用
 class User(UserMixin):
     def __init__(self, uid, username):
         self.id = uid
@@ -50,6 +53,7 @@ class User(UserMixin):
 def load_user(user_id):
     return User.get(user_id)
 
+# --- ユーザー登録 ---
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
@@ -84,12 +88,13 @@ def register():
             flash('登録成功。ログインしてください')
             return redirect(url_for('login'))
         except Exception as e:
-            print(f"Error creating user in Firebase Auth or Firestore: {e}")
+            print(f"Error creating user: {e}")
             flash('ユーザー登録に失敗しました。' + str(e))
             return redirect(url_for('register'))
 
     return render_template('register.html')
 
+# --- ログイン ---
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -134,6 +139,7 @@ def logout():
 def index():
     return render_template('index.html')
 
+# --- セッション開始 ---
 @app.route('/start', methods=['POST'])
 @login_required
 def start():
@@ -142,13 +148,14 @@ def start():
             'user_id': current_user.id,
             'start_time': firestore.SERVER_TIMESTAMP,
             'status': 'active',
-            'reflection': '' # 新しくreflectionフィールドを追加
+            'reflection': ''
         })
         return jsonify({'session_id': doc_ref[1].id})
     except Exception as e:
         print(f"Error starting session: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+# --- セッション終了 ---
 @app.route('/end', methods=['POST'])
 @login_required
 def end():
@@ -182,22 +189,18 @@ def end():
         print(f"DB update error: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+# --- GPSログ（単発：既存） ---
 @app.route('/log_gps', methods=['POST'])
 @login_required
 def log_gps():
     data = request.get_json()
-    print(f"Received GPS log data: {data}")
-
     session_id = data.get('session_id')
     if not session_id:
-        print("Error: session_id missing in GPS log data.")
         return jsonify({'status': 'error', 'message': 'Missing session_id'}), 400
 
     session_ref = db.collection('sessions').document(session_id)
     session_doc = session_ref.get()
-
     if not session_doc.exists or session_doc.to_dict().get('user_id') != current_user.id:
-        print(f"Permission denied or session not found for session_id: {session_id}")
         return jsonify({'status': 'error', 'message': 'Permission denied or session not found'}), 403
 
     try:
@@ -211,16 +214,100 @@ def log_gps():
             'event': data.get('event', 'normal'),
             'timestamp': firestore.SERVER_TIMESTAMP
         })
-        print(f"Successfully added GPS log for session {session_id}.")
         return jsonify({'status': 'ok'})
     except Exception as e:
-        print(f"Error logging GPS for session {session_id}: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+# --- GPSログ（まとめ保存：新規追加） ---
+@app.route('/log_gps_bulk', methods=['POST'])
+@login_required
+def log_gps_bulk():
+    data = request.get_json()
+    print("Received GPS logs:", data)
+    session_id = data.get('session_id')
+    gps_logs = data.get('gps_logs', [])
+
+    if not session_id:
+        return jsonify({'status': 'error', 'message': 'Missing session_id'}), 400
+
+    session_ref = db.collection('sessions').document(session_id)
+    session_doc = session_ref.get()
+    if not session_doc.exists or session_doc.to_dict().get('user_id') != current_user.id:
+        return jsonify({'status': 'error', 'message': 'Permission denied or session not found'}), 403
+
+    try:
+        batch = db.batch()
+        gps_collection = session_ref.collection('gps_logs')
+        for log in gps_logs:
+            ts_ms = log.get('timestamp')  # ← 端末から送られてきたUNIX時間（ミリ秒）
+            if ts_ms:
+                ts_dt = datetime.fromtimestamp(ts_ms / 1000.0, JST)
+            else:
+                ts_dt = datetime.now(JST)
+
+            doc_ref = gps_collection.document()
+            batch.set(doc_ref, {
+                'latitude': log.get('latitude', 0.0),
+                'longitude': log.get('longitude', 0.0),
+                'speed': log.get('speed', 0.0),
+                'g_x': log.get('g_x', 0.0),
+                'g_y': log.get('g_y', 0.0),
+                'g_z': log.get('g_z', 0.0),
+                'event': log.get('event', 'normal'),
+                'timestamp': ts_dt,       # Firestore標準のTimestamp型
+                'timestamp_ms': ts_ms     # ← スマホ内部のミリ秒値をそのまま保存
+            })
+        batch.commit()
+        return jsonify({'status': 'ok'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+# --- Gログ一括保存（既存） ---
+@app.route('/log_g_only', methods=['POST'])
+@login_required
+def log_g_only():
+    data = request.get_json()
+    print("Received G logs:", data)
+    session_id = data.get('session_id')
+    g_logs = data.get('g_logs', [])
+
+    if not session_id:
+        return jsonify({'status': 'error', 'message': 'Missing session_id'}), 400
+
+    session_ref = db.collection('sessions').document(session_id)
+    session_doc = session_ref.get()
+    if not session_doc.exists or session_doc.to_dict().get('user_id') != current_user.id:
+        return jsonify({'status': 'error', 'message': 'Permission denied or session not found'}), 403
+
+    try:
+        batch = db.batch()
+        g_collection = session_ref.collection('g_logs')
+        for log in g_logs:
+            ts_ms = log.get('timestamp')
+            if ts_ms:
+                ts_dt = datetime.fromtimestamp(ts_ms / 1000.0, JST)
+            else:
+                ts_dt = datetime.now(JST)
+
+            doc_ref = g_collection.document()
+            batch.set(doc_ref, {
+                'g_x': log.get('g_x', 0.0),
+                'g_y': log.get('g_y', 0.0),
+                'g_z': log.get('g_z', 0.0),
+                'timestamp': ts_dt,       # Firestore標準のTimestamp型
+                'timestamp_ms': ts_ms     # ← スマホ内部のミリ秒値をそのまま保存
+            })
+        batch.commit()
+        return jsonify({'status': 'ok'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+# --- 以下はログ取得・セッション一覧・反省文保存など既存処理（省略せず残す） ---
 def get_gps_logs_for_session(session_id):
     logs_ref = db.collection('sessions').document(session_id).collection('gps_logs')
     logs = logs_ref.order_by('timestamp').stream()
-
     result = []
     for log_doc in logs:
         log_data = log_doc.to_dict()
@@ -237,6 +324,20 @@ def get_gps_logs_for_session(session_id):
             })
     return result
 
+def get_g_logs_for_session(session_id):
+    logs_ref = db.collection('sessions').document(session_id).collection('g_logs')
+    logs = logs_ref.order_by('timestamp').stream()
+    result = []
+    for log_doc in logs:
+        log_data = log_doc.to_dict()
+        result.append({
+            "timestamp": log_data['timestamp'].timestamp() * 1000 if log_data.get('timestamp') else 0,
+            "g_x": log_data.get('g_x', 0.0),
+            "g_y": log_data.get('g_y', 0.0),
+            "g_z": log_data.get('g_z', 0.0)
+        })
+    return result
+
 @app.route('/sessions')
 @login_required
 def sessions():
@@ -251,25 +352,22 @@ def sessions():
     for session_doc in sessions_query_result:
         data = session_doc.to_dict()
         data['id'] = session_doc.id
-
-        # reflectionフィールドがなければ空文字列を設定
         data['reflection'] = data.get('reflection', '')
 
         data['gps_logs'] = get_gps_logs_for_session(session_doc.id)
+        data['g_logs'] = get_g_logs_for_session(session_doc.id)
 
         if 'start_time' in data and data['start_time']:
             data['start_time'] = data['start_time'].astimezone(datetime.utcnow().tzinfo)
         if 'end_time' in data and data['end_time']:
             data['end_time'] = data['end_time'].astimezone(datetime.utcnow().tzinfo)
 
-        # 🔽 distance が Firestore に保存されていて None じゃないデータだけ追加
         if data.get('distance') is not None:
             sessions_list.append(data)
 
     return render_template('sessions.html', sessions=sessions_list)
 
-
-# ★反省文を保存する新しいルート
+# 反省文保存
 @app.route('/save_reflection', methods=['POST'])
 @login_required
 def save_reflection():
@@ -282,17 +380,13 @@ def save_reflection():
 
     session_ref = db.collection('sessions').document(session_id)
     session_doc = session_ref.get()
-
     if not session_doc.exists or session_doc.to_dict().get('user_id') != current_user.id:
         return jsonify({'status': 'error', 'message': 'Permission denied'}), 403
 
     try:
-        session_ref.update({
-            'reflection': reflection_text
-        })
+        session_ref.update({'reflection': reflection_text})
         return jsonify({'status': 'ok', 'message': '反省文が保存されました'})
     except Exception as e:
-        print(f"Error saving reflection: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/session_gforce')
@@ -308,7 +402,6 @@ def session_gforce():
         return redirect(url_for('sessions'))
 
     gps_logs = get_gps_logs_for_session(session_id)
-
     return render_template('session_gforce.html', session_id=session_id, gps_logs=gps_logs)
 
 @app.route('/delete_session/<string:sid>', methods=['POST'])
@@ -316,14 +409,12 @@ def session_gforce():
 def delete_session(sid):
     session_ref = db.collection('sessions').document(sid)
     session_doc = session_ref.get()
-
     if not session_doc.exists or session_doc.to_dict().get('user_id') != current_user.id:
         flash('削除権限がありません')
         return redirect(url_for('sessions'))
 
     try:
         logs_ref = session_ref.collection('gps_logs')
-
         batch = db.batch()
         for log_doc in logs_ref.stream():
             batch.delete(log_doc.reference)
