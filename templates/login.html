@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8" />
+    <title>ログイン</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+<div class="container">
+    <h1>ログイン</h1>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+      <ul class="flash-messages">
+          {% for message in messages %}
+          <li>{{ message }}</li>
+          {% endfor %}
+      </ul>
+      {% endif %}
+    {% endwith %}
+
+    <form method="POST" action="{{ url_for('auth.login') }}">
+        <label>ユーザー名</label>
+        <input type="text" name="username" required />
+        <label>パスワード</label>
+        <input type="password" name="password" required />
+        <button type="submit">ログイン</button>
+    </form>
+
+    <p>アカウントをお持ちでない方は
+        <a href="{{ url_for('auth.register') }}">こちら</a>
+    </p>
+</div>
+</body>
+</html>

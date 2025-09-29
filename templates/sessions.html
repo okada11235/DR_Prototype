@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>セッション履歴 - DriveLogger</title>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='sessions.css') }}" rel="stylesheet">
+</head>
+
+<body>
+    <div class="container">
+        <a href="{{ url_for('auth.logout') }}" class="logout-link">ログアウト</a>
+        <div style="text-align: center; margin-top: 30px;">
+            <a href="{{ url_for('views.index') }}" class="btn btn-custom">メインページに戻る</a>
+        </div>
+        <br>
+        <h1>セッション履歴</h1>
+
+        {% with messages = get_flashed_messages() %}
+        {% if messages %}
+        <div class="alert alert-info">
+            {{ messages[0] }}
+        </div>
+        {% endif %}
+        {% endwith %}
+
+        {% if not sessions %}
+        <div class="no-sessions">
+            <p>まだ記録されたセッションがありません。</p>
+            <p>メインページに戻って記録を開始してください。</p>
+            <a href="{{ url_for('views.index') }}" class="btn btn-custom">メインページに戻る</a>
+        </div>
+        {% else %}
+        {% for session in sessions %}
+        <div class="session-card">
+            <h3>
+                セッションID: {{ session.id }}
+                <span>開始時刻: {{ session.start_time.strftime('%Y/%m/%d %H:%M:%S') if session.start_time else 'N/A'
+                    }}</span>
+            </h3>
+            <div class="session-details">
+                <p><strong>終了時刻：</strong> {{ session.end_time.strftime('%Y/%m/%d %H:%M:%S') if session.end_time else
+                    'N/A' }}</p>
+                <p><strong>走行距離：</strong> {{ "%.2f"|format(session.distance) }} km</p>
+                <p><strong>急ブレーキ🔴回数：</strong> {{ session.sudden_brakes if session.sudden_brakes is not none else 'N/A'
+                    }} 回</p>
+                <p><strong>急発進🟢回数：</strong> {{ session.sudden_accels if session.sudden_accels is not none else 'N/A' }}
+                    回</p>
+                <p><strong>急カーブ🟡回数：</strong> {{ session.sharp_turns if session.sharp_turns is not none else 'N/A' }} 回
+                </p>
+                <h4>G加速度＆速度グラフ</h4>
+                <div class="chart-container">
+                    <canvas id="gForceChart-{{ session.id }}"></canvas>
+                </div>
+                <div style="margin-top: 10px; text-align: center;">
+                    <button 
+                        onmousedown="startZoom('gForceChart-{{ session.id }}', 'in')" 
+                        onmouseup="stopZoom()" 
+                        onmouseleave="stopZoom()" 
+                        ontouchstart="startZoom('gForceChart-{{ session.id }}', 'in')" 
+                        ontouchend="stopZoom()">
+                        ＋ Zoom In
+                    </button>
+
+                    <button 
+                        onmousedown="startZoom('gForceChart-{{ session.id }}', 'out')" 
+                        onmouseup="stopZoom()" 
+                        onmouseleave="stopZoom()" 
+                        ontouchstart="startZoom('gForceChart-{{ session.id }}', 'out')" 
+                        ontouchend="stopZoom()">
+                        － Zoom Out
+                    </button>
+                    <button onclick="resetChartZoom('gForceChart-{{ session.id }}')">
+                        Reset
+                    </button>
+                </div>
+                <div style="margin-top: 10px; text-align: center;">
+                    <button id="panRight" 
+                        onmousedown="startPan('gForceChart-{{ session.id }}','right')" 
+                        onmouseup="stopPan()" 
+                        onmouseleave="stopPan()"
+                        ontouchstart="startPan('gForceChart-{{ session.id }}','right')" 
+                        ontouchend="stopPan()">
+                        ◀ 左へ
+                    </button>
+
+                    <button id="panLeft" 
+                        onmousedown="startPan('gForceChart-{{ session.id }}','left')" 
+                        onmouseup="stopPan()" 
+                        onmouseleave="stopPan()"
+                        ontouchstart="startPan('gForceChart-{{ session.id }}','left')" 
+                        ontouchend="stopPan()">
+                        右へ ▶
+                    </button>
+                </div>
+
+                <h4>走行ルートとイベント</h4>
+                <div class="map-container">
+                    <div id="map-{{ session.id }}" style="height: 100%; width: 100%;"></div>
+                </div>
+
+                <div class="reflection-section">
+                    <h4>反省文:</h4>
+                    <textarea id="reflection-{{ session.id }}" class="reflection-textarea" rows="4"
+                        placeholder="このセッションについて反省点を入力してください">{{ session.reflection }}</textarea>
+                    <button class="save-reflection-btn" data-session-id="{{ session.id }}">反省文を保存</button>
+                    <p id="save-status-{{ session.id }}" class="save-status"></p>
+                </div>
+                <form action="{{ url_for('views.delete_session', sid=session.id) }}" method="post"
+                    onsubmit="return confirm('本当にこのセッションを削除しますか？');">
+                    <button type="submit" class="btn btn-danger-custom">このセッションを削除</button>
+                </form>
+            </div>
+        </div>
+        {% endfor %}
+        {% endif %}
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1"></script>
+    <script>
+        if (Chart.registerables) Chart.register(...Chart.registerables);
+        Chart.register(window['chartjs-plugin-zoom']);
+    </script>
+    <script>
+        const SAVE_REFLECTION_URL = "{{ url_for('sessions.save_reflection') }}";
+    </script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const allButtons = document.querySelectorAll('.session-details button');
+            
+            allButtons.forEach(button => {
+                button.addEventListener('contextmenu', function(e) {
+                    e.preventDefault();
+                });
+            });
+        });
+
+        // イベントマーカーの色定義 (マップとグラフで共通利用)
+        const colorMap = {
+            normal: 'transparent', // 'normal'イベントはグラフ上で非表示に
+            sudden_brake: 'red',
+            sudden_accel: 'green',
+            sharp_turn: 'orange',
+            speed_violation: 'purple'
+        };
+
+        // Google Maps APIが完全に読み込まれた後に呼び出される関数
+        function initAllSessionMaps() {
+            console.log("Google Maps API loaded and initAllSessionMaps callback initiated.");
+
+            // 各セッションのデータをループ処理し、地図とグラフを初期化
+            {% for session in sessions %}
+            {% if session.gps_logs %}
+            const gpsLogs_{{ session.id }} = {{ session.gps_logs | tojson }};
+            const gLogs_{{ session.id }} = {{ session.g_logs | tojson }};
+
+            // G加速度グラフの描画
+            renderGForceChart('gForceChart-{{ session.id }}', gpsLogs_{{ session.id }}, gLogs_{{ session.id }});
+
+            // 地図の描画
+            initSessionMap('map-{{ session.id }}', gpsLogs_{{ session.id }});
+            {% else %}
+            console.log("GPSログがありません: Session ID {{ session.id }}");
+            // GPSログがない場合のメッセージを親要素に表示
+            // エラー表示箇所を修正：map-containerとchart-containerの直下に追加
+            const chartContainer = document.getElementById('gForceChart-{{ session.id }}').closest('.chart-container');
+            if (chartContainer) {
+                chartContainer.innerHTML = '<p style="text-align: center; margin-top: 20px;">このセッションにはGPSログがありません。</p>';
+            }
+            const mapContainer = document.getElementById('map-{{ session.id }}').closest('.map-container');
+            if (mapContainer) {
+                mapContainer.innerHTML = '<p style="text-align: center; margin-top: 20px;">このセッションにはGPSログがありません。</p>';
+            }
+            {% endif %}
+            {% endfor %}
+        }
+
+        const chartInstances = {};
+
+        function renderGForceChart(canvasId, gpsLogs, gLogs) {
+            // 両方の timestamp を統合してソート
+            const allTimestamps = Array.from(new Set([
+                ...gLogs.map(log => log.timestamp),
+                ...gpsLogs.map(log => log.timestamp)
+            ])).sort((a, b) => a - b);
+
+            // グラフのラベル（日本時間に変換）
+            const timestamps = allTimestamps.map(ts => new Date(ts).toLocaleTimeString('ja-JP'));
+
+            // データを allTimestamps に合わせて揃える
+            function alignData(logs, key) {
+                const map = new Map(logs.map(log => [log.timestamp, log[key]]));
+                return allTimestamps.map(ts => map.get(ts) ?? null);
+            }
+
+            const gxData = alignData(gLogs, "g_x");
+            const gyData = alignData(gLogs, "g_y");
+            const gzData = alignData(gLogs, "g_z");
+            const speedData = alignData(gpsLogs, "speed");
+
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            const chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: timestamps,
+                    datasets: [
+                        {
+                            label: '前後G',
+                            data: gzData,
+                            borderColor: '#00bcd4',
+                            backgroundColor: 'rgba(0,188,212,0.2)',
+                            borderWidth: 2,
+                            yAxisID: 'y',
+                            fill: false,
+                            tension: 0,
+                            spanGaps: true
+                        },
+                        {
+                            label: '上下G',
+                            data: gyData,
+                            borderColor: '#666',
+                            backgroundColor: 'rgba(102,102,102,0.2)',
+                            borderWidth: 2,
+                            yAxisID: 'y',
+                            fill: false,
+                            tension: 0,
+                            spanGaps: true
+                        },
+                        {
+                            label: '左右G',
+                            data: gxData,
+                            borderColor: '#9c27b0',
+                            backgroundColor: 'rgba(156,39,176,0.2)',
+                            borderWidth: 2,
+                            yAxisID: 'y',
+                            fill: false,
+                            tension: 0,
+                            spanGaps: true
+                        },
+                        {
+                            label: '速度 (km/h)',
+                            data: speedData,
+                            borderColor: 'rgba(255,99,132,0.7)',
+                            backgroundColor: 'rgba(255,99,132,0.1)',
+                            borderWidth: 1,
+                            yAxisID: 'y1',
+                            fill: false,
+                            tension: 0,
+                            spanGaps: true
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            position: 'left',
+                            title: { display: true, text: 'G (重力加速度)' }
+                        },
+                        y1: {
+                            position: 'right',
+                            title: { display: true, text: '速度 (km/h)' },
+                            grid: { drawOnChartArea: false },
+                            min: 0,
+                            max: 120
+                        }
+                    },
+                    plugins: {
+                        zoom: {
+                            pan: { enabled: true, mode: 'x' },
+                            zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' }
+                        }
+                    }
+                }
+            });
+            chartInstances[canvasId] = chart;
+        }
+
+        function initSessionMap(mapId, gpsLogs) {
+            if (gpsLogs.length === 0) {
+                return;
+            }
+
+            const path = gpsLogs.map(log => ({ lat: log.latitude, lng: log.longitude }));
+            const firstPoint = path[0];
+
+            if (typeof google === 'undefined' || typeof google.maps === 'undefined') {
+                console.error("Google Maps API is not loaded yet when initSessionMap is called for mapId:", mapId);
+                document.getElementById(mapId).innerHTML = '<p style="text-align: center; margin-top: 20px; color: red;">地図の読み込みに失敗しました。APIキーまたはネットワーク設定を確認してください。</p>';
+                return;
+            }
+
+            const map = new google.maps.Map(document.getElementById(mapId), {
+                zoom: 15,
+                center: firstPoint
+            });
+
+            const polyline = new google.maps.Polyline({
+                path: path,
+                geodesic: true,
+                strokeColor: '#007bff',
+                strokeOpacity: 1.0,
+                strokeWeight: 4,
+                map: map
+            });
+
+            // イベントマーカーの追加
+            gpsLogs.forEach(log => {
+                const position = { lat: log.latitude, lng: log.longitude };
+                let color = 'gray'; // デフォルト
+
+                switch (log.event) {
+                    case 'sudden_brake':
+                        color = 'red';
+                        break;
+                    case 'sudden_accel':
+                        color = 'green';
+                        break;
+                    case 'sharp_turn':
+                        color = 'orange';
+                        break;
+                    case 'speed_violation':
+                        color = 'purple';
+                        break;
+                    default:
+                        // normal イベントの場合はマーカーを表示しない
+                        return;
+                }
+
+                new google.maps.Marker({
+                    position: position,
+                    map: map,
+                    icon: {
+                        path: google.maps.SymbolPath.CIRCLE,
+                        scale: 6,
+                        fillColor: color,
+                        fillOpacity: 1,
+                        strokeWeight: 1,
+                        strokeColor: '#000'
+                    },
+                    title: log.event.replace('_', ' ') // マーカーにイベント名を表示
+                });
+            });
+        }
+
+        // ★jQueryの代わりに通常のJavaScriptで実装 (既存のjQueryはslim版のためajaxは使えない)
+        // jQueryを通常版に戻すか、Fetch APIを使用
+        // 今回はシンプルにFetch APIで記述します。
+
+        // Fetch APIでPOSTリクエストを送信する関数
+        function postData(url, data) {
+            return fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data),
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                });
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            // 各「反省文を保存」ボタンにイベントリスナーを設定
+            document.querySelectorAll('.save-reflection-btn').forEach(button => {
+                button.addEventListener('click', function () {
+                    const sessionId = this.dataset.sessionId;
+                    const textarea = document.getElementById(`reflection-${sessionId}`);
+                    const reflectionText = textarea.value;
+                    const statusElement = document.getElementById(`save-status-${sessionId}`);
+
+                    statusElement.textContent = '保存中...';
+                    statusElement.style.color = 'gray';
+
+                    postData(SAVE_REFLECTION_URL, {
+                        session_id: sessionId,
+                        reflection_text: reflectionText
+                    })
+                        .then(data => {
+                            if (data.status === 'ok') {
+                                statusElement.textContent = '保存しました！';
+                                statusElement.style.color = 'green';
+                            } else {
+                                statusElement.textContent = `保存に失敗しました: ${data.message}`;
+                                statusElement.style.color = 'red';
+                            }
+                        })
+                        .catch(error => {
+                            statusElement.textContent = `エラーが発生しました: ${error}`;
+                            statusElement.style.color = 'red';
+                            console.error("Fetch API error:", error);
+                        });
+                });
+            });
+        });
+    </script>
+    <script>
+        let zoomInterval;
+
+        function startZoom(canvasId, direction, factor = 1.05, speed = 150) {
+            const chart = chartInstances[canvasId];
+            if (!chart) return;
+
+            zoomInterval = setInterval(() => {
+                if (direction === 'in') {
+                    chart.zoom({ x: factor, y: 1 });
+                } else if (direction === 'out') {
+                    chart.zoom({ x: 1 / factor, y: 1 });
+                }
+            }, speed);
+        }
+
+        function stopZoom() {
+            clearInterval(zoomInterval);
+        }
+
+        let panInterval; // 繰り返し処理用
+
+        function startPan(canvasId, direction, distance = 50, speed = 100) {
+            const chart = chartInstances[canvasId];
+            if (!chart) return;
+
+            const delta = (direction === 'left') ? -distance : distance;
+
+            // 100msごとにパンを繰り返す
+            panInterval = setInterval(() => {
+                chart.pan({ x: delta, y: 0 });
+            }, speed);
+        }
+
+        function stopPan() {
+            clearInterval(panInterval);
+        }
+
+        function resetChartZoom(canvasId) {
+            const chart = chartInstances[canvasId];
+            if (chart) chart.resetZoom();
+        }
+    </script>
+    <script
+        src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBUyc6mj-SEOP8lopM2laEywMILL8qknvo&callback=initAllSessionMaps"></script>
+</body>
+
+</html>
