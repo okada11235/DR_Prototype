@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>運転記録アプリ</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  <style>
+    #map { width: 100%; height: 300px; margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>運転記録アプリ</h1>
+
+    <div id="button-container">
+      <button id="start-button" onclick="startSession()">記録開始</button>
+      <button id="end-button" onclick="endSession()" style="display:none;">記録終了</button>
+    </div>
+
+    <div style="margin-top:20px;">
+      <!-- ★ 修正箇所 -->
+      <a href="{{ url_for('views.sessions') }}">記録を見る</a>
+    </div>
+
+    <div id="metrics">
+      <p>急ブレーキ🔴： <span id="brake-count">0</span></p>
+      <p>急発進🟢： <span id="accel-count">0</span></p>
+      <p>急カーブ🟡： <span id="turn-count">0</span></p>
+    </div>
+
+    <div>
+      <p>速度: <span id="speed" class="normal-speed">0</span> km/h</p>
+      <p>記録時間：<span id="timer">00:00</span></p>
+      <p>現在位置：<span id="position">---</span></p>
+      <p>横G (X)：<span id="g-x">0.00</span></p>
+      <p>上下G (Y)：<span id="g-y">0.00</span></p>
+      <p>前後G (Z)：<span id="g-z">0.00</span></p>
+      <p>セッションID：<span id="session_id">未開始</span></p>
+    </div>
+
+    <div id="map"></div>
+  </div>
+
+  <!-- Google Maps: initMap は script.js で定義しておく -->
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBUyc6mj-SEOP8lopM2laEywMILL8qknvo&callback=initMap" async defer></script>
+
+  <!-- Firebase (固定バージョン推奨) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <!-- Auth を使うときだけ追加 -->
+  <!-- <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script> -->
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyCEuouICKd32x3-4y5QzA_2ovq8pydvez4",
+      authDomain: "drive-prototype-32ef0.firebaseapp.com",
+      projectId: "drive-prototype-32ef0",
+      storageBucket: "drive-prototype-32ef0.firebasestorage.app",
+      messagingSenderId: "500916744769",
+      appId: "1:500916744769:web:d5a529ef05d15bb2934cc0",
+      measurementId: "G-9CH5CGYCFM"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    // Auth を使わないなら以下は削除
+    // const auth = firebase.auth();
+  </script>
+
+  <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
