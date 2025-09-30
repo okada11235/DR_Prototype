@@ -1,6 +1,12 @@
 // script.js - 一括保存対応版 + 走行中にイベントマーカーを地図上に表示
 // 法定速度の検査と取得に関する部分を削除
 
+// === 基本テスト用ログ ===
+console.log('=== script.js LOADED ===');
+console.log('Current URL:', window.location.href);
+console.log('Current pathname:', window.location.pathname);
+console.log('Document ready state:', document.readyState);
+
 let sessionId = null;
 let timerInterval = null;
 let startTime = null;
@@ -38,6 +44,7 @@ let gLogBuffer = [];
 let gpsLogBuffer = [];
 
 let logFlushInterval = null; // 10秒ごとの送信タイマーID
+let isSessionStarting = false; // セッション開始リクエスト中フラグ
 
 // センサー値を補正
 let orientationMode = "auto"; 
@@ -99,38 +106,106 @@ function adjustOrientation(ax, ay, az) {
 
 // 記録開始
 function startSession() {
-    console.log('startSession called');
+    console.log('=== startSession function called ===');
+    console.log('Current sessionId:', sessionId);
+    console.log('isSessionStarting:', isSessionStarting);
+    
+    // 既にリクエスト中の場合は防止
+    if (isSessionStarting) {
+        console.warn('Session start already in progress');
+        alert('セッション開始処理中です。しばらくお待ちください。');
+        return;
+    }
+    
+    // 既にセッションが開始されている場合は防止
+    if (sessionId) {
+        console.warn('Session already started:', sessionId);
+        alert('既に記録が開始されています');
+        return;
+    }
+    
+    // LocalStorageから既存のアクティブセッションをチェック
+    const existingSessionId = localStorage.getItem('activeSessionId');
+    if (existingSessionId) {
+        console.warn('Active session found in localStorage:', existingSessionId);
+        const confirmResult = confirm('既にアクティブなセッションがあります。新しいセッションを開始しますか？');
+        if (!confirmResult) {
+            return;
+        }
+        // 既存セッションをクリア
+        localStorage.removeItem('activeSessionId');
+        localStorage.removeItem('sessionStartTime');
+    }
+    
+    // リクエスト中フラグを設定
+    isSessionStarting = true;
+    
+    // ボタンを無効化して重複クリックを防止
+    const startButton = document.getElementById('start-button');
+    if (startButton) {
+        startButton.disabled = true;
+        startButton.textContent = '開始中...';
+    }
+    
     requestMotionPermission(() => {
         console.log('Motion permission granted');
         startMotionDetection();
+        
+        console.log('Sending session start request...');
         fetch('/start', { method: 'POST' })
             .then(res => {
+                console.log('Session start response status:', res.status);
                 if (!res.ok) {
                     return res.json().then(err => { throw new Error(err.message || 'サーバーエラー'); });
                 }
                 return res.json();
             })
             .then(data => {
-                if (data.session_id) {
+                console.log('Session start response data:', data);
+                
+                // サーバーから既存のアクティブセッションが返された場合
+                if (data.status === 'warning' && data.session_id) {
+                    console.log('Using existing active session:', data.session_id);
+                    sessionId = data.session_id;
+                    startTime = Date.now(); // 現在時刻で開始（既存セッションの継続）
+                } else if (data.session_id) {
                     sessionId = data.session_id;
                     startTime = Date.now();
-                    
-                    // セッション情報をLocalStorageに保存
-                    localStorage.setItem('activeSessionId', sessionId);
-                    localStorage.setItem('sessionStartTime', startTime.toString());
-                    
-                    resetCounters();
-                    
-                    // 記録中画面に遷移
-                    window.location.href = '/recording/active';
-
+                    console.log('Session created successfully:', sessionId);
                 } else {
                     throw new Error('サーバーからのセッションIDが不正です。');
                 }
+                
+                // セッション情報をLocalStorageに保存
+                localStorage.setItem('activeSessionId', sessionId);
+                localStorage.setItem('sessionStartTime', startTime.toString());
+                
+                // バッファをクリアして新しいセッション用に準備
+                gLogBuffer = [];
+                gpsLogBuffer = [];
+                console.log('Cleared data buffers for new session');
+                console.log('SessionID now set to:', sessionId);
+                console.log('About to redirect to /recording/active');
+                
+                resetCounters();
+                
+                // 記録中画面に遷移
+                window.location.href = '/recording/active';
+
             })
             .catch(err => {
                 console.error('Error during /start fetch or response handling:', err);
                 alert('記録開始時にエラーが発生しました: ' + err.message);
+                
+                // ボタンを復活
+                if (startButton) {
+                    startButton.disabled = false;
+                    startButton.textContent = '記録開始';
+                }
+            })
+            .finally(() => {
+                // リクエスト中フラグをリセット
+                isSessionStarting = false;
             });
     });
 }
@@ -206,7 +281,12 @@ function endSession(showAlert = true) {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ session_id: sessionId, gps_logs: gpsLogBuffer })
-                    }).finally(() => { gpsLogBuffer = []; })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        console.log(`Final GPS logs save for session ${sessionId}:`, data);
+                    })
+                    .finally(() => { gpsLogBuffer = []; })
                     : Promise.resolve()
             ]);
             flushLogs.finally(() => {
@@ -295,7 +375,11 @@ function handleDeviceMotion(event) {
         g_y: latestGY,
         g_z: latestGZ
     };
-    gLogBuffer.push(gData);
+    
+    // セッションIDがある場合のみバッファに追加
+    if (sessionId) {
+        gLogBuffer.push(gData);
+    }
 }
 
 function startMotionDetection() {
@@ -420,13 +504,15 @@ function calculateDistance(path) {
 let prevSpeed = null, prevLatLng = null, prevTime = null;
 
 function watchPosition() {
+    console.log('Starting GPS position watch...');
     watchId = navigator.geolocation.watchPosition(async position => {
-        if (!sessionId) return;
         const lat = position.coords.latitude;
         const lng = position.coords.longitude;
         const currentLatLng = { lat, lng };
         const speed = position.coords.speed !== null ? position.coords.speed * 3.6 : 0;
         const now = Date.now();
+
+        console.log(`GPS position received: lat=${lat}, lng=${lng}, speed=${speed}, accuracy=${position.coords.accuracy}, sessionId=${sessionId || 'none'}`);
 
         const speedElement = document.getElementById('speed');
         if (speedElement) {
@@ -437,10 +523,12 @@ function watchPosition() {
             positionElement.textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
         }
 
-        if (currentPositionMarker) {
+        if (currentPositionMarker && typeof google !== 'undefined') {
             currentPositionMarker.setPosition(currentLatLng);
-            map.setCenter(currentLatLng);
-        } else {
+            if (map) {
+                map.setCenter(currentLatLng);
+            }
+        } else if (typeof google !== 'undefined' && map) {
             currentPositionMarker = new google.maps.Marker({
                 position: currentLatLng,
                 map: map,
@@ -506,29 +594,61 @@ function watchPosition() {
             currentEvent = 'sharp_turn';
         }
 
-        path.push({ lat, lng });
-        if (polyline) {
-            polyline.setPath(path);
+        // Google Maps APIが利用可能な場合のみパス追加
+        if (typeof google !== 'undefined') {
+            path.push({ lat, lng });
+            if (polyline) {
+                polyline.setPath(path);
+            }
         }
 
-        // ★ GPSログを保存（送信せず）
-        const gpsData = {
-            timestamp: now,
-            latitude: lat,
-            longitude: lng,
-            speed: speed,
-            g_x: latestGX,
-            g_y: latestGY,
-            g_z: latestGZ,
-            event: currentEvent
-        };
-        gpsLogBuffer.push(gpsData);
+        // ★ GPSログを保存（セッションIDがある場合のみ）
+        if (sessionId) {
+            const gpsData = {
+                timestamp: now,
+                latitude: lat,
+                longitude: lng,
+                speed: speed,
+                g_x: latestGX || 0,
+                g_y: latestGY || 0,
+                g_z: latestGZ || 0,
+                event: currentEvent || 'normal'
+            };
+            gpsLogBuffer.push(gpsData);
+            console.log(`GPS data added to buffer for session ${sessionId}:`);
+            console.log(`  - Position: lat=${lat.toFixed(5)}, lng=${lng.toFixed(5)}`);
+            console.log(`  - Speed: ${speed.toFixed(1)} km/h`);
+            console.log(`  - G-forces: x=${gpsData.g_x}, y=${gpsData.g_y}, z=${gpsData.g_z}`);
+            console.log(`  - Buffer size: ${gpsLogBuffer.length}`);
+            console.log(`  - GPS data object:`, gpsData);
+        } else {
+            console.log(`GPS position received (display only): lat=${lat.toFixed(5)}, lng=${lng.toFixed(5)}, speed=${speed.toFixed(1)}`);
+        }
 
         prevLatLng = currentLatLng;
         prevSpeed = speed;
         prevTime = now;
 
-    }, console.error, { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 });
+    }, (error) => {
+        console.error('GPS position error:', error);
+        console.error('Error code:', error.code);
+        console.error('Error message:', error.message);
+        
+        switch(error.code) {
+            case error.PERMISSION_DENIED:
+                console.error("GPS permission denied by user");
+                break;
+            case error.POSITION_UNAVAILABLE:
+                console.error("GPS position unavailable");
+                break;
+            case error.TIMEOUT:
+                console.error("GPS position timeout");
+                break;
+            default:
+                console.error("Unknown GPS error");
+                break;
+        }
+    }, { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 });
 }
 
 // イベントリスナー
@@ -569,26 +689,61 @@ function startLogFlush() {
     
     // 10秒ごとにGPSとGログを送信
     logFlushInterval = setInterval(() => {
+        console.log(`Interval flush check: sessionId=${sessionId}, G buffer=${gLogBuffer.length}, GPS buffer=${gpsLogBuffer.length}`);
+        
         if (sessionId) {
             // Gログ送信
             if (gLogBuffer.length > 0) {
                 const logsToSend = gLogBuffer.splice(0, gLogBuffer.length);
+                console.log(`Sending ${logsToSend.length} G logs for session ${sessionId}`);
                 fetch('/log_g_only', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ session_id: sessionId, g_logs: logsToSend })
-                }).catch(err => console.error('Gログ送信エラー:', err));
+                })
+                .then(response => response.json())
+                .then(data => {
+                    console.log('G logs save response:', data);
+                })
+                .catch(err => console.error('Gログ送信エラー:', err));
             }
 
             // GPSログ送信
             if (gpsLogBuffer.length > 0) {
                 const logsToSend = gpsLogBuffer.splice(0, gpsLogBuffer.length);
+                console.log(`=== GPS BULK SEND STARTED ===`);
+                console.log(`Sending ${logsToSend.length} GPS logs for session ${sessionId}`);
+                if (logsToSend.length > 0) {
+                    console.log('First GPS log sample:', logsToSend[0]);
+                    console.log('Last GPS log sample:', logsToSend[logsToSend.length - 1]);
+                }
+                
+                const requestBody = { session_id: sessionId, gps_logs: logsToSend };
+                console.log('GPS bulk request body:', requestBody);
+                
                 fetch('/log_gps_bulk', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ session_id: sessionId, gps_logs: logsToSend })
-                }).catch(err => console.error('GPSログ送信エラー:', err));
+                    body: JSON.stringify(requestBody)
+                })
+                .then(response => {
+                    console.log('GPS bulk response status:', response.status);
+                    console.log('GPS bulk response ok:', response.ok);
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('GPS logs save response:', data);
+                    console.log(`=== GPS BULK SEND COMPLETED ===`);
+                })
+                .catch(err => {
+                    console.error('GPSログ送信エラー:', err);
+                    console.log(`=== GPS BULK SEND FAILED ===`);
+                });
+            } else {
+                console.log('No GPS logs to send (buffer empty)');
             }
+        } else {
+            console.log('No session ID available for log flush');
         }
     }, 10000); // 10秒ごと
 }
@@ -602,6 +757,10 @@ function initActiveRecording() {
     if (savedSessionId && savedStartTime) {
         sessionId = savedSessionId;
         startTime = parseInt(savedStartTime);
+        
+        console.log('Session ID set to:', sessionId);
+        console.log('GPS buffer size:', gpsLogBuffer.length);
+        console.log('G buffer size:', gLogBuffer.length);
         
         // DOM要素の更新
         const sessionIdElement = document.getElementById('session_id');
@@ -629,33 +788,58 @@ function initActiveRecording() {
 
 // ページ読み込み時の初期化
 document.addEventListener('DOMContentLoaded', function() {
+    console.log('=== DOMContentLoaded EVENT FIRED ===');
+    
     // URLに基づいて適切な初期化を実行
     const currentPath = window.location.pathname;
+    console.log('Current path detected:', currentPath);
     
     // ボタンのイベントリスナー設定
     const startButton = document.getElementById('start-button');
     const endButton = document.getElementById('end-button');
     
-    if (startButton) {
+    console.log('Start button found:', !!startButton);
+    console.log('End button found:', !!endButton);
+    
+    if (startButton && !startButton.hasEventListener) {
+        console.log('Adding click listener to start button');
         startButton.addEventListener('click', startSession);
+        startButton.hasEventListener = true;  // 重複登録防止フラグ
     }
-    if (endButton) {
+    if (endButton && !endButton.hasEventListener) {
+        console.log('Adding click listener to end button');
         endButton.addEventListener('click', () => {
             endSession(true);
         });
+        endButton.hasEventListener = true;  // 重複登録防止フラグ
     }
     
     window.addEventListener('beforeunload', () => {
         endSession(false);
     });
     
+    console.log('Initializing based on current path...');
+    
     if (currentPath === '/recording/active') {
+        console.log('Initializing active recording screen');
         initActiveRecording();
     } else if (currentPath === '/recording/start' || currentPath === '/') {
-        // 記録開始画面では地図のみ初期化
+        console.log('Initializing start recording screen');
+        // 記録開始画面では地図と位置情報表示のみ初期化
         if (typeof initMap === 'function') {
+            console.log('Calling initMap function');
             initMap();
+        } else {
+            console.log('initMap function not available');
         }
+        // 位置情報とセンサーの監視を開始（記録はしない）
+        console.log('Starting GPS and motion monitoring for start screen (display only)');
+        watchPosition();
+        startMotionDetection();
+    } else {
+        console.log('No specific initialization for path:', currentPath);
     }
     // recording/completed画面では特別な初期化は不要（HTMLに記述済み）
+    
+    console.log('=== DOMContentLoaded initialization completed ===');
 });

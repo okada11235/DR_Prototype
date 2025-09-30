@@ -79,23 +79,30 @@ h1, h2 {
 /* チャートとマップのコンテナ */
 .chart-container,
 .map-container {
-    position: relative;
-    height: 300px;
-    width: 100%;
+    position: relative !important;
+    height: 300px !important;
+    width: 100% !important;
     margin-top: 20px;
     margin-bottom: 20px;
-    background-color: #e9e9e9;
+    background-color: #e9e9e9 !important;
     border-radius: 5px;
     overflow: hidden;
     touch-action: pan-x;
-}
-
-.chart-container canvas {
-    touch-action: pan-x; /* ピンチ/パンを Chart.js に渡す */
+    display: block !important;
+    visibility: visible !important;
+    min-height: 300px !important;
 }
 
 .map-container {
-    height: 400px; /* マップ用に大きめ */
+    height: 400px !important; /* マップ用に大きめ */
+    min-height: 400px !important;
+}
+
+.chart-container canvas {
+    touch-action: pan-x !important; /* ピンチ/パンを Chart.js に渡す */
+    width: 100% !important;
+    height: 100% !important;
+    display: block !important;
 }
 
 /* ボタンスタイル */
