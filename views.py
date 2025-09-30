@@ -44,11 +44,29 @@ def get_g_logs_for_session(session_id):
         })
     return result
 
-# メインページ
+# メインページ（記録開始画面にリダイレクト）
 @views_bp.route('/')
 @login_required
 def index():
-    return render_template('index.html')
+    return redirect(url_for('views.recording_start'))
+
+# 記録開始画面
+@views_bp.route('/recording/start')
+@login_required
+def recording_start():
+    return render_template('recording_start.html')
+
+# 記録中画面
+@views_bp.route('/recording/active')
+@login_required
+def recording_active():
+    return render_template('recording_active.html')
+
+# 記録完了画面
+@views_bp.route('/recording/completed')
+@login_required
+def recording_completed():
+    return render_template('recording_completed.html')
 
 # セッション一覧
 @views_bp.route('/sessions')
