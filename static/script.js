@@ -37,6 +37,8 @@ let eventMarkers = [];
 let gLogBuffer = [];
 let gpsLogBuffer = [];
 
+let logFlushInterval = null; // 10秒ごとの送信タイマーID
+
 // センサー値を補正
 let orientationMode = "auto"; 
 let calibrationData = null;
@@ -111,21 +113,16 @@ function startSession() {
             .then(data => {
                 if (data.session_id) {
                     sessionId = data.session_id;
-                    document.getElementById('session_id').textContent = sessionId;
                     startTime = Date.now();
-                    startTimer();
-                    initMap();
-                    watchPosition();
-                    const speedLimitSpan = document.getElementById('speed_limit');
-                    if (speedLimitSpan) {
-                        speedLimitSpan.textContent = '－';
-                    }
+                    
+                    // セッション情報をLocalStorageに保存
+                    localStorage.setItem('activeSessionId', sessionId);
+                    localStorage.setItem('sessionStartTime', startTime.toString());
+                    
                     resetCounters();
-                    alert('記録を開始しました');
-
-                    // 開始ボタンを非表示にし、終了ボタンを表示
-                    document.getElementById('start-button').style.display = 'none';
-                    document.getElementById('end-button').style.display = 'block';
+                    
+                    // 記録中画面に遷移
+                    window.location.href = '/recording/active';
 
                 } else {
                     throw new Error('サーバーからのセッションIDが不正です。');
@@ -141,9 +138,15 @@ function startSession() {
 // 記録終了
 function endSession(showAlert = true) {
     console.log("=== Debug: G Logs before save ===");
-    console.log(gLogBuffer);
+    gLogBuffer.forEach((log, i) => {
+        console.log(`[${i}] timestamp=${log.timestamp}, g_x=${log.g_x}, g_y=${log.g_y}, g_z=${log.g_z}`);
+    });
     console.log("=== Debug: GPS Logs before save ===");
-    console.log(gpsLogBuffer);
+    gpsLogBuffer.forEach((log, i) => {
+        console.log(
+            `[${i}] ${log.timestamp} | event=${log.event} | g_x=${log.g_x} | g_y=${log.g_y} | lat=${log.latitude} | lon=${log.longitude} | speed=${log.speed}`
+        );
+    });
     if (!sessionId) {
         if (showAlert) {
             alert('まだ記録が開始されていません');
@@ -152,6 +155,11 @@ function endSession(showAlert = true) {
     }
 
     stopTimer();
+    // ★ 定期送信タイマーを止める
+    if (logFlushInterval) {
+        clearInterval(logFlushInterval);
+        logFlushInterval = null;
+    }
     if (watchId !== null) {
         navigator.geolocation.clearWatch(watchId);
         watchId = null;
@@ -184,7 +192,7 @@ function endSession(showAlert = true) {
     })
     .then(data => {
         if (data.status === 'ok') {
-            // ★ 一括保存処理 ★
+            // ★ 残り分だけ送信 ★
             const flushLogs = Promise.all([
                 gLogBuffer.length > 0
                     ? fetch('/log_g_only', {
@@ -201,29 +209,36 @@ function endSession(showAlert = true) {
                     }).finally(() => { gpsLogBuffer = []; })
                     : Promise.resolve()
             ]);
-
             flushLogs.finally(() => {
+                // セッションデータを保存して記録完了画面に遷移
+                const sessionData = {
+                    distance: distance,
+                    sudden_accels: suddenAccels,
+                    sudden_brakes: suddenBrakes,
+                    sharp_turns: sharpTurns,
+                    speed_violations: speedViolations,
+                    totalTime: formatTime(Math.floor((Date.now() - startTime) / 1000)),
+                    stability: calculateStability(suddenAccels, suddenBrakes, sharpTurns, distance)
+                };
+                
+                // LocalStorageに保存
+                localStorage.setItem('lastSessionData', JSON.stringify(sessionData));
+                
+                // アクティブセッション情報をクリア
+                localStorage.removeItem('activeSessionId');
+                localStorage.removeItem('sessionStartTime');
+                
+                // セッション変数をリセット
                 sessionId = null;
-                if (showAlert) {
-                    alert('記録を終了しました');
-                }
-
-                document.getElementById('session_id').textContent = '未開始';
-                document.getElementById('speed').textContent = '0';
-                document.getElementById('timer').textContent = '00:00';
                 resetCounters();
                 if (polyline) polyline.setPath([]);
                 if (currentPositionMarker) currentPositionMarker.setMap(null);
                 path = [];
                 eventMarkers.forEach(marker => marker.setMap(null));
                 eventMarkers = [];
-                const speedLimitSpan = document.getElementById('speed_limit');
-                if (speedLimitSpan) {
-                    speedLimitSpan.textContent = '－';
-                }
-
-                document.getElementById('start-button').style.display = 'block';
-                document.getElementById('end-button').style.display = 'none';
+                
+                // 記録完了画面に遷移
+                window.location.href = '/recording/completed';
             });
 
         } else {
@@ -266,9 +281,13 @@ function handleDeviceMotion(event) {
     latestGX = side / 9.8;
     latestGY = up / 9.8;
 
-    document.getElementById('g-x').textContent = latestGX.toFixed(2);
-    document.getElementById('g-z').textContent = latestGZ.toFixed(2);
-    document.getElementById('g-y').textContent = latestGY.toFixed(2);
+    const gxElement = document.getElementById('g-x');
+    const gzElement = document.getElementById('g-z');
+    const gyElement = document.getElementById('g-y');
+    
+    if (gxElement) gxElement.textContent = latestGX.toFixed(2);
+    if (gzElement) gzElement.textContent = latestGZ.toFixed(2);
+    if (gyElement) gyElement.textContent = latestGY.toFixed(2);
 
     const gData = {
         timestamp: Date.now(),
@@ -356,7 +375,10 @@ function startTimer() {
         const elapsed = Date.now() - startTime;
         const mins = Math.floor(elapsed / 60000).toString().padStart(2, '0');
         const secs = Math.floor((elapsed % 60000) / 1000).toString().padStart(2, '0');
-        document.getElementById('timer').textContent = `${mins}:${secs}`;
+        const timerElement = document.getElementById('timer');
+        if (timerElement) {
+            timerElement.textContent = `${mins}:${secs}`;
+        }
     }, 1000);
 }
 
@@ -369,9 +391,14 @@ function resetCounters() {
     suddenAccels = 0;
     sharpTurns = 0;
     speedViolations = 0;
-    document.getElementById('brake-count').textContent = '0';
-    document.getElementById('accel-count').textContent = '0';
-    document.getElementById('turn-count').textContent = '0';
+    
+    const brakeElement = document.getElementById('brake-count');
+    const accelElement = document.getElementById('accel-count');
+    const turnElement = document.getElementById('turn-count');
+    
+    if (brakeElement) brakeElement.textContent = '0';
+    if (accelElement) accelElement.textContent = '0';
+    if (turnElement) turnElement.textContent = '0';
 }
 
 function calculateDistance(path) {
@@ -401,8 +428,14 @@ function watchPosition() {
         const speed = position.coords.speed !== null ? position.coords.speed * 3.6 : 0;
         const now = Date.now();
 
-        document.getElementById('speed').textContent = speed.toFixed(1);
-        document.getElementById('position').textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+        const speedElement = document.getElementById('speed');
+        if (speedElement) {
+            speedElement.textContent = speed.toFixed(1);
+        }
+        const positionElement = document.getElementById('position');
+        if (positionElement) {
+            positionElement.textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+        }
 
         if (currentPositionMarker) {
             currentPositionMarker.setPosition(currentLatLng);
@@ -424,7 +457,10 @@ function watchPosition() {
         }
 
         let currentEvent = 'normal';
-        document.getElementById('speed').classList.remove('over-speed');
+        const speedDisplayElement = document.getElementById('speed');
+        if (speedDisplayElement) {
+            speedDisplayElement.classList.remove('over-speed');
+        }
 
         if (prevSpeed !== null && prevTime !== null) {
             const dt = (now - prevTime) / 1000;
@@ -434,7 +470,10 @@ function watchPosition() {
 
                 if (gAccel > ACCEL_BRAKE_G_THRESHOLD && latestGZ > ACCEL_BRAKE_G_THRESHOLD && now - lastAccelTime > COOLDOWN_MS) {
                     suddenAccels++;
-                    document.getElementById('accel-count').textContent = suddenAccels;
+                    const accelElement = document.getElementById('accel-count');
+                    if (accelElement) {
+                        accelElement.textContent = suddenAccels;
+                    }
                     lastAccelTime = now;
                     addEventMarker(lat, lng, 'sudden_accel');
                     if (currentEvent === 'normal') {
@@ -443,7 +482,10 @@ function watchPosition() {
                 }
                 if (gAccel < -ACCEL_BRAKE_G_THRESHOLD && latestGZ < -ACCEL_BRAKE_G_THRESHOLD && now - lastBrakeTime > COOLDOWN_MS) {
                     suddenBrakes++;
-                    document.getElementById('brake-count').textContent = suddenBrakes;
+                    const brakeElement = document.getElementById('brake-count');
+                    if (brakeElement) {
+                        brakeElement.textContent = suddenBrakes;
+                    }
                     lastBrakeTime = now;
                     addEventMarker(lat, lng, 'sudden_brake');
                     if (currentEvent === 'normal' || currentEvent === 'sudden_accel') {
@@ -455,7 +497,10 @@ function watchPosition() {
 
         if (Math.abs(latestGX) > SHARP_TURN_G_THRESHOLD && speed > 15 && now - lastTurnTime > COOLDOWN_MS) {
             sharpTurns++;
-            document.getElementById('turn-count').textContent = sharpTurns;
+            const turnElement = document.getElementById('turn-count');
+            if (turnElement) {
+                turnElement.textContent = sharpTurns;
+            }
             lastTurnTime = now;
             addEventMarker(lat, lng, 'sharp_turn');
             currentEvent = 'sharp_turn';
@@ -487,12 +532,130 @@ function watchPosition() {
 }
 
 // イベントリスナー
-document.addEventListener('DOMContentLoaded', () => {
-    document.getElementById('start-button').addEventListener('click', startSession);
-    document.getElementById('end-button').addEventListener('click', () => {
-        endSession(true);
-    });
+
+// 時間をフォーマットする関数
+function formatTime(seconds) {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    
+    if (hours > 0) {
+        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    } else {
+        return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+}
+
+// 安定度を計算する関数
+function calculateStability(accels, brakes, turns, distance) {
+    if (distance === 0) return 100;
+    
+    // イベント密度を計算（1kmあたりのイベント数）
+    const totalEvents = accels + brakes + turns;
+    const eventDensity = totalEvents / distance;
+    
+    // 安定度スコアを計算（0-100%）
+    // イベント密度が低いほど高いスコア
+    let stability = Math.max(0, 100 - (eventDensity * 20));
+    
+    return Math.round(stability);
+}
+
+// ログフラッシュ処理を開始する関数
+function startLogFlush() {
+    if (logFlushInterval) {
+        clearInterval(logFlushInterval);
+    }
+    
+    // 10秒ごとにGPSとGログを送信
+    logFlushInterval = setInterval(() => {
+        if (sessionId) {
+            // Gログ送信
+            if (gLogBuffer.length > 0) {
+                const logsToSend = gLogBuffer.splice(0, gLogBuffer.length);
+                fetch('/log_g_only', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: sessionId, g_logs: logsToSend })
+                }).catch(err => console.error('Gログ送信エラー:', err));
+            }
+
+            // GPSログ送信
+            if (gpsLogBuffer.length > 0) {
+                const logsToSend = gpsLogBuffer.splice(0, gpsLogBuffer.length);
+                fetch('/log_gps_bulk', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: sessionId, gps_logs: logsToSend })
+                }).catch(err => console.error('GPSログ送信エラー:', err));
+            }
+        }
+    }, 10000); // 10秒ごと
+}
+
+// 記録中画面の初期化処理
+function initActiveRecording() {
+    // LocalStorageからセッション情報を復元
+    const savedSessionId = localStorage.getItem('activeSessionId');
+    const savedStartTime = localStorage.getItem('sessionStartTime');
+    
+    if (savedSessionId && savedStartTime) {
+        sessionId = savedSessionId;
+        startTime = parseInt(savedStartTime);
+        
+        // DOM要素の更新
+        const sessionIdElement = document.getElementById('session_id');
+        if (sessionIdElement) {
+            sessionIdElement.textContent = sessionId;
+        }
+        
+        // タイマー開始
+        startTimer();
+        
+        // 位置情報とセンサーの監視開始
+        watchPosition();
+        startMotionDetection();
+        
+        // 定期ログ送信開始
+        startLogFlush();
+        
+        console.log('Active recording initialized with session:', sessionId);
+    } else {
+        console.error('No active session found');
+        // セッション情報がない場合は記録開始画面に戻る
+        window.location.href = '/recording/start';
+    }
+}
+
+// ページ読み込み時の初期化
+document.addEventListener('DOMContentLoaded', function() {
+    // URLに基づいて適切な初期化を実行
+    const currentPath = window.location.pathname;
+    
+    // ボタンのイベントリスナー設定
+    const startButton = document.getElementById('start-button');
+    const endButton = document.getElementById('end-button');
+    
+    if (startButton) {
+        startButton.addEventListener('click', startSession);
+    }
+    if (endButton) {
+        endButton.addEventListener('click', () => {
+            endSession(true);
+        });
+    }
+    
     window.addEventListener('beforeunload', () => {
         endSession(false);
     });
+    
+    if (currentPath === '/recording/active') {
+        initActiveRecording();
+    } else if (currentPath === '/recording/start' || currentPath === '/') {
+        // 記録開始画面では地図のみ初期化
+        if (typeof initMap === 'function') {
+            initMap();
+        }
+    }
+    // recording/completed画面では特別な初期化は不要（HTMLに記述済み）
 });
