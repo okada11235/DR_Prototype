@@ -11,38 +11,74 @@ views_bp = Blueprint('views', __name__)
 
 def get_gps_logs_for_session(session_id):
     """セッションのGPSログを取得"""
-    logs_ref = db.collection('sessions').document(session_id).collection('gps_logs')
-    logs = logs_ref.order_by('timestamp').stream()
-    result = []
-    for log_doc in logs:
-        log_data = log_doc.to_dict()
-        if 'latitude' in log_data and 'longitude' in log_data:
-            result.append({
-                "timestamp": log_data.get('timestamp').timestamp() * 1000 if 'timestamp' in log_data and log_data['timestamp'] else 0,
-                "latitude": log_data.get('latitude'),
-                "longitude": log_data.get('longitude'),
-                "speed": log_data.get('speed', 0.0),
-                "g_x": log_data.get('g_x', 0.0),
-                "g_y": log_data.get('g_y', 0.0),
-                "g_z": log_data.get('g_z', 0.0),
-                "event": log_data.get('event', 'normal')
-            })
-    return result
+    try:
+        logs_ref = db.collection('sessions').document(session_id).collection('gps_logs')
+        logs = logs_ref.order_by('timestamp').stream()
+        result = []
+        
+        for log_doc in logs:
+            log_data = log_doc.to_dict()
+            if 'latitude' in log_data and 'longitude' in log_data:
+                # timestamp_msを優先して使用
+                timestamp_value = 0
+                if 'timestamp_ms' in log_data and log_data['timestamp_ms']:
+                    timestamp_value = log_data['timestamp_ms']
+                elif 'timestamp' in log_data and log_data['timestamp']:
+                    timestamp_value = log_data['timestamp'].timestamp() * 1000
+                
+                result.append({
+                    "timestamp": timestamp_value,
+                    "timestamp_ms": timestamp_value,  # 互換性のため
+                    "latitude": log_data.get('latitude'),
+                    "longitude": log_data.get('longitude'),
+                    "speed": log_data.get('speed', 0.0),
+                    "g_x": log_data.get('g_x', 0.0),
+                    "g_y": log_data.get('g_y', 0.0),
+                    "g_z": log_data.get('g_z', 0.0),
+                    "event": log_data.get('event', 'normal')
+                })
+        
+        print(f"GPS logs for session {session_id}: {len(result)} records")
+        if len(result) > 0:
+            print(f"First GPS log: {result[0]}")
+        
+        return result
+    except Exception as e:
+        print(f"Error getting GPS logs for session {session_id}: {e}")
+        return []
 
 def get_g_logs_for_session(session_id):
     """セッションのGログを取得"""
-    logs_ref = db.collection('sessions').document(session_id).collection('g_logs')
-    logs = logs_ref.order_by('timestamp').stream()
-    result = []
-    for log_doc in logs:
-        log_data = log_doc.to_dict()
-        result.append({
-            "timestamp": log_data['timestamp'].timestamp() * 1000 if log_data.get('timestamp') else 0,
-            "g_x": log_data.get('g_x', 0.0),
-            "g_y": log_data.get('g_y', 0.0),
-            "g_z": log_data.get('g_z', 0.0)
-        })
-    return result
+    try:
+        logs_ref = db.collection('sessions').document(session_id).collection('g_logs')
+        logs = logs_ref.order_by('timestamp').stream()
+        result = []
+        
+        for log_doc in logs:
+            log_data = log_doc.to_dict()
+            # timestamp_msを優先して使用
+            timestamp_value = 0
+            if 'timestamp_ms' in log_data and log_data['timestamp_ms']:
+                timestamp_value = log_data['timestamp_ms']
+            elif 'timestamp' in log_data and log_data['timestamp']:
+                timestamp_value = log_data['timestamp'].timestamp() * 1000
+            
+            result.append({
+                "timestamp": timestamp_value,
+                "timestamp_ms": timestamp_value,  # 互換性のため
+                "g_x": log_data.get('g_x', 0.0),
+                "g_y": log_data.get('g_y', 0.0),
+                "g_z": log_data.get('g_z', 0.0)
+            })
+        
+        print(f"G logs for session {session_id}: {len(result)} records")
+        if len(result) > 0:
+            print(f"First G log: {result[0]}")
+        
+        return result
+    except Exception as e:
+        print(f"Error getting G logs for session {session_id}: {e}")
+        return []
 
 # メインページ（記録開始画面にリダイレクト）
 @views_bp.route('/')
@@ -84,6 +120,14 @@ def sessions():
         data = session_doc.to_dict()
         data['id'] = session_doc.id
         data['reflection'] = data.get('reflection', '')
+        
+        # セッションデータにデフォルト値を設定
+        data['distance'] = data.get('distance', None)
+        data['sudden_accels'] = data.get('sudden_accels', 0)
+        data['sudden_brakes'] = data.get('sudden_brakes', 0)
+        data['sharp_turns'] = data.get('sharp_turns', 0)
+        data['speed_violations'] = data.get('speed_violations', 0)
+        data['status'] = data.get('status', 'unknown')
 
         data['gps_logs'] = get_gps_logs_for_session(session_doc.id)
         data['g_logs'] = get_g_logs_for_session(session_doc.id)
@@ -93,8 +137,12 @@ def sessions():
         if 'end_time' in data and data['end_time']:
             data['end_time'] = data['end_time'].astimezone(datetime.utcnow().tzinfo)
 
-        if data.get('distance') is not None:
-            sessions_list.append(data)
+        # セッションデータをリストに追加（distanceの有無にかかわらず）
+        # デバッグ情報を追加
+        print(f"Session {session_doc.id}: distance={data.get('distance')}, status={data.get('status')}")
+        print(f"GPS logs count: {len(data['gps_logs'])}, G logs count: {len(data['g_logs'])}")
+        
+        sessions_list.append(data)
 
     return render_template('sessions.html', sessions=sessions_list)
 
@@ -125,12 +173,20 @@ def delete_session(sid):
         return redirect(url_for('views.sessions'))
 
     try:
-        logs_ref = session_ref.collection('gps_logs')
+        # GPSログを削除
+        gps_logs_ref = session_ref.collection('gps_logs')
         batch = db.batch()
-        for log_doc in logs_ref.stream():
+        for log_doc in gps_logs_ref.stream():
             batch.delete(log_doc.reference)
+        
+        # Gログも削除
+        g_logs_ref = session_ref.collection('g_logs')
+        for log_doc in g_logs_ref.stream():
+            batch.delete(log_doc.reference)
+        
         batch.commit()
 
+        # セッション本体を削除
         session_ref.delete()
         flash('セッションを削除しました')
     except Exception as e:
