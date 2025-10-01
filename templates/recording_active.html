@@ -84,7 +84,7 @@
 <!-- 青い円形のコンテナ -->
 <div class="w-40 h-40 text-primary-green border-8 border-primary-green rounded-full p-1 bg-card-dark shadow-2xl animate-pulse flex items-center justify-center">
 <!-- キャラクター画像 -->
-<img src=https://i.imgur.com/H5Fh9nO.png alt="キャラクター" class="w-full h-full rounded-full object-cover object-top" />
+<img src="https://i.imgur.com/H5Fh9nO.png" alt="キャラクター" class="w-full h-full rounded-full object-cover object-top" />
 </div>
 <div class="absolute top-0 right-0 h-10 w-10 bg-green-500 rounded-full border-4 border-bg-dark transform translate-x-1/4 -translate-y-1/4"></div>
 </div>
@@ -148,8 +148,7 @@
         const db = firebase.firestore();
 </script>
  
-    <!-- script.jsの読み込みを仮定 -->
-<!-- <script src="{{ url_for('static', filename='script.js') }}"></script> -->
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>
  
