@@ -10,12 +10,10 @@
             theme: {
                 extend: {
                     colors: {
-                        // メインの色を明るい水色に変更
-                        'primary-green': '#00bcd4', // シアン (水色系)
-                        'danger-red': '#f44336', // 危険色は目立つ赤を維持しつつ、明るめに
-                        // 背景色とカードの背景色を明るい色に変更
-                        'bg-dark': '#ffffff', // 非常に明るい背景 (白)
-                        'card-dark': '#e0f7fa', // カードの背景色 (薄い水色)
+                        'primary-green': '#00bcd4', 
+                        'danger-red': '#f44336',
+                        'bg-dark': '#ffffff',
+                        'card-dark': '#e0f7fa',
                     },
                     fontFamily: {
                         sans: ['Inter', 'sans-serif'],
@@ -26,78 +24,107 @@
     </script>
     <style>
         body {
-            /* 非常に明るい背景に変更 */
-            background-color: #f0f8ff; /* 非常に薄い水色 */
-            /* 文字色を濃い色に変更して、明るい背景で見えるようにする */
-            color: #1e3a8a; /* 濃い青 (水色に合う文字色) */
+            background-color: #f0f8ff;
+            color: #ffffff; 
             min-height: 100vh;
         }
+        .text-gray-300 { color: #00bcd4; }
+        .text-gray-400 { color: #00838f; }
+        .border-gray-600 { border-color: #b2ebf2; }
+        /* text-whiteクラスを持つ特定の要素の色を上書き */
+        div .text-white, p .text-white { color: #1e3a8a; }
 
-        /* 元々文字色指定がなく暗い背景に依存していた要素の文字色を調整 */
-        .text-gray-300 { color: #00bcd4; /* 水色 */ }
-        .text-gray-400 { color: #00838f; /* やや濃い水色 */ }
-        .border-gray-600 { border-color: #b2ebf2; /* 薄い水色の線 */ }
-        .text-white { color: #1e3a8a; /* 濃い文字色 */ }
-        /* インディゴ（記録確認ボタン）を水色系の濃い色に変更 */
-        .bg-indigo-600 { background-color: #03a9f4; } /* スカイブルー */
+        .bg-indigo-600 { background-color: #03a9f4; }
         .hover\:bg-indigo-700:hover { background-color: #0288d1; }
-        /* グリーン系のボタンを水色系に変更 */
         .bg-green-600 { background-color: #00bcd4; }
         .hover\:bg-green-700:hover { background-color: #0097a7; }
+
+        /* 吹き出しのしっぽ */
+        .speech-bubble:after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: -10px;
+            margin-top: -10px;
+            border-style: solid;
+            border-width: 10px 10px 10px 0;
+            border-color: transparent #e0f7fa transparent transparent;
+        }
     </style>
 </head>
 <body class="font-sans">
     <div class="container mx-auto p-4 max-w-lg">
         
         <div class="flex flex-col items-center p-6 bg-bg-dark rounded-xl shadow-2xl transition duration-500">
-            <h1 class="text-4xl font-extrabold text-primary-green mb-6">記録完了！</h1>
+            <h1 class="text-4xl font-extrabold text-primary-green mb-4">お疲れ様でした！</h1>
             
+            <!-- ▼▼▼ キャラクターフィードバックセクション ▼▼▼ -->
+            <div class="w-full flex items-center mb-6 p-4 bg-card-dark/50 rounded-lg">
+                <div class="flex-shrink-0">
+                    <img src="https://i.imgur.com/H5Fh9nO.png" alt="キャラクター" class="w-24 h-24 rounded-full border-4 border-primary-green bg-card-dark object-cover object-top shadow-md"/>
+                </div>
+                <div class="relative ml-4 flex-1">
+                    <div class="relative bg-card-dark p-4 rounded-lg shadow-inner speech-bubble">
+                        <!-- ★★★ この中の文章を自由に変更してください ★★★ -->
+                        <p id="feedback-text" class="text-base font-medium" style="color: #1e3a8a;">
+                            今回の運転、お疲れ様でした！詳細な記録を確認して、次の運転に活かしましょう！
+                        </p>
+                         <!-- ★★★ ここまで ★★★ -->
+                    </div>
+                </div>
+            </div>
+            <!-- ▲▲▲ キャラクターフィードバックセクション ▲▲▲ -->
+
             <div class="w-full text-center mb-6">
                 <div class="bg-card-dark p-4 rounded-lg shadow-inner border border-gray-600">
-                    <h2 class="text-xl font-semibold text-gray-300 mb-4">今回の運転データ</h2>
+                    <h2 class="text-xl font-semibold text-primary-green mb-4">今回の運転データ</h2>
                     
-                    <div class="grid grid-cols-2 gap-4 text-sm">
-                        <div class="bg-bg-dark p-3 rounded-lg">
-                            <p class="text-gray-400">走行時間</p>
-                            <p id="total-time" class="text-2xl font-bold text-gray-300">--:--</p>
+                    <!-- ▼▼▼ 運転データレイアウト変更 ▼▼▼ -->
+                    <div class="flex flex-col gap-4 text-sm">
+                        <!-- 上段 -->
+                        <div class="flex gap-4">
+                            <div class="bg-bg-dark p-3 rounded-lg w-1/2">
+                                <p class="text-gray-400">走行時間</p>
+                                <p id="total-time" class="text-2xl font-bold text-gray-300">--:--</p>
+                            </div>
+                            <div class="bg-bg-dark p-3 rounded-lg w-1/2">
+                                <p class="text-gray-400">走行距離</p>
+                                <p id="total-distance" class="text-2xl font-bold text-gray-300">-- km</p>
+                            </div>
                         </div>
-                        <div class="bg-bg-dark p-3 rounded-lg">
-                            <p class="text-gray-400">走行距離</p>
-                            <p id="total-distance" class="text-2xl font-bold text-gray-300">-- km</p>
-                        </div>
-                        <div class="bg-bg-dark p-3 rounded-lg">
-                            <p class="text-gray-400">急ブレーキ🔴</p>
-                            <p id="final-brake-count" class="text-2xl font-bold text-gray-300">-- 回</p>
-                        </div>
-                        <div class="bg-bg-dark p-3 rounded-lg">
-                            <p class="text-gray-400">急発進🟢</p>
-                            <p id="final-accel-count" class="text-2xl font-bold text-gray-300">-- 回</p>
-                        </div>
-                        <div class="bg-bg-dark p-3 rounded-lg">
-                            <p class="text-gray-400">急カーブ🟡</p>
-                            <p id="final-turn-count" class="text-2xl font-bold text-gray-300">-- 回</p>
-                        </div>
-                        <div class="bg-bg-dark p-3 rounded-lg">
-                            <p class="text-gray-400">安定度</p>
-                            <p id="stability-score" class="text-2xl font-bold text-gray-300">--%</p>
+                        <!-- 下段 -->
+                        <div class="flex gap-4">
+                            <div class="bg-bg-dark p-3 rounded-lg w-1/3">
+                                <p class="text-gray-400">急ブレーキ🔴</p>
+                                <p id="final-brake-count" class="text-2xl font-bold text-gray-300">-- 回</p>
+                            </div>
+                            <div class="bg-bg-dark p-3 rounded-lg w-1/3">
+                                <p class="text-gray-400">急加速🟢</p>
+                                <p id="final-accel-count" class="text-2xl font-bold text-gray-300">-- 回</p>
+                            </div>
+                            <div class="bg-bg-dark p-3 rounded-lg w-1/3">
+                                <p class="text-gray-400">急カーブ🟡</p>
+                                <p id="final-turn-count" class="text-2xl font-bold text-gray-300">-- 回</p>
+                            </div>
                         </div>
                     </div>
+                    <!-- ▲▲▲ 運転データレイアウト変更 ▲▲▲ -->
                 </div>
             </div>
             
             <div class="w-full space-y-3">
                 <button onclick="startNewSession()" 
-                        class="w-full py-4 text-xl bg-green-600 hover:bg-green-700 text-white rounded-xl shadow-lg transition duration-300 transform hover:scale-[1.02]">
+                        class="w-full py-4 text-xl bg-green-600 hover:bg-green-700 rounded-xl shadow-lg transition duration-300 transform hover:scale-[1.02]">
                     新しい記録を開始
                 </button>
                 
-                <a href="{{ url_for('views.sessions') }}" 
-                   class="w-full py-3 text-lg bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md transition duration-300 flex items-center justify-center font-medium">
+                <a href="#" 
+                   class="w-full py-3 text-lg bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md transition duration-300 flex items-center justify-center font-medium">
                     詳細な記録を確認する
                 </a>
                 
                 <button onclick="goToHome()" 
-                        class="w-full py-3 text-lg bg-gray-500 hover:bg-gray-600 text-white rounded-xl shadow-md transition duration-300">
+                        class="w-full py-3 text-lg bg-gray-500 hover:bg-gray-600 rounded-xl shadow-md transition duration-300">
                     ホームに戻る
                 </button>
             </div>
@@ -108,69 +135,55 @@
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 
     <script>
-        // Firebase Config (変更なし)
         const firebaseConfig = {
-          apiKey: "AIzaSyCEuouICKd32x3-4y5QzA_2ovq8pydvez4",
-          authDomain: "drive-prototype-32ef0.firebaseapp.com",
-          projectId: "drive-prototype-32ef0",
-          storageBucket: "drive-prototype-32ef0.firebasestorage.app",
-          messagingSenderId: "500916744769",
-          appId: "1:500916744769:web:d5a529ef05d15bb2934cc0",
-          measurementId: "G-9CH5CGYCFM"
+            apiKey: "AIzaSyCEuouICKd32x3-4y5QzA_2ovq8pydvez4",
+            authDomain: "drive-prototype-32ef0.firebaseapp.com",
+            projectId: "drive-prototype-32ef0",
+            storageBucket: "drive-prototype-32ef0.firebasestorage.app",
+            messagingSenderId: "500916744769",
+            appId: "1:500916744769:web:d5a529ef05d15bb2934cc0",
+            measurementId: "G-9CH5CGYCFM"
         };
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
 
-        // セッション終了後に呼ばれる関数
         function displaySessionResults(sessionData) {
-            // 結果をページに表示
             document.getElementById('total-time').textContent = sessionData.totalTime || '--:--';
             document.getElementById('total-distance').textContent = (sessionData.distance || 0).toFixed(2) + ' km';
             document.getElementById('final-brake-count').textContent = (sessionData.sudden_brakes || 0) + ' 回';
             document.getElementById('final-accel-count').textContent = (sessionData.sudden_accels || 0) + ' 回';
             document.getElementById('final-turn-count').textContent = (sessionData.sharp_turns || 0) + ' 回';
-            document.getElementById('stability-score').textContent = (sessionData.stability || 0).toFixed(0) + '%';
+            // 安定度の項目を削除
         }
 
-        // 新しいセッションを開始
         function startNewSession() {
-            window.location.href = "{{ url_for('views.index') }}";
+            // 仮のリンク先
+            window.location.href = "/";
         }
 
-        // ホームに戻る
         function goToHome() {
-            window.location.href = "{{ url_for('views.index') }}";
+            // 仮のリンク先
+            window.location.href = "/";
         }
 
-        // ページ読み込み時にセッションデータを表示（LocalStorageやURLパラメータから取得）
         document.addEventListener('DOMContentLoaded', function() {
-            // URLパラメータからセッションデータを取得する場合
-            const urlParams = new URLSearchParams(window.location.search);
-            const sessionDataStr = urlParams.get('data');
-            
-            if (sessionDataStr) {
-                try {
-                    const sessionData = JSON.parse(decodeURIComponent(sessionDataStr));
-                    displaySessionResults(sessionData);
-                } catch (e) {
-                    console.error('Failed to parse session data:', e);
-                }
-            }
-            
-            // または、LocalStorageから取得
             const savedSessionData = localStorage.getItem('lastSessionData');
             if (savedSessionData) {
                 try {
                     const sessionData = JSON.parse(savedSessionData);
                     displaySessionResults(sessionData);
-                    localStorage.removeItem('lastSessionData'); // 使用後削除
+                    // 必要に応じてフィードバック内容を動的に変更することもできます
+                    // const feedbackElement = document.getElementById('feedback-text');
+                    // if(sessionData.sudden_brakes > 5) {
+                    //    feedbackElement.textContent = "急ブレーキが非常に多いです！もっと注意しましょう。";
+                    // }
+                    localStorage.removeItem('lastSessionData');
                 } catch (e) {
                     console.error('Failed to parse saved session data:', e);
                 }
             }
         });
     </script>
-
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>
+
