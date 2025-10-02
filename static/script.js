@@ -16,7 +16,7 @@ let map, polyline, path = [];
 let suddenBrakes = 0;
 let suddenAccels = 0;
 let sharpTurns = 0;
-let speedViolations = 0; // 法定速度チェックがなくなるため、このカウンターは使われなくなるが、残しておく
+let speedViolations = 0; // 法定速度チェックはなくなるが残す
 
 // ★★★ 判定閾値とクールダウン期間の定数化 ★★★
 const COOLDOWN_MS = 2000; // イベント発生後のクールダウン期間（ミリ秒）
@@ -26,11 +26,14 @@ const ACCEL_EVENT_MS2   = 0.4;  // |加速度| >= 0.4 m/s^2 -> 急発進/急ブ�
 const JERK_EVENT_MS3    = 1.5;  // |ジャーク| >= 1.5 m/s^3 -> 速度のカクつき指摘
 const YAW_RATE_EVENT    = 0.6;  // |角速度| >= 0.6 rad/s -> 急ハンドル
 const ANG_ACCEL_EVENT   = 0.6;  // |角加速度| >= 0.6 rad/s^2 -> カーブのカクつき指摘
+const SHARP_TURN_G_THRESHOLD = 0.4; // 横Gのしきい値 (例: 0.4G ≒ 3.9 m/s^2)
 
-let lastBrakeTime = 0;
-let lastAccelTime = 0;
-let lastTurnTime = 0;
+// イベントのクールダウン管理
+let lastBrakeEventTime = 0;
+let lastAccelEventTime = 0;
+let lastTurnEventTime  = 0;
 
+// センサー最新値（G換算）
 let latestGX = 0;
 let latestGY = 0;
 let latestGZ = 0;
@@ -46,20 +49,42 @@ let gpsLogBuffer = [];
 let logFlushInterval = null; // 10秒ごとの送信タイマーID
 let isSessionStarting = false; // セッション開始リクエスト中フラグ
 
-// センサー値を補正
+// センサー値補正
 let orientationMode = "auto"; 
 let calibrationData = null;
 
+// === ジャーク・角速度・角加速度用 ===
+// ジャーク用：直前サンプル
+let lastAccelSample = null;         // m/s^2
+let lastAccelSampleTime = null;     // ms
+// 角速度・角加速度用：直前値
+let lastYawRate = null;             // rad/s
+let lastYawTime = null;             // ms
+
+// rotationRateの利用可否（フォールバック判定に使用）
+window._rotationAvailable = false;
+
+// 褒め判定（最後に高値を超えた時刻）
+let lastHighJerkTime = Date.now();
+let lastHighAccelTime = Date.now();
+let lastHighYawRateTime = Date.now();
+let lastHighAngAccelTime = Date.now();
+
+// 褒め条件（3分）
+const PRAISE_INTERVAL = 180000; 
+let praiseInterval = null;
+
+// 音声ファイルパス
 const audioFiles = {
-    jerk_low: ["audio/ジャークが少ないことについて褒める（1）.wav", "audio/ジャークが少ないことについて褒める（2）.wav"],
-    accel_good: ["audio/加速度について褒める（1）.wav", "audio/加速度について褒める（2）.wav"],
-    ang_accel_good: ["audio/角加速度について褒める（1）.wav", "audio/角加速度について褒める（2）.wav"],
-    ang_vel_high: ["audio/角速度が高いことに指摘（1）.wav", "audio/角速度が高いことに指摘（2）.wav"],
-    ang_vel_low: ["audio/角速度が低いことについて褒める（1）.wav", "audio/角速度が低いことについて褒める（2）.wav"],
-    sharp_turn: ["audio/急ハンドルについて指摘（1）.wav", "audio/急ハンドルについて指摘（2）.wav", "audio/急ハンドルについて指摘（3）.wav"],
-    sudden_brake: ["audio/急ブレーキについて指摘（1）.wav", "audio/急ブレーキについて指摘（2）.wav", "audio/急ブレーキについて指摘（3）.wav"],
-    sudden_accel: ["audio/急発進について指摘（1）.wav", "audio/急発進について指摘（2）.wav"],
-    speed_fluct: ["audio/速度の変化や「カクつき」について指摘（1）.wav", "audio/速度の変化や「カクつき」について指摘（2）.wav"]
+    jerk_low: ["/static/audio/ジャークが少ないことについて褒める（1）.wav", "audio/ジャークが少ないことについて褒める（2）.wav"],
+    accel_good: ["/static/audio/加速度について褒める（1）.wav", "audio/加速度について褒める（2）.wav"],
+    ang_accel_good: ["/static/audio/角加速度について褒める（1）.wav", "audio/角加速度について褒める（2）.wav"],
+    ang_vel_high: ["/static/audio/角速度が高いことに指摘（1）.wav", "audio/角速度が高いことに指摘（2）.wav"],
+    ang_vel_low: ["/static/audio/角速度が低いことについて褒める（1）.wav", "audio/角速度が低いことについて褒める（2）.wav"],
+    sharp_turn: ["/static/audio/急ハンドルについて指摘（1）.wav", "audio/急ハンドルについて指摘（2）.wav", "audio/急ハンドルについて指摘（3）.wav"],
+    sudden_brake: ["/static/audio/急ブレーキについて指摘（1）.wav", "audio/急ブレーキについて指摘（2）.wav", "audio/急ブレーキについて指摘（3）.wav"],
+    sudden_accel: ["/static/audio/急発進について指摘（1）.wav", "audio/急発進について指摘（2）.wav"],
+    speed_fluct: ["/static/audio/速度の変化や「カクつき」について指摘（1）.wav", "audio/速度の変化や「カクつき」について指摘（2）.wav"]
 };
 
 // --- ランダムで音声を再生する関数 ---
@@ -122,6 +147,88 @@ function adjustOrientation(ax, ay, az) {
             return { forward: -az, side: -ax, up: ay };
         default:
             return { forward: -az, side: ax, up: -ay };
+    }
+}
+
+// === DeviceMotionイベントハンドラ（ジャーク／角速度／角加速度） ===
+function handleDeviceMotion(event) {
+    const acc = event.acceleration || event.accelerationIncludingGravity;
+    if (!acc) return;
+
+    const now = Date.now();
+
+    // rotationRate 利用可否フラグ（フォールバック判定用）
+    if (event.rotationRate) {
+        window._rotationAvailable = true;
+    }
+
+    // 端末姿勢に合わせて車両軸へ変換
+    const { forward, side, up } = adjustOrientation(acc.x || 0, acc.y || 0, acc.z || 0);
+
+    // UI表示＆ログ用の G 値
+    latestGZ = forward / 9.8;
+    latestGX = side    / 9.8;
+    latestGY = up      / 9.8;
+
+    // ===== 1) ジャーク（m/s^3） =====
+    const accelMs2 = forward; // m/s^2
+
+    if (lastAccelSample !== null && lastAccelSampleTime !== null) {
+        const dt = (now - lastAccelSampleTime) / 1000;
+        if (dt > 0) {
+            const jerk = (accelMs2 - lastAccelSample) / dt; // m/s^3
+            if (Math.abs(jerk) >= JERK_EVENT_MS3) {
+                playRandomAudio("speed_fluct"); // 速度変化・カクつき
+                lastHighJerkTime = now;         // 褒めカウンタをリセット
+            }
+        }
+    }
+    lastAccelSample = accelMs2;
+    lastAccelSampleTime = now;
+
+    // ===== 2) 角速度・角加速度（rad/s, rad/s^2） =====
+    if (event.rotationRate) {
+        // ブラウザ多くは deg/s を返す。rad/s へ変換
+        let yawRate = (event.rotationRate.alpha || 0) * Math.PI / 180; // rad/s
+
+        // 角速度の指摘
+        if (Math.abs(yawRate) >= YAW_RATE_EVENT) {
+            playRandomAudio("sharp_turn");  // 急ハンドル
+            lastHighYawRateTime = now;      
+        }
+
+        // 角加速度
+        if (lastYawRate !== null && lastYawTime !== null) {
+            const dtYaw = (now - lastYawTime) / 1000;
+            if (dtYaw > 0) {
+                const angAccel = (yawRate - lastYawRate) / dtYaw; // rad/s^2
+                if (Math.abs(angAccel) >= ANG_ACCEL_EVENT) {
+                    playRandomAudio("speed_fluct"); // カーブのカクつき
+                    lastHighAngAccelTime = now;     
+                }
+            }
+        }
+        lastYawRate = yawRate;
+        lastYawTime = now;
+    }
+
+    // UI 更新
+    const gxElement = document.getElementById('g-x');
+    const gzElement = document.getElementById('g-z');
+    const gyElement = document.getElementById('g-y');
+    if (gxElement) gxElement.textContent = latestGX.toFixed(2);
+    if (gzElement) gzElement.textContent = latestGZ.toFixed(2);
+    if (gyElement) gyElement.textContent = latestGY.toFixed(2);
+
+    // Gログバッファへ
+    const gData = { timestamp: now, g_x: latestGX, g_y: latestGY, g_z: latestGZ };
+    if (sessionId) gLogBuffer.push(gData);
+}
+
+function startMotionDetection() {
+    if (window.DeviceMotionEvent) {
+        window.removeEventListener('devicemotion', handleDeviceMotion);
+        window.addEventListener('devicemotion', handleDeviceMotion);
     }
 }
 
@@ -251,11 +358,18 @@ function endSession(showAlert = true) {
     }
 
     stopTimer();
-    // ★ 定期送信タイマーを止める
+
+    // 定期送信タイマー停止
     if (logFlushInterval) {
         clearInterval(logFlushInterval);
         logFlushInterval = null;
     }
+    // 褒めチェック停止
+    if (praiseInterval) {
+        clearInterval(praiseInterval);
+        praiseInterval = null;
+    }
+
     if (watchId !== null) {
         navigator.geolocation.clearWatch(watchId);
         watchId = null;
@@ -288,7 +402,7 @@ function endSession(showAlert = true) {
     })
     .then(data => {
         if (data.status === 'ok') {
-            // ★ 残り分だけ送信 ★
+            // 残り分だけ送信
             const flushLogs = Promise.all([
                 gLogBuffer.length > 0
                     ? fetch('/log_g_only', {
@@ -371,122 +485,6 @@ function requestMotionPermission(callback) {
     }
 }
 
-// === ジャーク・角速度・角加速度用 ===
-let lastAccel = null;
-
-let lastYawRate = null;
-let lastYawTime = null;
-
-// DeviceMotionイベントハンドラ
-function handleDeviceMotion(event) {
-    const acc = event.acceleration || event.accelerationIncludingGravity;
-    if (!acc) return;
-
-    const now = Date.now();
-
-    // 端末姿勢に合わせて車両軸へ変換（既存）
-    const { forward, side, up } = adjustOrientation(acc.x || 0, acc.y || 0, acc.z || 0);
-
-    // UI表示＆ログ用の G 値（既存）
-    latestGZ = forward / 9.8;
-    latestGX = side    / 9.8;
-    latestGY = up      / 9.8;
-
-    // ===== 1) ジャーク（m/s^3） =====
-    // forward は m/s^2 として扱う
-    const accelMs2 = forward;
-
-    if (lastAccel !== null && lastAccelTime !== null) {
-        const dt = (now - lastAccelTime) / 1000;
-        if (dt > 0) {
-            const jerk = (accelMs2 - lastAccel) / dt; // m/s^3
-            // 指摘：|jerk| >= 1.5
-            if (Math.abs(jerk) >= JERK_EVENT_MS3) {
-                playRandomAudio("speed_fluct"); // 速度変化や「カクつき」を指摘（1/2 からランダム）
-                lastHighJerkTime = now;         // 褒めカウンタをリセット
-            }
-        }
-    }
-    lastAccel = accelMs2;
-    lastAccelTime = now;
-
-    // ===== 2) 角速度・角加速度（rad/s, rad/s^2） =====
-    if (event.rotationRate) {
-        // ※ Web 標準では deg/s の実装もあります。rad/s として利用する前提の場合は係数を入れてください。
-        // ここでは「図の単位(rad/s)に合わせる」前提で、端末が deg/s なら (Math.PI/180) を掛けてください。
-        let yawRate = event.rotationRate.alpha || 0; // 端末の仕様に応じて必要なら rad/s に変換
-        // 例: yawRate = (event.rotationRate.alpha || 0) * Math.PI / 180; // ←端末が deg/s の場合
-
-        // 指摘：|角速度| >= 0.6 rad/s
-        if (Math.abs(yawRate) >= YAW_RATE_EVENT) {
-            playRandomAudio("sharp_turn");  // 急ハンドル（1/2/3 からランダム）
-            lastHighYawRateTime = now;      // 褒めカウンタをリセット
-        }
-
-        // 角加速度判定
-        if (lastYawRate !== null && lastYawTime !== null) {
-            const dtYaw = (now - lastYawTime) / 1000;
-            if (dtYaw > 0) {
-                const angAccel = (yawRate - lastYawRate) / dtYaw; // rad/s^2
-                // 指摘：|角加速度| >= 0.6 rad/s^2
-                if (Math.abs(angAccel) >= ANG_ACCEL_EVENT) {
-                    playRandomAudio("speed_fluct"); // カーブのカクつき指摘（1/2）
-                    lastHighAngAccelTime = now;     // 褒めカウンタをリセット
-                }
-            }
-        }
-        lastYawRate = yawRate;
-        lastYawTime = now;
-    }
-
-    // ===== 既存の UI 更新 & gLogBuffer への push（そのまま維持） =====
-    const gxElement = document.getElementById('g-x');
-    const gzElement = document.getElementById('g-z');
-    const gyElement = document.getElementById('g-y');
-    if (gxElement) gxElement.textContent = latestGX.toFixed(2);
-    if (gzElement) gzElement.textContent = latestGZ.toFixed(2);
-    if (gyElement) gyElement.textContent = latestGY.toFixed(2);
-
-    const gData = { timestamp: now, g_x: latestGX, g_y: latestGY, g_z: latestGZ };
-    if (sessionId) gLogBuffer.push(gData);
-}
-
-
-// DeviceOrientationで角速度を取得
-window.addEventListener("devicemotion", function(event) {
-    if (event.rotationRate) {
-        const yawRate = event.rotationRate.alpha || 0; // rad/s と仮定
-        const now = Date.now();
-
-        // 急ハンドル判定
-        if (Math.abs(yawRate) > 0.6) {
-            playRandomAudio("sharp_turn");
-            lastEventTime = now;
-        }
-
-        // 角加速度計算
-        if (lastYawRate !== null && lastYawTime !== null) {
-            const dt = (now - lastYawTime) / 1000;
-            if (dt > 0) {
-                const angAccel = (yawRate - lastYawRate) / dt;
-                if (Math.abs(angAccel) > 0.6) {
-                    playRandomAudio("speed_fluct"); // カーブのカクつき指摘
-                    lastEventTime = now;
-                }
-            }
-        }
-        lastYawRate = yawRate;
-        lastYawTime = now;
-    }
-});
-
-function startMotionDetection() {
-    if (window.DeviceMotionEvent) {
-        window.removeEventListener('devicemotion', handleDeviceMotion);
-        window.addEventListener('devicemotion', handleDeviceMotion);
-    }
-}
-
 // イベントマーカー追加
 function addEventMarker(lat, lng, type) {
     const colors = {
@@ -509,8 +507,13 @@ function addEventMarker(lat, lng, type) {
     eventMarkers.push(marker);
 }
 
+// 地図初期化
 function initMap() {
     const mapDiv = document.getElementById('map');
+    if (!mapDiv) {
+        console.warn('Map container (#map) not found. Skipping map init.');
+        return;
+    }
     path = [];
 
     if (map) {
@@ -599,18 +602,10 @@ function calculateDistance(path) {
     return dist;
 }
 
-// === 最後に閾値を超えた時刻 ===
-let lastHighJerkTime = Date.now();
-let lastHighAccelTime = Date.now();
-let lastHighYawRateTime = Date.now();
-let lastHighAngAccelTime = Date.now();
-
-// 褒め条件の閾値（3分 = 180秒）
-const PRAISE_INTERVAL = 180000; 
-
 // 褒めチェック開始
 function startPraiseCheck() {
-    setInterval(() => {
+    if (praiseInterval) clearInterval(praiseInterval);
+    praiseInterval = setInterval(() => {
         const now = Date.now();
 
         // ジャーク 1.5 m/s³ 未満が3分続いた
@@ -631,7 +626,7 @@ function startPraiseCheck() {
             lastHighYawRateTime = now;
         }
 
-        // 角加速度 0.1 rad/s² 未満が3分続いた
+        // 角加速度 0.6 rad/s² 未満が3分続いた（※コメントは0.1→仕様に合わせ0.6に統一）
         if (now - lastHighAngAccelTime > PRAISE_INTERVAL) {
             playRandomAudio("ang_accel_good");
             lastHighAngAccelTime = now;
@@ -639,16 +634,18 @@ function startPraiseCheck() {
     }, 10000); // 10秒ごとにチェック
 }
 
-
 let prevSpeed = null, prevLatLng = null, prevTime = null;
 
 function watchPosition() {
     console.log('Starting GPS position watch...');
+    if (!sessionId) {
+        console.error("No sessionId! GPS log will not be saved");
+    }
     watchId = navigator.geolocation.watchPosition(async position => {
         const lat = position.coords.latitude;
         const lng = position.coords.longitude;
         const currentLatLng = { lat, lng };
-        const speed = position.coords.speed !== null ? position.coords.speed * 3.6 : 0;
+        const speed = position.coords.speed !== null ? position.coords.speed * 3.6 : 0; // km/h
         const now = Date.now();
 
         console.log(`GPS position received: lat=${lat}, lng=${lng}, speed=${speed}, accuracy=${position.coords.accuracy}, sessionId=${sessionId || 'none'}`);
@@ -684,25 +681,21 @@ function watchPosition() {
         }
 
         let currentEvent = 'normal';
-        const speedDisplayElement = document.getElementById('speed');
-        if (speedDisplayElement) {
-            speedDisplayElement.classList.remove('over-speed');
-        }
 
         if (prevSpeed !== null && prevTime !== null) {
             const dt = (now - prevTime) / 1000;
             if (dt > 0) {
-                // m/s^2 へ正規化
+                // m/s^2 へ正規化（GPS速度の差分）
                 const accelMs2 = (speed / 3.6 - prevSpeed / 3.6) / dt;
 
                 // ★ 急発進（指摘）
-                if (accelMs2 >= ACCEL_EVENT_MS2 && now - lastAccelTime > COOLDOWN_MS) {
+                if (accelMs2 >= ACCEL_EVENT_MS2 && now - lastAccelEventTime > COOLDOWN_MS) {
                     suddenAccels++;
                     const accelElement = document.getElementById('accel-count');
                     if (accelElement) accelElement.textContent = suddenAccels;
-                    lastAccelTime = now;
+                    lastAccelEventTime = now;
 
-                    addEventMarker(lat, lng, 'sudden_accel');
+                    if (typeof google !== 'undefined') addEventMarker(lat, lng, 'sudden_accel');
                     if (currentEvent === 'normal') currentEvent = 'sudden_accel';
 
                     playRandomAudio("sudden_accel"); // （1/2）からランダム
@@ -710,13 +703,13 @@ function watchPosition() {
                 }
 
                 // ★ 急ブレーキ（指摘）
-                if (accelMs2 <= -ACCEL_EVENT_MS2 && now - lastBrakeTime > COOLDOWN_MS) {
+                if (accelMs2 <= -ACCEL_EVENT_MS2 && now - lastBrakeEventTime > COOLDOWN_MS) {
                     suddenBrakes++;
                     const brakeElement = document.getElementById('brake-count');
                     if (brakeElement) brakeElement.textContent = suddenBrakes;
-                    lastBrakeTime = now;
+                    lastBrakeEventTime = now;
 
-                    addEventMarker(lat, lng, 'sudden_brake');
+                    if (typeof google !== 'undefined') addEventMarker(lat, lng, 'sudden_brake');
                     if (currentEvent === 'normal' || currentEvent === 'sudden_accel') currentEvent = 'sudden_brake';
 
                     playRandomAudio("sudden_brake"); // （1/2/3）からランダム
@@ -725,19 +718,15 @@ function watchPosition() {
             }
         }
 
-        // handleDeviceMotion 側ですでに角速度で「指摘」を出しています。
-        // rotationRate が未提供の端末向けフォールバックとして watchPosition() の既存横G判定は残しつつ、実行条件を「rotationRate が無い場合」に限定すると良いです。
-
-        // フォールバック例（watchPosition の適当な位置で / rotationRate が無い時だけ）:
-        if ((!('rotationRate' in DeviceMotionEvent.prototype)) || !window._rotationAvailable) {
-            // ※ _rotationAvailable は handleDeviceMotion で一度でも rotationRate を見られたら true にする等のフラグ
-            if (Math.abs(latestGX) > SHARP_TURN_G_THRESHOLD && speed > 15 && now - lastTurnTime > COOLDOWN_MS) {
+        // rotationRate が使えない端末向けフォールバック（横G）
+        if (!window._rotationAvailable) {
+            if (Math.abs(latestGX) > SHARP_TURN_G_THRESHOLD && speed > 15 && now - lastTurnEventTime > COOLDOWN_MS) {
                 sharpTurns++;
                 const turnElement = document.getElementById('turn-count');
                 if (turnElement) turnElement.textContent = sharpTurns;
-                lastTurnTime = now;
+                lastTurnEventTime = now;
 
-                addEventMarker(lat, lng, 'sharp_turn');
+                if (typeof google !== 'undefined') addEventMarker(lat, lng, 'sharp_turn');
                 currentEvent = 'sharp_turn';
 
                 playRandomAudio("sharp_turn");
@@ -753,7 +742,7 @@ function watchPosition() {
             }
         }
 
-        // ★ GPSログを保存（セッションIDがある場合のみ）
+        // GPSログを保存（セッションIDがある場合のみ）
         if (sessionId) {
             const gpsData = {
                 timestamp: now,
@@ -766,12 +755,8 @@ function watchPosition() {
                 event: currentEvent || 'normal'
             };
             gpsLogBuffer.push(gpsData);
-            console.log(`GPS data added to buffer for session ${sessionId}:`);
-            console.log(`  - Position: lat=${lat.toFixed(5)}, lng=${lng.toFixed(5)}`);
-            console.log(`  - Speed: ${speed.toFixed(1)} km/h`);
-            console.log(`  - G-forces: x=${gpsData.g_x}, y=${gpsData.g_y}, z=${gpsData.g_z}`);
-            console.log(`  - Buffer size: ${gpsLogBuffer.length}`);
-            console.log(`  - GPS data object:`, gpsData);
+            console.log(`GPS data added to buffer for session ${sessionId}:`, gpsData);
+            console.log(`Buffer sizes -> GPS: ${gpsLogBuffer.length}, G: ${gLogBuffer.length}`);
         } else {
             console.log(`GPS position received (display only): lat=${lat.toFixed(5)}, lng=${lng.toFixed(5)}, speed=${speed.toFixed(1)}`);
         }
@@ -801,8 +786,6 @@ function watchPosition() {
         }
     }, { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 });
 }
-
-// イベントリスナー
 
 // 時間をフォーマットする関数
 function formatTime(seconds) {
@@ -901,6 +884,11 @@ function startLogFlush() {
 
 // 記録中画面の初期化処理
 function initActiveRecording() {
+    // 地図の初期化（active画面でも必要）
+    if (typeof initMap === 'function') {
+        initMap();
+    }
+
     // LocalStorageからセッション情報を復元
     const savedSessionId = localStorage.getItem('activeSessionId');
     const savedStartTime = localStorage.getItem('sessionStartTime');
@@ -926,11 +914,10 @@ function initActiveRecording() {
         watchPosition();
         startMotionDetection();
         
-        // 定期ログ送信開始
+        // 定期ログ送信開始（1回だけ）
         startLogFlush();
-
-        startLogFlush();
-        startPraiseCheck(); // ★ 褒めチェック開始
+        // 褒めチェック開始
+        startPraiseCheck();
         
         console.log('Active recording initialized with session:', sessionId);
     } else {
@@ -968,9 +955,9 @@ document.addEventListener('DOMContentLoaded', function() {
         endButton.hasEventListener = true;  // 重複登録防止フラグ
     }
     
-    window.addEventListener('beforeunload', () => {
-        endSession(false);
-    });
+    // NOTE: beforeunload で終了処理を呼ぶと fetch がキャンセルされやすい（特にiOS/Safari）
+    // 必要なら sendBeacon 等の軽量通知に置き換えてください。
+    // window.addEventListener('beforeunload', () => { endSession(false); });
     
     console.log('Initializing based on current path...');
     
