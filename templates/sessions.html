@@ -357,205 +357,200 @@
         });
 
         // グラフ描画関数
-        function renderGForceChart(canvasId, gpsLogs, gLogs) {
-            console.log('Rendering chart:', canvasId);
-            console.log('GPS logs available:', gpsLogs ? gpsLogs.length : 0);
-            console.log('G logs available:', gLogs ? gLogs.length : 0);
-            
-            if (!gLogs || gLogs.length === 0) {
-                console.error('No G logs available for chart:', canvasId);
-                return;
-            }
-            
-            // GPSログがない場合は空配列を設定
-            if (!gpsLogs) {
-                gpsLogs = [];
-            }
-            
-            if (typeof Chart === 'undefined') {
-                console.error('Chart.js not loaded');
-                return;
-            }
-            
-            const ctx = document.getElementById(canvasId);
-            if (!ctx) {
-                console.error('Canvas not found:', canvasId);
-                return;
-            }
-            
-            // canvas要素とコンテナの詳細な診断
-            const container = ctx.closest('.chart-container');
-            const rect = ctx.getBoundingClientRect();
-            const containerRect = container ? container.getBoundingClientRect() : null;
-            
-            console.log(`Canvas ${canvasId} - Canvas dimensions:`, rect.width, 'x', rect.height);
-            console.log(`Canvas ${canvasId} - Container dimensions:`, containerRect ? `${containerRect.width} x ${containerRect.height}` : 'No container');
-            console.log(`Canvas ${canvasId} - Canvas style:`, window.getComputedStyle(ctx).display, window.getComputedStyle(ctx).visibility);
-            
-            // コンテナとcanvasのサイズを強制的に設定
-            if (container) {
-                container.style.display = 'block';
-                container.style.height = '300px';
-                container.style.width = '100%';
-                container.style.position = 'relative';
-            }
-            
-            ctx.style.display = 'block';
-            ctx.width = container ? container.offsetWidth : 800;
-            ctx.height = 300;
-            
-            // 再度寸法をチェック
-            const newRect = ctx.getBoundingClientRect();
-            console.log(`Canvas ${canvasId} - After resize:`, newRect.width, 'x', newRect.height);
-            
-            if (newRect.width === 0 || newRect.height === 0) {
-                console.error(`Canvas ${canvasId} still has zero dimensions after resize attempt`);
-                // 再試行
-                setTimeout(() => renderGForceChart(canvasId, gpsLogs, gLogs), 200);
-                return;
-            }
-            
-            try {
-                const allTimestamps = Array.from(new Set([
-                    ...gLogs.map(log => Number(log.timestamp_ms ?? log.timestamp)).filter(ts => !isNaN(ts)),
-                    ...gpsLogs.map(log => Number(log.timestamp_ms ?? log.timestamp)).filter(ts => !isNaN(ts))
-                ])).sort((a, b) => a - b);
+        // イベントマーカーの色定義
+        const colorMap = {
+            normal: 'transparent',
+            sudden_brake: 'red',
+            sudden_accel: 'green',
+            sharp_turn: 'orange',
+            speed_violation: 'purple'
+        };
 
-                const timestamps = allTimestamps.map(ts => new Date(ts).toLocaleTimeString('ja-JP'));
+        // イベントを表示する対象の軸
+        const eventAxisMap = {
+            sudden_brake: 'gz',
+            sudden_accel: 'gz',
+            sharp_turn: 'gx',
+            speed_violation: 'speed'
+        };
 
-                function alignData(logs, key) {
-                    const map = new Map(logs.map(log => [Number(log.timestamp_ms ?? log.timestamp), log[key]]));
-                    return allTimestamps.map(ts => {
-                        const value = map.get(ts);
-                        // 値が存在する場合（0を含む）はその値を返し、存在しない場合のみnullを返す
-                        if (value !== undefined && value !== null) {
-                            return Number(value); // 数値に変換して返す
-                        }
-                        return null;
-                    });
+        // ts に最も近いログを探す（最大許容差: 500ms）
+        function findLogByTimestamp(logs, ts, maxDiffMs = 500) {
+            let closest = null;
+            let minDiff = Infinity;
+            logs.forEach(log => {
+                const t = Number(log.timestamp_ms ?? log.timestamp);
+                if (isNaN(t)) return;
+                const diff = Math.abs(t - ts);
+                if (diff < minDiff) {
+                    closest = log;
+                    minDiff = diff;
                 }
+            });
+            return (minDiff <= maxDiffMs) ? closest : null;
+        }
 
-                // 速度データのデバッグ
-                const speedData = alignData(gpsLogs, "speed");
-                console.log(`Speed data for ${canvasId}:`, speedData);
-                console.log(`Speed data sample (first 10):`, speedData.slice(0, 10));
-                const zeroSpeeds = speedData.filter(speed => speed === 0).length;
-                const nullSpeeds = speedData.filter(speed => speed === null).length;
-                console.log(`Zero speeds: ${zeroSpeeds}, Null speeds: ${nullSpeeds}, Total speeds: ${speedData.length}`);
+        // イベントポイント生成
+        function makeEventPoints(allTimestamps, gpsLogs, axisKey) {
+            return {
+                radius: allTimestamps.map(ts => {
+                    const log = findLogByTimestamp(gpsLogs, ts, 500);
+                    if (!log || !log.event || log.event === 'normal') return 0;
+                    if (axisKey === 'speed') return 6;
+                    if (eventAxisMap[log.event] === axisKey) return 6;
+                    return 0;
+                }),
+                background: allTimestamps.map(ts => {
+                    const log = findLogByTimestamp(gpsLogs, ts, 500);
+                    if (!log || !log.event || log.event === 'normal') return 'transparent';
+                    if (axisKey === 'speed') return colorMap[log.event] || 'gray';
+                    if (eventAxisMap[log.event] === axisKey) return colorMap[log.event] || 'gray';
+                    return 'transparent';
+                }),
+                border: allTimestamps.map(ts => {
+                    const log = findLogByTimestamp(gpsLogs, ts, 500);
+                    if (!log || !log.event || log.event === 'normal') return 'transparent';
+                    if (axisKey === 'speed' || eventAxisMap[log.event] === axisKey) return '#000';
+                    return 'transparent';
+                })
+            };
+        }
 
-            const chart = new Chart(ctx.getContext('2d'), {
+        // 修正版グラフ描画関数
+        function renderGForceChart(canvasId, gpsLogs, gLogs) {
+            if (!gLogs || gLogs.length === 0) return;
+
+            const allTimestamps = Array.from(new Set([
+                ...gLogs.map(log => Number(log.timestamp_ms ?? log.timestamp)).filter(ts => !isNaN(ts)),
+                ...gpsLogs.map(log => Number(log.timestamp_ms ?? log.timestamp)).filter(ts => !isNaN(ts))
+            ])).sort((a, b) => a - b);
+
+            const timestamps = allTimestamps.map(ts => new Date(ts).toLocaleTimeString('ja-JP'));
+
+            // nullを保持してalignする（補完しない）
+            function alignData(logs, key) {
+                const map = new Map(logs.map(log => [Number(log.timestamp_ms ?? log.timestamp), log[key]]));
+                return allTimestamps.map(ts => {
+                    const value = map.get(ts);
+                    return (value !== undefined && value !== null) ? Number(value) : null;
+                });
+            }
+
+            const gxData = alignData(gLogs, "g_x");
+            const gyData = alignData(gLogs, "g_y");
+            const gzData = alignData(gLogs, "g_z");
+            const speedData = alignData(gpsLogs, "speed");  // ← ここも alignData に変更
+
+            const gxPoints = makeEventPoints(allTimestamps, gpsLogs, 'gx');
+            const gyPoints = makeEventPoints(allTimestamps, gpsLogs, 'gy');
+            const gzPoints = makeEventPoints(allTimestamps, gpsLogs, 'gz');
+            const speedPoints = makeEventPoints(allTimestamps, gpsLogs, 'speed');
+
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            const chart = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: timestamps,
                     datasets: [
                         {
                             label: '前後G',
-                            data: alignData(gLogs, "g_z"),
+                            data: gzData,
                             borderColor: '#00bcd4',
                             backgroundColor: 'rgba(0,188,212,0.2)',
                             borderWidth: 2,
                             yAxisID: 'y',
-                            fill: false,
-                            tension: 0.1,  // 少し滑らかに
-                            spanGaps: true
+                            tension: 0,
+                            spanGaps: true,
+                            pointRadius: gzPoints.radius,
+                            pointBackgroundColor: gzPoints.background,
+                            pointBorderColor: gzPoints.border
                         },
                         {
                             label: '上下G',
-                            data: alignData(gLogs, "g_y"),
+                            data: gyData,
                             borderColor: '#666',
                             backgroundColor: 'rgba(102,102,102,0.2)',
                             borderWidth: 2,
                             yAxisID: 'y',
-                            fill: false,
-                            tension: 0.1,  // 少し滑らかに
-                            spanGaps: true
+                            tension: 0,
+                            spanGaps: true,
+                            pointRadius: gyPoints.radius,
+                            pointBackgroundColor: gyPoints.background,
+                            pointBorderColor: gyPoints.border
                         },
                         {
                             label: '左右G',
-                            data: alignData(gLogs, "g_x"),
+                            data: gxData,
                             borderColor: '#9c27b0',
                             backgroundColor: 'rgba(156,39,176,0.2)',
                             borderWidth: 2,
                             yAxisID: 'y',
-                            fill: false,
-                            tension: 0.1,  // 少し滑らかに
-                            spanGaps: true
+                            tension: 0,
+                            spanGaps: true,
+                            pointRadius: gxPoints.radius,
+                            pointBackgroundColor: gxPoints.background,
+                            pointBorderColor: gxPoints.border
                         },
                         {
                             label: '速度 (km/h)',
-                            data: alignData(gpsLogs, "speed"),
+                            data: speedData,
                             borderColor: 'rgba(255,99,132,0.7)',
                             backgroundColor: 'rgba(255,99,132,0.1)',
-                            borderWidth: 2,  // 線の太さを統一
+                            borderWidth: 1,
                             yAxisID: 'y1',
-                            fill: false,
-                            tension: 0.1,  // 少し滑らかに
-                            spanGaps: true
+                            tension: 0,
+                            spanGaps: true,
+                            pointStyle: ctx => speedPoints.radius[ctx.dataIndex] > 0 ? 'circle' : false,
+                            pointRadius: ctx => speedPoints.radius[ctx.dataIndex],
+                            pointBackgroundColor: ctx => speedPoints.background[ctx.dataIndex],
+                            pointBorderColor: ctx => speedPoints.border[ctx.dataIndex]
                         }
                     ]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    devicePixelRatio: window.devicePixelRatio || 1,
-                    layout: {
-                        padding: {
-                            left: 10,
-                            right: 10,
-                            top: 10,
-                            bottom: 10
-                        }
-                    },
                     scales: {
-                        y: {
-                            position: 'left',
-                            title: { display: true, text: 'G (重力加速度)' }
-                        },
+                        y: { position: 'left', title: { display: true, text: 'G (重力加速度)' } },
                         y1: {
                             position: 'right',
                             title: { display: true, text: '速度 (km/h)' },
                             grid: { drawOnChartArea: false },
                             min: 0,
-                            max: 120,
-                            beginAtZero: true,  // 0から開始することを明示
-                            ticks: {
-                                stepSize: 10,  // 10km/h刻みで表示
-                                callback: function(value) {
-                                    return value + ' km/h';
-                                }
-                            }
+                            max: 120
                         }
                     },
                     plugins: {
+                        decimation: { enabled: true, algorithm: 'lttb', samples: 1000 },
                         zoom: {
                             pan: { enabled: true, mode: 'x' },
                             zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' }
-                        }
-                    },
-                    onResize: function(chart, size) {
-                        console.log(`Chart ${canvasId} resized to:`, size.width, 'x', size.height);
-                    },
-                    animation: {
-                        onComplete: function() {
-                            console.log(`Chart ${canvasId} animation completed`);
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const ts = allTimestamps[context.dataIndex];
+                                    const date = new Date(ts);
+                                    const timeStr = date.toLocaleTimeString('ja-JP', { hour12: false }) +
+                                        "." + String(date.getMilliseconds()).padStart(3, "0");
+                                    let label = `${timeStr} | ${context.dataset.label}: ${context.raw?.toFixed(2)}`;
+                                    if (context.dataset.label.includes('速度')) label += ' km/h';
+                                    else label += ' G';
+                                    const log = gpsLogs.find(l => Number(l.timestamp_ms ?? l.timestamp) === ts);
+                                    if (log && log.event && log.event !== 'normal') {
+                                        label += ` (イベント: ${log.event.replace(/_/g, ' ')})`;
+                                    }
+                                    return label;
+                                }
+                            }
                         }
                     }
                 }
             });
-            
+
             chartInstances[canvasId] = chart;
-            console.log('Chart created successfully:', canvasId);
-            
-            // チャート作成後に強制リサイズ
-            setTimeout(() => {
-                chart.resize();
-                console.log(`Chart ${canvasId} manually resized`);
-            }, 100);
-            
-            } catch (error) {
-                console.error('Error creating chart:', canvasId, error);
-            }
         }
+
 
         // 地図初期化関数
         function initSessionMap(mapId, gpsLogs) {
