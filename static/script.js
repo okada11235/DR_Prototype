@@ -13,20 +13,33 @@ let startTime = null;
 let watchId = null;
 let map, polyline, path = [];
 
+// モーション検出の状態管理
+let isMotionDetectionActive = false;
+
+// DeviceMotionEventのフレームスキップ管理（60Hzを15Hzに削減）
+let motionFrameCounter = 0;
+const MOTION_FRAME_SKIP = 4; // 4フレームに1回処理（元は6フレーム）
+
+// 初期化期間管理（起動直後の不安定なデータを除外）
+let motionInitTime = null;
+const MOTION_INIT_DURATION = 3000; // 3秒間は初期化期間
+let stableSampleCount = 0;
+const STABLE_SAMPLES_REQUIRED = 10; // 10回連続で安定したら処理開始
+
 let suddenBrakes = 0;
 let suddenAccels = 0;
 let sharpTurns = 0;
 let speedViolations = 0; // 法定速度チェックはなくなるが残す
 
 // ★★★ 判定閾値とクールダウン期間の定数化 ★★★
-const COOLDOWN_MS = 2000; // イベント発生後のクールダウン期間（ミリ秒）
+const COOLDOWN_MS = 3000; // イベント発生後のクールダウン期間（3秒に延長）
 
-// ■ イベント（指摘）用
+// ■ イベント（指摘）用 - ユーザー指定の閾値
 const ACCEL_EVENT_MS2   = 0.4;  // |加速度| >= 0.4 m/s^2 -> 急発進/急ブレーキ
 const JERK_EVENT_MS3    = 1.5;  // |ジャーク| >= 1.5 m/s^3 -> 速度のカクつき指摘
 const YAW_RATE_EVENT    = 0.6;  // |角速度| >= 0.6 rad/s -> 急ハンドル
 const ANG_ACCEL_EVENT   = 0.6;  // |角加速度| >= 0.6 rad/s^2 -> カーブのカクつき指摘
-const SHARP_TURN_G_THRESHOLD = 0.4; // 横Gのしきい値 (例: 0.4G ≒ 3.9 m/s^2)
+const SHARP_TURN_G_THRESHOLD = 0.5; // 横Gのしきい値 (やや厳しく: 0.5G)
 
 // イベントのクールダウン管理
 let lastBrakeEventTime = 0;
@@ -70,9 +83,17 @@ let lastHighAccelTime = Date.now();
 let lastHighYawRateTime = Date.now();
 let lastHighAngAccelTime = Date.now();
 
-// 褒め条件（3分）
-const PRAISE_INTERVAL = 180000; 
+// 褒め条件（3分間適切な運転を維持）
+const PRAISE_INTERVAL = 180000; // 3分間に戻す 
 let praiseInterval = null;
+
+// 音声再生のクールダウン管理
+let lastAudioPlayTime = {};
+const AUDIO_COOLDOWN_MS = 5000; // 運転中の適切な指摘間隔（5秒）
+
+// グローバル音声ロック（どのカテゴリでも1つしか同時再生しない）
+let isAudioPlaying = false;
+let audioLockTimeout = null;
 
 // 音声ファイルパス（統一して /static/audio/ プレフィックス使用）
 const audioFiles = {
@@ -82,24 +103,71 @@ const audioFiles = {
     ang_vel_high: ["/static/audio/角速度が高いことに指摘（1）.wav", "/static/audio/角速度が高いことに指摘（2）.wav"],
     ang_vel_low: ["/static/audio/角速度が低いことについて褒める（1）.wav", "/static/audio/角速度が低いことについて褒める（2）.wav"],
     sharp_turn: ["/static/audio/急ハンドルについて指摘（1）.wav", "/static/audio/急ハンドルについて指摘（2）.wav", "/static/audio/急ハンドルについて指摘（3）.wav"],
+    yaw_rate_high: ["/static/audio/急ハンドルについて指摘（1）.wav", "/static/audio/急ハンドルについて指摘（2）.wav", "/static/audio/急ハンドルについて指摘（3）.wav"],
+    yaw_rate_high: ["/static/audio/急ハンドルについて指摘（1）.wav", "/static/audio/急ハンドルについて指摘（2）.wav", "/static/audio/急ハンドルについて指摘（3）.wav"],
     sudden_brake: ["/static/audio/急ブレーキについて指摘（1）.wav", "/static/audio/急ブレーキについて指摘（2）.wav", "/static/audio/急ブレーキについて指摘（3）.wav"],
     sudden_accel: ["/static/audio/急発進について指摘（1）.wav", "/static/audio/急発進について指摘（2）.wav"],
-    speed_fluct: ["/static/audio/速度の変化や「カクつき」について指摘（1）.wav", "/static/audio/速度の変化や「カクつき」について指摘（2）.wav"]
+    speed_fluct: ["/static/audio/速度の変化や「カクつき」について指摘（1）.wav", "/static/audio/速度の変化や「カクつき」について指摘（2）.wav"],
+    jerk: ["/static/audio/速度の変化や「カクつき」について指摘（1）.wav", "/static/audio/速度の変化や「カクつき」について指摘（2）.wav"]
 };
 
-// --- ランダムで音声を再生する関数 ---
+// --- ランダムで音声を再生する関数（クールダウン付き + 記録中のみ + グローバルロック） ---
 function playRandomAudio(category) {
+    // 記録中でない場合は音声再生しない
+    if (!sessionId) {
+        console.log(`🔇 Audio skipped (not recording): ${category}`);
+        return;
+    }
+    
+    // グローバル音声ロックチェック
+    if (isAudioPlaying) {
+        console.log(`🔇 Audio locked (another audio playing): ${category}`);
+        return;
+    }
+    
     if (!audioFiles[category]) {
         console.warn('Audio category not found:', category);
         return;
     }
+    
+    // クールダウンチェック
+    const now = Date.now();
+    const lastPlayTime = lastAudioPlayTime[category] || 0;
+    
+    if (now - lastPlayTime < AUDIO_COOLDOWN_MS) {
+        console.log(`🔇 Audio cooldown active for ${category} (${Math.round((AUDIO_COOLDOWN_MS - (now - lastPlayTime)) / 1000)}s remaining)`);
+        return;
+    }
+    
+    // グローバルロック設定
+    isAudioPlaying = true;
+    
     const files = audioFiles[category];
     const file = files[Math.floor(Math.random() * files.length)];
-    console.log(`🔊 Playing audio: ${category} -> ${file}`);
+    console.log(`🔊 Playing audio (recording): ${category} -> ${file}`);
+    console.log(`Current cooldowns:`, Object.keys(lastAudioPlayTime).map(k => `${k}:${Math.round((Date.now() - lastAudioPlayTime[k])/1000)}s`).join(', '));
+    
     const audio = new Audio(file);
-    audio.play().catch(err => {
+    audio.play().then(() => {
+        // 再生成功時にクールダウン時刻を記録
+        lastAudioPlayTime[category] = now;
+        console.log(`✓ Audio played successfully: ${category} - Next available in ${AUDIO_COOLDOWN_MS/1000}s`);
+        
+        // 音声の長さに応じてロックを解除（運転中に適切な間隔：2秒）
+        audioLockTimeout = setTimeout(() => {
+            isAudioPlaying = false;
+            console.log(`🔓 Audio lock released for ${category}`);
+        }, Math.max(2000, AUDIO_COOLDOWN_MS / 3));
+        
+    }).catch(err => {
         console.warn("Audio play failed:", err);
         console.warn("Audio file path:", file);
+        // エラー時もロックを解除
+        isAudioPlaying = false;
+        if (audioLockTimeout) {
+            clearTimeout(audioLockTimeout);
+            audioLockTimeout = null;
+        }
     });
 }
 
@@ -159,10 +227,27 @@ function adjustOrientation(ax, ay, az) {
 
 // === DeviceMotionイベントハンドラ（ジャーク／角速度／角加速度） ===
 function handleDeviceMotion(event) {
+    // 初期化期間の管理
+    const now = Date.now();
+    if (!motionInitTime) {
+        motionInitTime = now;
+        console.log('📱 Motion detection initialized, waiting for stable data...');
+        return;
+    }
+    
+    // 初期化期間中は音声再生しない
+    if (now - motionInitTime < MOTION_INIT_DURATION) {
+        return;
+    }
+    
+    // フレームスキップ（処理頻度を下げて重複を防ぐ）
+    motionFrameCounter++;
+    if (motionFrameCounter % MOTION_FRAME_SKIP !== 0) {
+        return; // このフレームはスキップ
+    }
+
     const acc = event.acceleration || event.accelerationIncludingGravity;
     if (!acc) return;
-
-    const now = Date.now();
 
     // rotationRate 利用可否フラグ（フォールバック判定用）
     if (event.rotationRate) {
@@ -182,11 +267,16 @@ function handleDeviceMotion(event) {
 
     if (lastAccelSample !== null && lastAccelSampleTime !== null) {
         const dt = (now - lastAccelSampleTime) / 1000;
-        if (dt > 0) {
+        if (dt > 0.05 && dt < 1.0) { // 時間間隔が適切かチェック（0.05-1.0秒）
             const jerk = (accelMs2 - lastAccelSample) / dt; // m/s^3
-            if (Math.abs(jerk) >= JERK_EVENT_MS3) {
-                playRandomAudio("speed_fluct"); // 速度変化・カクつき
-                lastHighJerkTime = now;         // 褒めカウンタをリセット
+            // 異常値を除外（非現実的な値をフィルタリング）
+            if (Math.abs(jerk) >= JERK_EVENT_MS3 && Math.abs(jerk) < 50) {
+                const lastJerkAudio = lastAudioPlayTime['jerk'] || 0;
+                if (now - lastJerkAudio >= AUDIO_COOLDOWN_MS) {
+                    console.log(`⚠️ Jerk detected: ${jerk.toFixed(2)} m/s^3`);
+                    playRandomAudio("jerk"); // ジャーク（速度変化のカクつき）
+                    lastHighJerkTime = now;         // 褒めカウンタをリセット
+                }
             }
         }
     }
@@ -198,20 +288,28 @@ function handleDeviceMotion(event) {
         // ブラウザ多くは deg/s を返す。rad/s へ変換
         let yawRate = (event.rotationRate.alpha || 0) * Math.PI / 180; // rad/s
 
-        // 角速度の指摘
-        if (Math.abs(yawRate) >= YAW_RATE_EVENT) {
-            playRandomAudio("sharp_turn");  // 急ハンドル
-            lastHighYawRateTime = now;      
+        // 角速度の指摘（クールダウン付き）- DeviceMotion系の急ハンドル
+        if (Math.abs(yawRate) >= YAW_RATE_EVENT && Math.abs(yawRate) < 10) { // 異常値を除外
+            const lastTurnAudio = lastAudioPlayTime['yaw_rate_high'] || 0;
+            if (now - lastTurnAudio >= AUDIO_COOLDOWN_MS) {
+                console.log(`⚠️ High yaw rate detected: ${yawRate.toFixed(3)} rad/s`);
+                playRandomAudio("yaw_rate_high");  // 角速度系の急ハンドル
+                lastHighYawRateTime = now;      
+            }
         }
 
         // 角加速度
         if (lastYawRate !== null && lastYawTime !== null) {
             const dtYaw = (now - lastYawTime) / 1000;
-            if (dtYaw > 0) {
+            if (dtYaw > 0.05 && dtYaw < 1.0) { // 時間間隔が適切かチェック
                 const angAccel = (yawRate - lastYawRate) / dtYaw; // rad/s^2
-                if (Math.abs(angAccel) >= ANG_ACCEL_EVENT) {
-                    playRandomAudio("speed_fluct"); // カーブのカクつき
-                    lastHighAngAccelTime = now;     
+                if (Math.abs(angAccel) >= ANG_ACCEL_EVENT && Math.abs(angAccel) < 20) { // 異常値を除外
+                    const lastAngAccelAudio = lastAudioPlayTime['ang_accel_high'] || 0;
+                    if (now - lastAngAccelAudio >= AUDIO_COOLDOWN_MS) {
+                        console.log(`⚠️ High angular acceleration: ${angAccel.toFixed(3)} rad/s^2`);
+                        playRandomAudio("ang_accel_high"); // 角加速度が高い（カーブのカクつき）
+                        lastHighAngAccelTime = now;     
+                    }
                 }
             }
         }
@@ -233,9 +331,24 @@ function handleDeviceMotion(event) {
 }
 
 function startMotionDetection() {
-    if (window.DeviceMotionEvent) {
+    if (window.DeviceMotionEvent && !isMotionDetectionActive) {
+        // 既存のリスナーを確実に削除
         window.removeEventListener('devicemotion', handleDeviceMotion);
+        // 新しいリスナーを追加
         window.addEventListener('devicemotion', handleDeviceMotion);
+        isMotionDetectionActive = true;
+        console.log('DeviceMotion listener registered (first time)');
+    } else if (isMotionDetectionActive) {
+        console.log('DeviceMotion already active, skipping registration');
+    }
+}
+
+function stopMotionDetection() {
+    if (window.DeviceMotionEvent && isMotionDetectionActive) {
+        window.removeEventListener('devicemotion', handleDeviceMotion);
+        isMotionDetectionActive = false;
+        motionInitTime = null; // 初期化時刻をリセット
+        console.log('DeviceMotion listener removed');
     }
 }
 
@@ -347,6 +460,8 @@ function startSession() {
 
 // 記録終了
 function endSession(showAlert = true) {
+    console.log("=== endSession called ===");
+    
     console.log("=== Debug: G Logs before save ===");
     gLogBuffer.forEach((log, i) => {
         console.log(`[${i}] timestamp=${log.timestamp}, g_x=${log.g_x}, g_y=${log.g_y}, g_z=${log.g_z}`);
@@ -357,15 +472,19 @@ function endSession(showAlert = true) {
             `[${i}] ${log.timestamp} | event=${log.event} | g_x=${log.g_x} | g_y=${log.g_y} | lat=${log.latitude} | lon=${log.longitude} | speed=${log.speed}`
         );
     });
+    
     if (!sessionId) {
+        console.log("No sessionId found");
         if (showAlert) {
             alert('まだ記録が開始されていません');
         }
         return;
     }
 
+    console.log("Stopping timer...");
     stopTimer();
 
+    console.log("Clearing intervals...");
     // 定期送信タイマー停止
     if (logFlushInterval) {
         clearInterval(logFlushInterval);
@@ -377,16 +496,36 @@ function endSession(showAlert = true) {
         praiseInterval = null;
     }
 
+    console.log("Clearing GPS watch...");
     if (watchId !== null) {
         navigator.geolocation.clearWatch(watchId);
         watchId = null;
     }
-    if (window.DeviceMotionEvent) {
-        window.removeEventListener('devicemotion', handleDeviceMotion);
+    
+    console.log("Stopping motion detection...");
+    // DeviceMotionEventリスナーを削除
+    stopMotionDetection();
+
+    console.log("Resetting audio locks...");
+    // 音声ロックをリセット
+    isAudioPlaying = false;
+    if (audioLockTimeout) {
+        clearTimeout(audioLockTimeout);
+        audioLockTimeout = null;
+    }
+    lastAudioPlayTime = {}; // 音声クールダウンもリセット
+
+    console.log("Calculating distance...");
+    let distance = 0;
+    try {
+        distance = calculateDistance(path);
+        console.log("Distance calculated:", distance);
+    } catch (error) {
+        console.error("Error calculating distance:", error);
+        distance = 0;
     }
 
-    const distance = calculateDistance(path);
-
+    console.log("Sending end request to server...");
     fetch('/end', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -400,6 +539,7 @@ function endSession(showAlert = true) {
         }),
     })
     .then(response => {
+        console.log("End request response status:", response.status);
         if (!response.ok) {
             return response.json().then(errorData => {
                 throw new Error(errorData.message || '記録終了時にサーバーエラーが発生しました');
@@ -408,6 +548,7 @@ function endSession(showAlert = true) {
         return response.json();
     })
     .then(data => {
+        console.log("End request response data:", data);
         if (data.status === 'ok') {
             // 残り分だけ送信
             const flushLogs = Promise.all([
@@ -432,6 +573,17 @@ function endSession(showAlert = true) {
                     : Promise.resolve()
             ]);
             flushLogs.finally(() => {
+                console.log("All logs flushed, preparing session data...");
+                
+                // 時間計算の安全性確保
+                let elapsedTime = 0;
+                if (startTime && typeof startTime === 'number') {
+                    elapsedTime = Math.floor((Date.now() - startTime) / 1000);
+                    console.log("Elapsed time calculated:", elapsedTime);
+                } else {
+                    console.warn("startTime is not valid:", startTime);
+                }
+                
                 // セッションデータを保存して記録完了画面に遷移
                 const sessionData = {
                     distance: distance,
@@ -439,9 +591,11 @@ function endSession(showAlert = true) {
                     sudden_brakes: suddenBrakes,
                     sharp_turns: sharpTurns,
                     speed_violations: speedViolations,
-                    totalTime: formatTime(Math.floor((Date.now() - startTime) / 1000)),
+                    totalTime: formatTime(elapsedTime),
                     stability: calculateStability(suddenAccels, suddenBrakes, sharpTurns, distance)
                 };
+                
+                console.log("Session data prepared:", sessionData);
                 
                 // LocalStorageに保存
                 localStorage.setItem('lastSessionData', JSON.stringify(sessionData));
@@ -453,17 +607,25 @@ function endSession(showAlert = true) {
                 // セッション変数をリセット
                 sessionId = null;
                 resetCounters();
+                
+                // 音声クールダウンもリセット
+                lastAudioPlayTime = {};
+                console.log('🔇 Audio playback disabled (recording ended)');
+                
+                console.log("Cleaning up map elements...");
                 if (polyline) polyline.setPath([]);
                 if (currentPositionMarker) currentPositionMarker.setMap(null);
                 path = [];
                 eventMarkers.forEach(marker => marker.setMap(null));
                 eventMarkers = [];
                 
+                console.log("Redirecting to completed page...");
                 // 記録完了画面に遷移
                 window.location.href = '/recording/completed';
             });
 
         } else {
+            console.error("End session failed:", data);
             if (showAlert) {
                 alert('記録終了に失敗しました: ' + (data.message || '不明なエラー'));
             }
@@ -471,6 +633,7 @@ function endSession(showAlert = true) {
     })
     .catch(error => {
         console.error('記録終了中にエラーが発生しました:', error);
+        console.error('Error stack:', error.stack);
         if (showAlert) {
             alert('記録終了中にネットワークまたは処理エラーが発生しました: ' + error.message);
         }
@@ -705,7 +868,10 @@ function watchPosition() {
                     if (typeof google !== 'undefined') addEventMarker(lat, lng, 'sudden_accel');
                     if (currentEvent === 'normal') currentEvent = 'sudden_accel';
 
-                    playRandomAudio("sudden_accel"); // （1/2）からランダム
+                    const lastAccelAudio = lastAudioPlayTime['sudden_accel'] || 0;
+                    if (now - lastAccelAudio >= AUDIO_COOLDOWN_MS) {
+                        playRandomAudio("sudden_accel"); // （1/2）からランダム
+                    }
                     lastHighAccelTime = now;         // 褒めカウンタをリセット
                 }
 
@@ -719,15 +885,19 @@ function watchPosition() {
                     if (typeof google !== 'undefined') addEventMarker(lat, lng, 'sudden_brake');
                     if (currentEvent === 'normal' || currentEvent === 'sudden_accel') currentEvent = 'sudden_brake';
 
-                    playRandomAudio("sudden_brake"); // （1/2/3）からランダム
+                    const lastBrakeAudio = lastAudioPlayTime['sudden_brake'] || 0;
+                    if (now - lastBrakeAudio >= AUDIO_COOLDOWN_MS) {
+                        playRandomAudio("sudden_brake"); // （1/2/3）からランダム
+                    }
                     lastHighAccelTime = now;         // 褒めカウンタをリセット
                 }
             }
         }
 
         // rotationRate が使えない端末向けフォールバック（横G）
+        // 適切な速度での走行中のみ横Gをチェック（停車中の誤検出防止）
         if (!window._rotationAvailable) {
-            if (Math.abs(latestGX) > SHARP_TURN_G_THRESHOLD && speed > 15 && now - lastTurnEventTime > COOLDOWN_MS) {
+            if (Math.abs(latestGX) > SHARP_TURN_G_THRESHOLD && speed > 20 && now - lastTurnEventTime > COOLDOWN_MS) {
                 sharpTurns++;
                 const turnElement = document.getElementById('turn-count');
                 if (turnElement) turnElement.textContent = sharpTurns;
@@ -736,7 +906,10 @@ function watchPosition() {
                 if (typeof google !== 'undefined') addEventMarker(lat, lng, 'sharp_turn');
                 currentEvent = 'sharp_turn';
 
-                playRandomAudio("sharp_turn");
+                const lastSharpTurnAudio = lastAudioPlayTime['sharp_turn'] || 0;
+                if (now - lastSharpTurnAudio >= AUDIO_COOLDOWN_MS) {
+                    playRandomAudio("sharp_turn");
+                }
                 lastHighYawRateTime = now; // 褒めカウンタをリセット
             }
         }
@@ -907,6 +1080,7 @@ function initActiveRecording() {
         console.log('Session ID set to:', sessionId);
         console.log('GPS buffer size:', gpsLogBuffer.length);
         console.log('G buffer size:', gLogBuffer.length);
+        console.log('🔊 Audio playback enabled (recording active)');
         
         // DOM要素の更新
         const sessionIdElement = document.getElementById('session_id');
@@ -917,9 +1091,13 @@ function initActiveRecording() {
         // タイマー開始
         startTimer();
         
-        // 位置情報とセンサーの監視開始
+        // 位置情報とセンサーの監視開始（記録中は音声あり）
         watchPosition();
-        startMotionDetection();
+        if (!isMotionDetectionActive) {
+            startMotionDetection();
+        } else {
+            console.log('Motion detection already active, skipping startup');
+        }
         
         // 定期ログ送信開始（1回だけ）
         startLogFlush();
