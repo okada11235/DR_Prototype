@@ -74,26 +74,33 @@ let lastHighAngAccelTime = Date.now();
 const PRAISE_INTERVAL = 180000; 
 let praiseInterval = null;
 
-// 音声ファイルパス
+// 音声ファイルパス（統一して /static/audio/ プレフィックス使用）
 const audioFiles = {
-    jerk_low: ["/static/audio/ジャークが少ないことについて褒める（1）.wav", "audio/ジャークが少ないことについて褒める（2）.wav"],
-    accel_good: ["/static/audio/加速度について褒める（1）.wav", "audio/加速度について褒める（2）.wav"],
-    ang_accel_good: ["/static/audio/角加速度について褒める（1）.wav", "audio/角加速度について褒める（2）.wav"],
-    ang_vel_high: ["/static/audio/角速度が高いことに指摘（1）.wav", "audio/角速度が高いことに指摘（2）.wav"],
-    ang_vel_low: ["/static/audio/角速度が低いことについて褒める（1）.wav", "audio/角速度が低いことについて褒める（2）.wav"],
-    sharp_turn: ["/static/audio/急ハンドルについて指摘（1）.wav", "audio/急ハンドルについて指摘（2）.wav", "audio/急ハンドルについて指摘（3）.wav"],
-    sudden_brake: ["/static/audio/急ブレーキについて指摘（1）.wav", "audio/急ブレーキについて指摘（2）.wav", "audio/急ブレーキについて指摘（3）.wav"],
-    sudden_accel: ["/static/audio/急発進について指摘（1）.wav", "audio/急発進について指摘（2）.wav"],
-    speed_fluct: ["/static/audio/速度の変化や「カクつき」について指摘（1）.wav", "audio/速度の変化や「カクつき」について指摘（2）.wav"]
+    jerk_low: ["/static/audio/ジャークが少ないことについて褒める（1）.wav", "/static/audio/ジャークが少ないことについて褒める（2）.wav"],
+    accel_good: ["/static/audio/加速度について褒める（1）.wav", "/static/audio/加速度について褒める（2）.wav"],
+    ang_accel_good: ["/static/audio/角加速度について褒める（1）.wav", "/static/audio/角加速度について褒める（2）.wav"],
+    ang_vel_high: ["/static/audio/角速度が高いことに指摘（1）.wav", "/static/audio/角速度が高いことに指摘（2）.wav"],
+    ang_vel_low: ["/static/audio/角速度が低いことについて褒める（1）.wav", "/static/audio/角速度が低いことについて褒める（2）.wav"],
+    sharp_turn: ["/static/audio/急ハンドルについて指摘（1）.wav", "/static/audio/急ハンドルについて指摘（2）.wav", "/static/audio/急ハンドルについて指摘（3）.wav"],
+    sudden_brake: ["/static/audio/急ブレーキについて指摘（1）.wav", "/static/audio/急ブレーキについて指摘（2）.wav", "/static/audio/急ブレーキについて指摘（3）.wav"],
+    sudden_accel: ["/static/audio/急発進について指摘（1）.wav", "/static/audio/急発進について指摘（2）.wav"],
+    speed_fluct: ["/static/audio/速度の変化や「カクつき」について指摘（1）.wav", "/static/audio/速度の変化や「カクつき」について指摘（2）.wav"]
 };
 
 // --- ランダムで音声を再生する関数 ---
 function playRandomAudio(category) {
-    if (!audioFiles[category]) return;
+    if (!audioFiles[category]) {
+        console.warn('Audio category not found:', category);
+        return;
+    }
     const files = audioFiles[category];
     const file = files[Math.floor(Math.random() * files.length)];
+    console.log(`🔊 Playing audio: ${category} -> ${file}`);
     const audio = new Audio(file);
-    audio.play().catch(err => console.warn("Audio play failed:", err));
+    audio.play().catch(err => {
+        console.warn("Audio play failed:", err);
+        console.warn("Audio file path:", file);
+    });
 }
 
 // センサー値を一定時間集めて平均化
