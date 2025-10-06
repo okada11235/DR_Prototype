@@ -16,7 +16,7 @@
 ### フロントエンド（Vanilla JS + ES6 Modules）
 - **メインエントリー**: `static/main.js`
 - **モジュール構成**:
-  - `sensors.js` - DeviceMotion API による4分類運転評価（旋回・加速・減速・直進）
+  - `sensors.js` - DeviceMotion API による4分類運転評価（旋回・加速・減速・直進）+ GPS速度変化指摘機能
   - `session.js` - セッション状態管理とバッチデータ送信
   - `maps.js` - Google Maps統合とGPS位置取得
   - `audio.js` - リアルタイム音声フィードバック

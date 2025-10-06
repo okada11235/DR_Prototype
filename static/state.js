@@ -104,6 +104,14 @@ export function resetState() {
     window.gpsLogBuffer = [];
     window.path = [];
     
+    // 新しく追加された指摘用変数もリセット
+    window.prevGpsSpeed = null;
+    window.prevGpsTime = null;
+    window.lastAccelEventTime = 0;
+    window.lastBrakeEventTime = 0;
+    window.lastTurnEventTime = 0;
+    window.currentDrivingEvent = 'normal';
+    
     // カウンター表示更新
     const brakeElement = document.getElementById('brake-count');
     const accelElement = document.getElementById('accel-count');

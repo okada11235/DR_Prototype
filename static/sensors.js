@@ -4,7 +4,10 @@
 import { 
     MOTION_FRAME_SKIP, 
     MOTION_INIT_DURATION, 
-    AUDIO_COOLDOWN_MS 
+    AUDIO_COOLDOWN_MS,
+    ACCEL_EVENT_MS2,
+    SHARP_TURN_G_THRESHOLD,
+    COOLDOWN_MS
 } from './config.js';
 import { playRandomAudio } from './audio.js';
 import { updateRealtimeScore } from './utils.js';
@@ -48,6 +51,13 @@ window.holdStart = { turn: null, accel: null, brake: null, straight: null };
 window.lastAudioPlayTime = {};
 window.speedHistory = [];
 
+// GPS速度変化追跡用
+window.prevGpsSpeed = null;
+window.prevGpsTime = null;
+window.lastAccelEventTime = 0;
+window.lastBrakeEventTime = 0;
+window.lastTurnEventTime = 0;
+
 // === DeviceMotionイベント ====================================
 
 export function handleDeviceMotion(event) {
@@ -79,6 +89,11 @@ export function handleDeviceMotion(event) {
     window.latestValues.side = side / 9.8;
     window.latestValues.rotation = rotationZ;
     const speed = window.latestSpeed || 0;
+    
+    // 最新のG値を後方互換のためにグローバルに保存
+    window.latestGX = window.latestValues.side;
+    window.latestGY = window.latestValues.rotation;
+    window.latestGZ = window.latestValues.forward;
 
     // 速度変化履歴（過去約0.5〜1秒）
     window.speedHistory.push({ time: now, speed });
@@ -107,6 +122,12 @@ export function handleDeviceMotion(event) {
 function checkDrivingConditions(now) {
     const { forward, side, rotation } = window.latestValues;
     const speed = window.latestSpeed || 0;
+
+    // --- GPS速度変化による指摘機能 ---
+    checkSpeedBasedEvents(now, speed);
+    
+    // --- 横G急旋回指摘（rotationRate非対応端末用） ---
+    checkLateralGEvents(now, speed);
 
     // --- 1. 旋回（コーナリング評価） ---
     if (Math.abs(side) >= 0.25 && Math.abs(forward) < 0.2 && speed >= 15) {
@@ -149,6 +170,87 @@ function handleHold(type, active, now) {
     }
 }
 
+// === GPS速度変化による指摘機能 ===============================
+
+function checkSpeedBasedEvents(now, currentSpeed) {
+    if (window.prevGpsSpeed !== null && window.prevGpsTime !== null) {
+        const dt = (now - window.prevGpsTime) / 1000;
+        
+        // GPS品質ガード（0.3〜3秒間隔）
+        if (dt >= 0.3 && dt <= 3.0) {
+            const accelMs2 = (currentSpeed / 3.6 - window.prevGpsSpeed / 3.6) / dt; // m/s²
+            
+            // 急発進指摘
+            if (accelMs2 >= ACCEL_EVENT_MS2 && now - window.lastAccelEventTime > COOLDOWN_MS) {
+                if (!window.suddenAccels) window.suddenAccels = 0;
+                window.suddenAccels++;
+                
+                const accelElement = document.getElementById('accel-count');
+                if (accelElement) accelElement.textContent = window.suddenAccels;
+                
+                window.lastAccelEventTime = now;
+                window.currentDrivingEvent = 'sudden_accel'; // イベント情報を設定
+                
+                const lastAccelAudio = window.lastAudioPlayTime['sudden_accel'] || 0;
+                if (now - lastAccelAudio >= AUDIO_COOLDOWN_MS) {
+                    playRandomAudio("sudden_accel");
+                    window.lastAudioPlayTime['sudden_accel'] = now;
+                }
+                
+                updateRealtimeScore("accel", -5); // 指摘によるスコア減点
+                console.log(`⚠️ 急発進検出: ${accelMs2.toFixed(2)} m/s²`);
+            }
+            
+            // 急ブレーキ指摘
+            if (accelMs2 <= -ACCEL_EVENT_MS2 && now - window.lastBrakeEventTime > COOLDOWN_MS) {
+                if (!window.suddenBrakes) window.suddenBrakes = 0;
+                window.suddenBrakes++;
+                
+                const brakeElement = document.getElementById('brake-count');
+                if (brakeElement) brakeElement.textContent = window.suddenBrakes;
+                
+                window.lastBrakeEventTime = now;
+                window.currentDrivingEvent = 'sudden_brake'; // イベント情報を設定
+                
+                const lastBrakeAudio = window.lastAudioPlayTime['sudden_brake'] || 0;
+                if (now - lastBrakeAudio >= AUDIO_COOLDOWN_MS) {
+                    playRandomAudio("sudden_brake");
+                    window.lastAudioPlayTime['sudden_brake'] = now;
+                }
+                
+                updateRealtimeScore("brake", -5); // 指摘によるスコア減点
+                console.log(`⚠️ 急ブレーキ検出: ${accelMs2.toFixed(2)} m/s²`);
+            }
+        }
+    }
+    
+    window.prevGpsSpeed = currentSpeed;
+    window.prevGpsTime = now;
+}
+
+function checkLateralGEvents(now, speed) {
+    // rotationRate非対応端末用の横G急旋回指摘
+    if (!window._rotationAvailable && Math.abs(window.latestValues.side) > SHARP_TURN_G_THRESHOLD && speed > 20 && now - window.lastTurnEventTime > COOLDOWN_MS) {
+        if (!window.sharpTurns) window.sharpTurns = 0;
+        window.sharpTurns++;
+        
+        const turnElement = document.getElementById('turn-count');
+        if (turnElement) turnElement.textContent = window.sharpTurns;
+        
+        window.lastTurnEventTime = now;
+        window.currentDrivingEvent = 'sharp_turn'; // イベント情報を設定
+        
+        const lastTurnAudio = window.lastAudioPlayTime['sharp_turn'] || 0;
+        if (now - lastTurnAudio >= AUDIO_COOLDOWN_MS) {
+            playRandomAudio("sharp_turn");
+            window.lastAudioPlayTime['sharp_turn'] = now;
+        }
+        
+        updateRealtimeScore("turn", -3); // 指摘によるスコア減点
+        console.log(`⚠️ 急旋回検出: ${window.latestValues.side.toFixed(2)} G`);
+    }
+}
+
 // === フィードバック音声＋スコア反映 ===============================
 
 function playFeedback(type) {
@@ -180,6 +282,18 @@ export function startMotionDetection() {
         window.motionInitTime = null;
         window.lastAudioPlayTime = {};
         window.holdStart = {};
+        
+        // 指摘用変数の初期化
+        window.suddenAccels = window.suddenAccels || 0;
+        window.suddenBrakes = window.suddenBrakes || 0;
+        window.sharpTurns = window.sharpTurns || 0;
+        window.prevGpsSpeed = null;
+        window.prevGpsTime = null;
+        window.lastAccelEventTime = 0;
+        window.lastBrakeEventTime = 0;
+        window.lastTurnEventTime = 0;
+        window.currentDrivingEvent = 'normal'; // イベント状態初期化
+        
         window.addEventListener('devicemotion', handleDeviceMotion, { passive: true });
         window.isMotionDetectionActive = true;
         console.log('📱 Motion detection started.');
