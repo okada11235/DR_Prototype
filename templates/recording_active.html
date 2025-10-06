@@ -99,7 +99,7 @@
 </div>
 </div>
  
-            <button id="end-button" onclick="endSession()" 
+            <button id="end-button" 
 
                     class="w-full py-5 text-2xl bg-danger-red hover:bg-red-600 text-white rounded-xl shadow-2xl transition duration-300 transform hover:scale-105 mt-10">
 
@@ -148,7 +148,7 @@
         const db = firebase.firestore();
 </script>
  
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='main.js') }}"></script>
 </body>
 </html>
  

@@ -55,7 +55,7 @@
         <div id="pre-session-view" class="visible-view flex-col items-center p-6 bg-bg-dark rounded-xl shadow-2xl transition duration-500">
             <h1 class="text-4xl font-extrabold text-primary-green mb-6 animate-pulse">ドライブバディ</h1>
             
-            <button id="start-button" onclick="startSession()" 
+            <button id="start-button" 
                     class="w-full py-4 text-xl bg-primary-green hover:bg-emerald-600 text-white rounded-xl shadow-lg transition duration-300 transform hover:scale-[1.02] mb-4">
                 記録開始
             </button>
@@ -93,7 +93,7 @@
 
             </div>
 
-            <button id="end-button" onclick="endSession()" 
+            <button id="end-button" 
                     class="w-full py-5 text-2xl bg-danger-red hover:bg-red-600 text-white rounded-xl shadow-2xl transition duration-300 transform hover:scale-105 mt-10">
                 記録を終了する
             </button>
@@ -130,6 +130,6 @@
         const db = firebase.firestore();
     </script>
 
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='main.js') }}"></script>
 </body>
 </html>
