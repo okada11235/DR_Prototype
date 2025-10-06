@@ -173,8 +173,12 @@ export function watchPosition() {
             }
         }
 
+        // 位置情報をパスに追加（Google Maps の有無に関係なく）
+        window.path.push({ lat, lng });
+        console.log(`Path updated: ${window.path.length} points, latest: lat=${lat.toFixed(5)}, lng=${lng.toFixed(5)}`);
+        
+        // Google Maps が利用可能な場合はポリラインも更新
         if (typeof google !== 'undefined') {
-            window.path.push({ lat, lng });
             if (window.polyline) window.polyline.setPath(window.path);
         }
 
