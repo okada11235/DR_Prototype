@@ -72,12 +72,13 @@ export function startSession() {
                 }
                 localStorage.setItem('activeSessionId', window.sessionId);
                 localStorage.setItem('sessionStartTime', window.startTime.toString());
+                resetState();
                 window.gLogBuffer = [];
                 window.gpsLogBuffer = [];
+                window.path = [];
                 console.log('Cleared data buffers for new session');
                 console.log('SessionID now set to:', window.sessionId);
                 console.log('About to redirect to /recording/active');
-                resetState();
                 window.location.href = '/recording/active';
             })
             .catch(err => {
@@ -146,10 +147,15 @@ export function endSession(showAlert = true) {
     window.lastAudioPlayTime = {};
 
     console.log("Calculating distance...");
+    console.log("Path points:", window.path.length);
+    if (window.path.length > 0) {
+        console.log("First point:", window.path[0]);
+        console.log("Last point:", window.path[window.path.length - 1]);
+    }
     let distance = 0;
     try {
         distance = calculateDistance(window.path);
-        console.log("Distance calculated:", distance);
+        console.log("Distance calculated:", distance, "km");
     } catch (error) {
         console.error("Error calculating distance:", error);
         distance = 0;
