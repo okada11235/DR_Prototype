@@ -1,7 +1,6 @@
 // maps.js - Google Maps関連機能
 
-import { ACCEL_EVENT_MS2, SHARP_TURN_G_THRESHOLD, COOLDOWN_MS, AUDIO_COOLDOWN_MS } from './config.js';
-import { playRandomAudio } from './audio.js';
+// GPS位置情報取得とマップ表示のみに特化
 
 console.log('=== maps.js LOADED ===');
 
@@ -113,65 +112,13 @@ export function watchPosition() {
             });
         }
 
-        let currentEvent = 'normal';
-
-        if (window.prevSpeed !== null && window.prevTime !== null) {
-            const dt = (now - window.prevTime) / 1000;
-
-            // ★FIX: GPS差分加速度の品質ガード（dt/accuracy/上限）
-            const accOK = dt >= 0.3 && dt <= 3.0 &&
-                          (typeof position.coords.accuracy !== 'number' || position.coords.accuracy <= 30);
-
-            if (dt > 0 && accOK) {
-                const accelMs2 = (speed / 3.6 - window.prevSpeed / 3.6) / dt; // m/s^2
-
-                // 急発進（指摘）
-                if (accelMs2 >= ACCEL_EVENT_MS2 && now - window.lastAccelEventTime > COOLDOWN_MS) {
-                    window.suddenAccels++;
-                    const accelElement = document.getElementById('accel-count');
-                    if (accelElement) accelElement.textContent = window.suddenAccels;
-                    window.lastAccelEventTime = now;
-
-                    if (typeof google !== 'undefined') addEventMarker(lat, lng, 'sudden_accel');
-                    if (currentEvent === 'normal') currentEvent = 'sudden_accel';
-
-                    const lastAccelAudio = window.lastAudioPlayTime['sudden_accel'] || 0;
-                    if (now - lastAccelAudio >= AUDIO_COOLDOWN_MS) playRandomAudio("sudden_accel");
-                    window.lastHighAccelTime = now;
-                }
-                // 急ブレーキ（指摘）
-                if (accelMs2 <= -ACCEL_EVENT_MS2 && now - window.lastBrakeEventTime > COOLDOWN_MS) {
-                    window.suddenBrakes++;
-                    const brakeElement = document.getElementById('brake-count');
-                    if (brakeElement) brakeElement.textContent = window.suddenBrakes;
-                    window.lastBrakeEventTime = now;
-
-                    if (typeof google !== 'undefined') addEventMarker(lat, lng, 'sudden_brake');
-                    if (currentEvent === 'normal' || currentEvent === 'sudden_accel') currentEvent = 'sudden_brake';
-
-                    const lastBrakeAudio = window.lastAudioPlayTime['sudden_brake'] || 0;
-                    if (now - lastBrakeAudio >= AUDIO_COOLDOWN_MS) playRandomAudio("sudden_brake");
-                    window.lastHighAccelTime = now;
-                }
-            }
-        }
-
-        // rotationRate が使えない端末向けフォールバック（横G）
-        if (!window._rotationAvailable) {
-            if (Math.abs(window.latestGX) > SHARP_TURN_G_THRESHOLD && speed > 20 && now - window.lastTurnEventTime > COOLDOWN_MS) {
-                window.sharpTurns++;
-                const turnElement = document.getElementById('turn-count');
-                if (turnElement) turnElement.textContent = window.sharpTurns;
-                window.lastTurnEventTime = now;
-
-                if (typeof google !== 'undefined') addEventMarker(lat, lng, 'sharp_turn');
-                currentEvent = 'sharp_turn';
-
-                const lastSharpTurnAudio = window.lastAudioPlayTime['sharp_turn'] || 0;
-                if (now - lastSharpTurnAudio >= AUDIO_COOLDOWN_MS) playRandomAudio("sharp_turn");
-                window.lastHighYawRateTime = now;
-            }
-        }
+        // 現在の速度をセンサーシステムに提供
+        window.latestSpeed = speed;
+        
+        // イベント情報はセンサーシステムから取得
+        let currentEvent = window.currentDrivingEvent || 'normal';
+        // イベントリセット
+        window.currentDrivingEvent = 'normal';
 
         // 位置情報をパスに追加（Google Maps の有無に関係なく）
         window.path.push({ lat, lng });
