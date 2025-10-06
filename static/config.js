@@ -41,5 +41,7 @@ export const audioFiles = {
     sudden_brake: ["/static/audio/sudden_brake_1.wav", "/static/audio/sudden_brake_2.wav", "/static/audio/sudden_brake_3.wav"],
     sudden_accel: ["/static/audio/sudden_acceleration_1.wav", "/static/audio/sudden_acceleration_2.wav"],
     speed_fluct: ["/static/audio/speed_jerkiness_1.wav", "/static/audio/speed_jerkiness_2.wav"],
-    jerk: ["/static/audio/speed_jerkiness_1.wav", "/static/audio/speed_jerkiness_2.wav"]
+    jerk: ["/static/audio/speed_jerkiness_1.wav", "/static/audio/speed_jerkiness_2.wav"],
+    good_brake: ["/static/audio/good_brake_1.wav", "/static/audio/good_brake_2.wav"],
+    stable_drive: ["/static/audio/stable_drive_1.wav", "/static/audio/stable_drive_2.wav"]
 };

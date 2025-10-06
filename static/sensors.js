@@ -1,34 +1,22 @@
-// sensors.js - センサー処理とモーション検出（DriveBuddyリアルタイム判定統合版）
+// sensors.js - DriveBuddy 新ロジック版（旋回・加速・減速・直進判定）
+// ============================================================
 
 import { 
     MOTION_FRAME_SKIP, 
     MOTION_INIT_DURATION, 
-    JERK_EVENT_MS3, 
-    YAW_RATE_EVENT, 
-    ANG_ACCEL_EVENT,
-    AUDIO_COOLDOWN_MS,
-    ACCEL_EVENT_MS2,
-    BRAKE_EVENT_MS2,
-    SHARP_TURN_G_THRESHOLD
+    AUDIO_COOLDOWN_MS 
 } from './config.js';
 import { playRandomAudio } from './audio.js';
+import { updateRealtimeScore } from './utils.js';
 
-console.log('=== sensors.js LOADED (Realtime Driving Feedback integrated) ===');
+console.log('=== sensors.js (final synced version) LOADED ===');
 
-// === リアルタイム評価用の保持状態 ===
-let holdStart = { accel: null, brake: null, turn: null, straight: null };
-let lastPlay = { accel: 0, brake: 0, turn: 0, straight: 0 };
-const HOLD_TIME = { accel: 1000, brake: 1000, turn: 1500, straight: 3000 };
+// === キャリブレーション ======================================
 
-// --- 以下、元のキャリブレーション・軸変換系はそのまま ---
 export function calibrateOrientation(samples) {
     const avg = { x: 0, y: 0, z: 0 };
-    samples.forEach(s => {
-        avg.x += s.x; avg.y += s.y; avg.z += s.z;
-    });
-    avg.x /= samples.length;
-    avg.y /= samples.length;
-    avg.z /= samples.length;
+    samples.forEach(s => { avg.x += s.x; avg.y += s.y; avg.z += s.z; });
+    avg.x /= samples.length; avg.y /= samples.length; avg.z /= samples.length;
     window.calibrationData = detectOrientation(avg);
     console.log("Auto-calibrated:", window.calibrationData);
 }
@@ -37,174 +25,164 @@ export function detectOrientation(avg) {
     const { x, y, z } = avg;
     const absX = Math.abs(x), absY = Math.abs(y), absZ = Math.abs(z);
     if (absZ > absX && absZ > absY) return z > 0 ? "flat_screen_up" : "flat_screen_down";
-    else if (absX > absY) return x > 0 ? "landscape_right" : "landscape_left";
-    else return y > 0 ? "default" : "upside_down";
+    if (absX > absY) return x > 0 ? "landscape_right" : "landscape_left";
+    return y > 0 ? "default" : "upside_down";
 }
 
 export function adjustOrientation(ax, ay, az) {
-    let mode = window.calibrationData || "default";
+    const mode = window.calibrationData || "default";
     switch (mode) {
         case "default": return { forward: -az, side: ax, up: -ay };
         case "landscape_left": return { forward: -az, side: ay, up: -ax };
         case "landscape_right": return { forward: -az, side: -ay, up: ax };
         case "flat_screen_down": return { forward: ay, side: ax, up: -az };
         case "flat_screen_up": return { forward: ay, side: ax, up: az };
-        case "upside_down": return { forward: -az, side: -ax, up: ay };
         default: return { forward: -az, side: ax, up: -ay };
     }
 }
 
-export function mapYawFromRotationRate(rr) {
-    if (!rr) return 0;
-    const deg2rad = Math.PI / 180;
-    const alpha = (rr.alpha || 0) * deg2rad;
-    const beta  = (rr.beta  || 0) * deg2rad;
-    const gamma = (rr.gamma || 0) * deg2rad;
-    const mode = window.calibrationData || "default";
-    switch (mode) {
-        case "landscape_left":  return  gamma;
-        case "landscape_right": return -gamma;
-        case "flat_screen_up":  return  alpha;
-        case "flat_screen_down":return -alpha;
-        case "upside_down":     return -alpha;
-        default:                return  alpha;
-    }
-}
+// === 内部状態管理 =============================================
 
-// === DeviceMotionイベントハンドラ ===
+window.latestValues = { forward: 0, side: 0, rotation: 0, speed: 0 };
+window.holdStart = { turn: null, accel: null, brake: null, straight: null };
+window.lastAudioPlayTime = {};
+window.speedHistory = [];
+
+// === DeviceMotionイベント ====================================
+
 export function handleDeviceMotion(event) {
+    console.log('📡 DeviceMotion event received');
     const now = Date.now();
 
-    // --- 初期化 ---
+    // 初期化期間のスキップ
     if (!window.motionInitTime) {
         window.motionInitTime = now;
-        window.motionFrameCounter = 0;
-        console.log('📱 Motion detection initialized');
         return;
     }
     if (now - window.motionInitTime < MOTION_INIT_DURATION) return;
+
+    // フレームスキップ
     window.motionFrameCounter++;
     if (window.motionFrameCounter % MOTION_FRAME_SKIP !== 0) return;
 
-    const acc = event.acceleration || event.accelerationIncludingGravity;
+    const acc = event.accelerationIncludingGravity || event.acceleration;
     if (!acc) return;
-    if (event.rotationRate) window._rotationAvailable = true;
 
-    const { forward, side, up } = adjustOrientation(acc.x || 0, acc.y || 0, acc.z || 0);
-    window.latestGZ = forward / 9.8;
-    window.latestGX = side    / 9.8;
-    window.latestGY = up      / 9.8;
-
-    // ===== 1) ジャーク・角速度・角加速度（既存処理） =====
-    const accelMs2 = forward;
-    if (window.lastAccelSample !== null && window.lastAccelSampleTime !== null) {
-        const dt = (now - window.lastAccelSampleTime) / 1000;
-        if (dt > 0.05 && dt < 1.0) {
-            const jerk = (accelMs2 - window.lastAccelSample) / dt;
-            if (Math.abs(jerk) >= JERK_EVENT_MS3 && Math.abs(jerk) < 50) {
-                const lastJerkAudio = window.lastAudioPlayTime['jerk'] || 0;
-                if (now - lastJerkAudio >= AUDIO_COOLDOWN_MS) {
-                    console.log(`⚠️ Jerk detected: ${jerk.toFixed(2)} m/s^3`);
-                    playRandomAudio("jerk");
-                    window.lastHighJerkTime = now;
-                }
-            }
-        }
-    }
-    window.lastAccelSample = accelMs2;
-    window.lastAccelSampleTime = now;
-
-    // --- 角速度 ---
-    let yawRate = 0;
-    if (event.rotationRate) {
-        yawRate = mapYawFromRotationRate(event.rotationRate);
-        if (Math.abs(yawRate) >= YAW_RATE_EVENT && Math.abs(yawRate) < 10) {
-            const lastTurnAudio = window.lastAudioPlayTime['yaw_rate_high'] || 0;
-            if (now - lastTurnAudio >= AUDIO_COOLDOWN_MS) {
-                console.log(`⚠️ High yaw rate detected: ${yawRate.toFixed(3)} rad/s`);
-                playRandomAudio("yaw_rate_high");
-                window.lastHighYawRateTime = now;
-            }
-        }
-        if (window.lastYawRate !== null && window.lastYawTime !== null) {
-            const dtYaw = (now - window.lastYawTime) / 1000;
-            if (dtYaw > 0.05 && dtYaw < 1.0) {
-                const angAccel = (yawRate - window.lastYawRate) / dtYaw;
-                if (Math.abs(angAccel) >= ANG_ACCEL_EVENT && Math.abs(angAccel) < 20) {
-                    const lastAngAccelAudio = window.lastAudioPlayTime['ang_accel_high'] || 0;
-                    if (now - lastAngAccelAudio >= AUDIO_COOLDOWN_MS) {
-                        console.log(`⚠️ High angular acceleration: ${angAccel.toFixed(3)} rad/s^2`);
-                        playRandomAudio("ang_accel_high");
-                        window.lastHighAngAccelTime = now;
-                    }
-                }
-            }
-        }
-        window.lastYawRate = yawRate;
-        window.lastYawTime = now;
+    const { forward, side } = adjustOrientation(acc.x || 0, acc.y || 0, acc.z || 0);
+    let rotationZ = 0;
+    if (event.rotationRate?.alpha !== undefined) {
+        rotationZ = (event.rotationRate.alpha * Math.PI) / 180;
     }
 
-    // ===== 2) 新しい「旋回／加速／減速／直進」フィードバック =====
-    const jerkNow = (accelMs2 - (window.lastAccelSample || accelMs2)) / ((now - (window.lastAccelSampleTime || now)) / 1000 || 1);
-    const speedKmh = window.currentSpeed || 0;
+    // 最新値更新（G単位換算）
+    window.latestValues.forward = forward / 9.8;
+    window.latestValues.side = side / 9.8;
+    window.latestValues.rotation = rotationZ;
+    const speed = window.latestSpeed || 0;
 
-    const turning = Math.abs(window.latestGX) >= SHARP_TURN_G_THRESHOLD && Math.abs(window.latestGZ) < 0.2 && speedKmh >= 15;
-    const accelOK = window.latestGZ <= -ACCEL_EVENT_MS2 && Math.abs(window.latestGX) < 0.2 && speedKmh >= 5;
-    const brakeOK = window.latestGZ >= BRAKE_EVENT_MS2 && Math.abs(window.latestGX) < 0.2;
-    const straight =
-        speedKmh >= 30 &&
-        Math.abs(window.latestGZ) < 0.15 &&
-        Math.abs(window.latestGX) < 0.15 &&
-        Math.abs(yawRate) < 0.05;
+    // 速度変化履歴（過去約0.5〜1秒）
+    window.speedHistory.push({ time: now, speed });
+    if (window.speedHistory.length > 10) window.speedHistory.shift();
+    const prevSpeed = window.speedHistory[0]?.speed || speed;
+    window.speedDelta = speed - prevSpeed;
 
-    handleHold("turn", turning, now, jerkNow);
-    handleHold("accel", accelOK, now, jerkNow);
-    handleHold("brake", brakeOK, now, jerkNow);
-    handleHold("straight", straight, now, jerkNow);
+    // 条件チェック
+    checkDrivingConditions(now);
 
-    // ===== UI 更新とログ保存（既存処理） =====
-    const gxElement = document.getElementById('g-x');
-    const gzElement = document.getElementById('g-z');
-    const gyElement = document.getElementById('g-y');
-    if (gxElement) gxElement.textContent = window.latestGX.toFixed(2);
-    if (gzElement) gzElement.textContent = window.latestGZ.toFixed(2);
-    if (gyElement) gyElement.textContent = window.latestGY.toFixed(2);
-
-    const gData = { timestamp: now, g_x: window.latestGX, g_y: window.latestGY, g_z: window.latestGZ };
-    if (window.sessionId) window.gLogBuffer.push(gData);
+    // === Gログバッファに追加 ===
+    if (window.sessionId) {
+        const gData = {
+            timestamp: now,
+            g_x: window.latestValues.side,
+            g_y: window.latestValues.rotation,
+            g_z: window.latestValues.forward,
+        };
+        if (!window.gLogBuffer) window.gLogBuffer = [];
+        window.gLogBuffer.push(gData);
+    }
 }
 
-// === リアルタイム状態維持 ===
-function handleHold(type, ok, now, jerk) {
-    const t = holdStart[type];
-    if (ok) {
-        if (t == null) holdStart[type] = now;
-        else if (now - t >= HOLD_TIME[type] && now - lastPlay[type] > AUDIO_COOLDOWN_MS) {
-            playFeedback(type, jerk);
-            holdStart[type] = null;
-            lastPlay[type] = now;
+// === 運転状況判定（4分類） =====================================
+
+function checkDrivingConditions(now) {
+    const { forward, side, rotation } = window.latestValues;
+    const speed = window.latestSpeed || 0;
+
+    // --- 1. 旋回（コーナリング評価） ---
+    if (Math.abs(side) >= 0.25 && Math.abs(forward) < 0.2 && speed >= 15) {
+        handleHold("turn", true, now);
+    } else handleHold("turn", false, now);
+
+    // --- 2. 加速 ---
+    if (forward <= -0.3 && window.speedDelta > 5 && Math.abs(side) < 0.2 && speed > 5) {
+        handleHold("accel", true, now);
+    } else handleHold("accel", false, now);
+
+    // --- 3. 減速 ---
+    if (forward >= 0.3 && window.speedDelta < -5 && Math.abs(side) < 0.2 && Math.abs(side) < 0.25) {
+        handleHold("brake", true, now);
+    } else handleHold("brake", false, now);
+
+    // --- 4. 直進 ---
+    if (speed >= 30 && Math.abs(forward) < 0.15 && Math.abs(side) < 0.15 && Math.abs(rotation) < 0.05) {
+        handleHold("straight", true, now);
+    } else handleHold("straight", false, now);
+}
+
+// === 継続判定・音声発火 ==========================================
+
+function handleHold(type, active, now) {
+    const HOLD_TIME = { turn: 1500, accel: 1000, brake: 1000, straight: 3000 };
+
+    if (active) {
+        if (!window.holdStart[type]) window.holdStart[type] = now;
+        const duration = now - window.holdStart[type];
+        const lastPlay = window.lastAudioPlayTime[type] || 0;
+
+        if (duration >= HOLD_TIME[type] && now - lastPlay >= AUDIO_COOLDOWN_MS) {
+            playFeedback(type);
+            window.lastAudioPlayTime[type] = now;
+            window.holdStart[type] = null;
         }
-    } else holdStart[type] = null;
+    } else {
+        window.holdStart[type] = null;
+    }
 }
 
-function playFeedback(type, jerk) {
-    const smooth = Math.abs(jerk) < 1.0;
+// === フィードバック音声＋スコア反映 ===============================
+
+function playFeedback(type) {
     switch (type) {
-        case "accel": playRandomAudio(smooth ? "good_accel" : "sudden_accel"); break;
-        case "brake": playRandomAudio(smooth ? "jerk" : "sudden_brake"); break; //good_brakeはまだできてないから仮で
-        case "turn":  playRandomAudio(smooth ? "ang_vel_low" : "sharp_turn"); break;
-        case "straight": playRandomAudio("stable_drive"); break;
+        case "turn":
+            playRandomAudio("ang_vel_low");
+            updateRealtimeScore("turn", +3);
+            break;
+        case "accel":
+            playRandomAudio("good_accel");
+            updateRealtimeScore("accel", +2);
+            break;
+        case "brake":
+            playRandomAudio("good_brake");
+            updateRealtimeScore("brake", +2);
+            break;
+        case "straight":
+            playRandomAudio("stable_drive");
+            updateRealtimeScore("straight", +1);
+            break;
     }
 }
+
+// === 検出開始・停止 =============================================
 
 export function startMotionDetection() {
     if (window.DeviceMotionEvent && !window.isMotionDetectionActive) {
-        window.removeEventListener('devicemotion', handleDeviceMotion);
+        window.motionFrameCounter = 0;
+        window.motionInitTime = null;
+        window.lastAudioPlayTime = {};
+        window.holdStart = {};
         window.addEventListener('devicemotion', handleDeviceMotion, { passive: true });
         window.isMotionDetectionActive = true;
-        console.log('DeviceMotion listener registered (first time)');
-    } else if (window.isMotionDetectionActive) {
-        console.log('DeviceMotion already active, skipping registration');
+        console.log('📱 Motion detection started.');
     }
 }
 
@@ -212,57 +190,57 @@ export function stopMotionDetection() {
     if (window.DeviceMotionEvent && window.isMotionDetectionActive) {
         window.removeEventListener('devicemotion', handleDeviceMotion);
         window.isMotionDetectionActive = false;
-        window.motionInitTime = null; // 初期化時刻をリセット
-        console.log('DeviceMotion listener removed');
+        console.log('🛑 Motion detection stopped.');
     }
 }
 
-export function requestMotionPermission(callback) {
-    if (typeof DeviceMotionEvent !== 'undefined' &&
-        typeof DeviceMotionEvent.requestPermission === 'function') {
-        DeviceMotionEvent.requestPermission().then(response => {
-            if (response === 'granted') callback();
-            else alert('加速度センサーの使用が許可されませんでした。');
-        }).catch(err => {
-            console.error('加速度センサーの許可リクエスト中にエラー:', err);
-            alert('加速度センサーの使用許可リクエストでエラーが発生しました。');
-        });
-    } else {
-        callback();
-    }
-}
+// === 自動キャリブレーション ====================================
 
-// ★FIX: 起動時に数十サンプル収集して自動キャリブレーションを行う
 export function startAutoCalibration() {
     try {
         window._calibSamples = [];
-        if (window._calibTimer) {
-            clearTimeout(window._calibTimer);
-            window._calibTimer = null;
-        }
         const calibListener = (e) => {
             const a = e.accelerationIncludingGravity || e.acceleration;
             if (!a) return;
             window._calibSamples.push({ x: a.x || 0, y: a.y || 0, z: a.z || 0 });
-            if (window._calibSamples.length >= 60) { // 約1秒相当（60Hz想定）
+            if (window._calibSamples.length >= 60) {
                 window.removeEventListener('devicemotion', calibListener);
                 calibrateOrientation(window._calibSamples);
-                window._calibSamples = [];
             }
         };
         window.addEventListener('devicemotion', calibListener, { passive: true });
-        // 2秒で打ち切り・実行
-        window._calibTimer = setTimeout(() => {
+        setTimeout(() => {
             window.removeEventListener('devicemotion', calibListener);
             if (window._calibSamples.length >= 10) {
                 calibrateOrientation(window._calibSamples);
-            } else {
-                console.log('Auto-calibration skipped (insufficient samples)');
             }
-            window._calibSamples = [];
-            window._calibTimer = null;
         }, 2000);
     } catch (e) {
         console.warn('Auto calibration start failed:', e);
     }
 }
+
+// === モーション許可リクエスト =====================================
+
+export function requestMotionPermission(callback) {
+    if (typeof DeviceMotionEvent !== 'undefined' &&
+        typeof DeviceMotionEvent.requestPermission === 'function') {
+        // iOS専用の許可リクエスト
+        DeviceMotionEvent.requestPermission().then(response => {
+            if (response === 'granted') {
+                console.log('✅ Motion permission granted');
+                if (callback) callback();
+            } else {
+                alert('⚠️ 加速度センサーの使用が許可されませんでした。設定から再度許可してください。');
+            }
+        }).catch(err => {
+            console.error('加速度センサー許可リクエスト中にエラー:', err);
+            alert('加速度センサーの使用許可リクエストでエラーが発生しました。');
+        });
+    } else {
+        // Androidなど、許可が不要な場合
+        console.log('✅ Motion permission not required');
+        if (callback) callback();
+    }
+}
+
