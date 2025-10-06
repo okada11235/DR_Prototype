@@ -29,16 +29,16 @@ export const AUDIO_COOLDOWN_MS = 5000; // 運転中の適切な指摘間隔（5�
 
 // ★FIX: 音声ファイルパスの重複/不足を修正（カテゴリ名の不整合を解消）
 export const audioFiles = {
-    jerk_low: ["/static/audio/ジャークが少ないことについて褒める（1）.wav", "/static/audio/ジャークが少ないことについて褒める（2）.wav"],
-    accel_good: ["/static/audio/加速度について褒める（1）.wav", "/static/audio/加速度について褒める（2）.wav"],
-    ang_accel_good: ["/static/audio/角加速度について褒める（1）.wav", "/static/audio/角加速度について褒める（2）.wav"],
-    ang_accel_high: ["/static/audio/角加速度が高いことに指摘（1）.wav", "/static/audio/角加速度が高いことに指摘（2）.wav"], // ★追加
-    ang_vel_high: ["/static/audio/角速度が高いことに指摘（1）.wav", "/static/audio/角速度が高いことに指摘（2）.wav"],
-    ang_vel_low: ["/static/audio/角速度が低いことについて褒める（1）.wav", "/static/audio/角速度が低いことについて褒める（2）.wav"],
-    sharp_turn: ["/static/audio/急ハンドルについて指摘（1）.wav", "/static/audio/急ハンドルについて指摘（2）.wav", "/static/audio/急ハンドルについて指摘（3）.wav"],
-    yaw_rate_high: ["/static/audio/急ハンドルについて指摘（1）.wav", "/static/audio/急ハンドルについて指摘（2）.wav", "/static/audio/急ハンドルについて指摘（3）.wav"], // ★重複キーを1本化
-    sudden_brake: ["/static/audio/急ブレーキについて指摘（1）.wav", "/static/audio/急ブレーキについて指摘（2）.wav", "/static/audio/急ブレーキについて指摘（3）.wav"],
-    sudden_accel: ["/static/audio/急発進について指摘（1）.wav", "/static/audio/急発進について指摘（2）.wav"],
-    speed_fluct: ["/static/audio/速度の変化や「カクつき」について指摘（1）.wav", "/static/audio/速度の変化や「カクつき」について指摘（2）.wav"],
-    jerk: ["/static/audio/速度の変化や「カクつき」について指摘（1）.wav", "/static/audio/速度の変化や「カクつき」について指摘（2）.wav"]
+    jerk_low: ["/static/audio/jerk_low_praise_1.wav", "/static/audio/jerk_low_praise_2.wav"],
+    accel_good: ["/static/audio/acceleration_good_1.wav", "/static/audio/acceleration_good_2.wav"],
+    ang_accel_good: ["/static/audio/angular_acceleration_good_1.wav", "/static/audio/angular_acceleration_good_2.wav"],
+    ang_accel_high: ["/static/audio/angular_acceleration_good_1.wav", "/static/audio/angular_acceleration_good_2.wav"], // ★追加
+    ang_vel_high: ["/static/audio/angular_velocity_high_1.wav", "/static/audio/angular_velocity_high_2.wav"],
+    ang_vel_low: ["/static/audio/angular_velocity_low_1.wav", "/static/audio/angular_velocity_low_2.wav"],
+    sharp_turn: ["/static/audio/sharp_turn_1.wav", "/static/audio/sharp_turn_2.wav", "/static/audio/sharp_turn_3.wav"],
+    yaw_rate_high: ["/static/audio/sharp_turn_1.wav", "/static/audio/sharp_turn_2.wav", "/static/audio/sharp_turn_3.wav"], // ★重複キーを1本化
+    sudden_brake: ["/static/audio/sudden_brake_1.wav", "/static/audio/sudden_brake_2.wav", "/static/audio/sudden_brake_3.wav"],
+    sudden_accel: ["/static/audio/sudden_acceleration_1.wav", "/static/audio/sudden_acceleration_2.wav"],
+    speed_fluct: ["/static/audio/speed_jerkiness_1.wav", "/static/audio/speed_jerkiness_2.wav"],
+    jerk: ["/static/audio/speed_jerkiness_1.wav", "/static/audio/speed_jerkiness_2.wav"]
 };
