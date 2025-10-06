@@ -41,7 +41,7 @@ function initActiveRecording() {
         // ★FIX: active画面でもキャリブレーションを念のため実行
         startAutoCalibration();
         startLogFlush();
-        startPraiseCheck();
+        //startPraiseCheck();
         console.log('Active recording initialized with session:', window.sessionId);
     } else {
         console.error('No active session found');

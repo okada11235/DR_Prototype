@@ -9,6 +9,7 @@ export const COOLDOWN_MS = 3000; // イベント発生後のクールダウン�
 
 // ■ イベント（指摘）用 - ユーザー指定の閾値（※変更なし）
 export const ACCEL_EVENT_MS2   = 1.0;  // |加速度| >= 1.0 m/s^2 -> 急発進/急ブレーキ
+export const BRAKE_EVENT_MS2   = 1.0;  // |減速度| >= 1.0 m/s^2 -> 急ブレーキ
 export const JERK_EVENT_MS3    = 3.0;  // |ジャーク| >= 3.0 m/s^3 -> 速度のカクつき指摘
 export const YAW_RATE_EVENT    = 0.8;  // |角速度| >= 0.8 rad/s -> 急ハンドル
 export const ANG_ACCEL_EVENT   = 1.5;  // |角加速度| >= 1.5 rad/s^2 -> カーブのカクつき指摘
@@ -30,7 +31,7 @@ export const AUDIO_COOLDOWN_MS = 5000; // 運転中の適切な指摘間隔（5�
 // ★FIX: 音声ファイルパスの重複/不足を修正（カテゴリ名の不整合を解消）
 export const audioFiles = {
     jerk_low: ["/static/audio/jerk_low_praise_1.wav", "/static/audio/jerk_low_praise_2.wav"],
-    accel_good: ["/static/audio/acceleration_good_1.wav", "/static/audio/acceleration_good_2.wav"],
+    good_accel: ["/static/audio/acceleration_good_1.wav", "/static/audio/acceleration_good_2.wav"],
     ang_accel_good: ["/static/audio/angular_acceleration_good_1.wav", "/static/audio/angular_acceleration_good_2.wav"],
     ang_accel_high: ["/static/audio/angular_acceleration_good_1.wav", "/static/audio/angular_acceleration_good_2.wav"], // ★追加
     ang_vel_high: ["/static/audio/angular_velocity_high_1.wav", "/static/audio/angular_velocity_high_2.wav"],

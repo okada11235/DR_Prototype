@@ -9,6 +9,13 @@ import { resetState } from './state.js';
 
 console.log('=== session.js LOADED ===');
 
+// 無音を流す
+function unlockAudio() {
+    const a = new Audio("/static/audio/silence.wav");
+    a.play().then(() => console.log("Audio unlocked on iOS"));
+}
+document.addEventListener("touchstart", unlockAudio, { once: true });
+
 // 記録開始
 export function startSession() {
     console.log('=== startSession function called ===');
@@ -36,6 +43,9 @@ export function startSession() {
     window.isSessionStarting = true;
     
     const startButton = document.getElementById('start-button');
+
+    unlockAudio()
+
     if (startButton) {
         startButton.disabled = true;
         startButton.textContent = '開始中...';
