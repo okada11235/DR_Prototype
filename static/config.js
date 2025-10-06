@@ -8,10 +8,10 @@ console.log('=== config.js LOADED ===');
 export const COOLDOWN_MS = 3000; // イベント発生後のクールダウン期間（3秒に延長）
 
 // ■ イベント（指摘）用 - ユーザー指定の閾値（※変更なし）
-export const ACCEL_EVENT_MS2   = 0.4;  // |加速度| >= 0.4 m/s^2 -> 急発進/急ブレーキ
-export const JERK_EVENT_MS3    = 1.5;  // |ジャーク| >= 1.5 m/s^3 -> 速度のカクつき指摘
-export const YAW_RATE_EVENT    = 0.6;  // |角速度| >= 0.6 rad/s -> 急ハンドル
-export const ANG_ACCEL_EVENT   = 0.6;  // |角加速度| >= 0.6 rad/s^2 -> カーブのカクつき指摘
+export const ACCEL_EVENT_MS2   = 1.0;  // |加速度| >= 1.0 m/s^2 -> 急発進/急ブレーキ
+export const JERK_EVENT_MS3    = 3.0;  // |ジャーク| >= 3.0 m/s^3 -> 速度のカクつき指摘
+export const YAW_RATE_EVENT    = 0.8;  // |角速度| >= 0.8 rad/s -> 急ハンドル
+export const ANG_ACCEL_EVENT   = 1.5;  // |角加速度| >= 1.5 rad/s^2 -> カーブのカクつき指摘
 export const SHARP_TURN_G_THRESHOLD = 0.5; // 横Gのしきい値 (やや厳しく: 0.5G)（※変更なし）
 
 // DeviceMotionEventのフレームスキップ管理（60Hzを15Hzに削減）
