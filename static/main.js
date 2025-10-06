@@ -3,7 +3,7 @@
 import { startSession, endSession, startLogFlush, startPraiseCheck } from './session.js';
 import { initMap, watchPosition } from './maps.js';
 import { startMotionDetection, startAutoCalibration } from './sensors.js';
-import { startTimer } from './utils.js';
+import { startTimer, initScores } from './utils.js';
 
 console.log('=== main.js LOADED ===');
 console.log('Current URL:', window.location.href);
@@ -38,6 +38,9 @@ function initActiveRecording() {
         } else {
             console.log('Motion detection already active, skipping startup');
         }
+
+        // ★スコア初期化（走行開始時にリセット）
+        initScores();
         // ★FIX: active画面でもキャリブレーションを念のため実行
         startAutoCalibration();
         startLogFlush();
