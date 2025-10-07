@@ -26,7 +26,7 @@ export const STABLE_SAMPLES_REQUIRED = 10; // 10回連続で安定したら処�
 export const PRAISE_INTERVAL = 180000; // 3分間に戻す 
 
 // 音声再生のクールダウン管理
-export const AUDIO_COOLDOWN_MS = 5000; // 運転中の適切な指摘間隔（5秒）
+export const AUDIO_COOLDOWN_MS = 3000; // 運転中の適切な指摘間隔（5秒）
 
 // ★FIX: 音声ファイルパスの重複/不足を修正（カテゴリ名の不整合を解消）
 export const audioFiles = {
@@ -43,5 +43,6 @@ export const audioFiles = {
     speed_fluct: ["/static/audio/speed_jerkiness_1.wav", "/static/audio/speed_jerkiness_2.wav"],
     jerk: ["/static/audio/speed_jerkiness_1.wav", "/static/audio/speed_jerkiness_2.wav"],
     good_brake: ["/static/audio/good_brake_1.wav", "/static/audio/good_brake_2.wav"],
-    stable_drive: ["/static/audio/stable_drive_1.wav", "/static/audio/stable_drive_2.wav"]
+    stable_drive: ["/static/audio/stable_drive_1.wav", "/static/audio/stable_drive_2.wav"],
+    silence: ["/static/audio/silence.wav"]
 };
