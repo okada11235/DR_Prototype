@@ -1,20 +1,36 @@
 // session.js - セッション管理機能
 
-import { PRAISE_INTERVAL } from './config.js';
-import { stopMotionDetection, startMotionDetection, requestMotionPermission, startAutoCalibration } from './sensors.js';
+import { stopMotionDetection, startMotionDetection, startAutoCalibration } from './sensors.js';
 import { watchPosition, calculateDistance } from './maps.js';
 import { startTimer, stopTimer, formatTime, calculateStability } from './utils.js';
-import { playRandomAudio } from './audio.js';
+import { unlockAudio } from './audio.js';
 import { resetState } from './state.js';
 
 console.log('=== session.js LOADED ===');
 
-// 無音を流す
-function unlockAudio() {
-    const a = new Audio("/static/audio/silence.wav");
-    a.play().then(() => console.log("Audio unlocked on iOS"));
-}
+// ✅ iOS用アンロックイベント（audio.jsのunlockAudioを使用）
 document.addEventListener("touchstart", unlockAudio, { once: true });
+
+// ✅ iOS & Android モーション許可リクエスト
+async function requestMotionPermission(callback) {
+    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+        try {
+            const response = await DeviceMotionEvent.requestPermission();
+            if (response === 'granted') {
+                console.log("✅ Motion permission granted (iOS)");
+                callback();
+            } else {
+                alert('加速度センサーの使用が許可されませんでした。');
+            }
+        } catch (err) {
+            console.error('Motion permission request error:', err);
+            alert('加速度センサーの使用許可リクエストでエラーが発生しました。');
+        }
+    } else {
+        console.log("✅ Motion permission not required (Android or Desktop)");
+        callback();
+    }
+}
 
 // 記録開始
 export function startSession() {
@@ -323,24 +339,5 @@ export function startLogFlush() {
 
 // 褒めチェック開始
 export function startPraiseCheck() {
-    if (window.praiseInterval) clearInterval(window.praiseInterval);
-    window.praiseInterval = setInterval(() => {
-        const now = Date.now();
-        if (now - window.lastHighJerkTime > PRAISE_INTERVAL) {
-            playRandomAudio("jerk_low");
-            window.lastHighJerkTime = now;
-        }
-        if (now - window.lastHighAccelTime > PRAISE_INTERVAL) {
-            playRandomAudio("accel_good");
-            window.lastHighAccelTime = now;
-        }
-        if (now - window.lastHighYawRateTime > PRAISE_INTERVAL) {
-            playRandomAudio("ang_vel_low");
-            window.lastHighYawRateTime = now;
-        }
-        if (now - window.lastHighAngAccelTime > PRAISE_INTERVAL) {
-            playRandomAudio("ang_accel_good");
-            window.lastHighAngAccelTime = now;
-        }
-    }, 10000); // 10秒ごとにチェック
+    console.log("⏸️ 定期褒めチェックは無効化されています。");
 }
