@@ -61,6 +61,8 @@ setInterval(keepAudioAlive, 30000); // 30秒ごとに維持
 
 // === ランダムで音声を再生する関数（クールダウン付き + 記録中のみ + グローバルロック） ===
 export function playRandomAudio(category) {
+    console.log(`🎵 Audio request: ${category}, sessionId: ${window.sessionId || 'NONE'}, isPlaying: ${window.isAudioPlaying || false}`);
+    
     if (!window.sessionId) {
         console.log(`🔇 Audio skipped (not recording): ${category}`);
         return;
@@ -71,6 +73,7 @@ export function playRandomAudio(category) {
     }
     if (!audioFiles[category]) {
         console.warn('Audio category not found:', category);
+        console.log('Available categories:', Object.keys(audioFiles));
         return;
     }
 
