@@ -17,17 +17,13 @@ import {
     GOOD_ACCEL_MIN_G,
     GOOD_ACCEL_MAX_G,
     GOOD_ACCEL_MAX_LAT_G,
-    GOOD_ACCEL_MAX_JERK,
     GOOD_ACCEL_DURATION,
     GOOD_BRAKE_MIN_G,
     GOOD_BRAKE_MAX_G,
     GOOD_BRAKE_MAX_LAT_G,
-    GOOD_BRAKE_MAX_JERK,
     GOOD_BRAKE_DURATION,
     SUDDEN_ACCEL_G_THRESHOLD,
-    SUDDEN_ACCEL_JERK_THRESHOLD,
     SUDDEN_BRAKE_G_THRESHOLD,
-    SUDDEN_BRAKE_JERK_THRESHOLD,
     SHARP_TURN_G_THRESHOLD
 } from './config.js';
 import { playRandomAudio } from './audio.js';
@@ -281,40 +277,38 @@ function checkGoodTurn(now, side, forward) {
 
 function checkGoodAccel(now, forward, side, jerk_forward) {
     const absSide = Math.abs(side);
-    const absJerk = Math.abs(jerk_forward);
     
     const condition = (forward >= GOOD_ACCEL_MIN_G && forward <= GOOD_ACCEL_MAX_G &&
-                      absSide < GOOD_ACCEL_MAX_LAT_G && absJerk <= GOOD_ACCEL_MAX_JERK);
+                      absSide < GOOD_ACCEL_MAX_LAT_G);
     
     handleHold("goodAccel", condition, now, GOOD_ACCEL_DURATION, () => {
         console.log(`🎵 良い加速音声再生をリクエスト: good_accel, sessionId=${window.sessionId || 'NONE'}`);
         playRandomAudio("good_accel");
         updateRealtimeScore("accel", +2);
-        console.log(`👍 良い加速: forward=${forward.toFixed(2)}G, side=${side.toFixed(2)}G, jerk=${jerk_forward.toFixed(2)}g/s`);
+        console.log(`👍 良い加速: forward=${forward.toFixed(2)}G, side=${side.toFixed(2)}G`);
     });
 }
 
 function checkGoodBrake(now, forward, side, jerk_forward) {
     const absSide = Math.abs(side);
-    const absJerk = Math.abs(jerk_forward);
     
     const condition = (forward >= GOOD_BRAKE_MIN_G && forward <= GOOD_BRAKE_MAX_G &&
-                      absSide < GOOD_BRAKE_MAX_LAT_G && absJerk <= GOOD_BRAKE_MAX_JERK);
+                      absSide < GOOD_BRAKE_MAX_LAT_G);
     
     handleHold("goodBrake", condition, now, GOOD_BRAKE_DURATION, () => {
         console.log(`🎵 良いブレーキ音声再生をリクエスト: good_brake, sessionId=${window.sessionId || 'NONE'}`);
         playRandomAudio("good_brake");
         updateRealtimeScore("brake", +2);
-        console.log(`👍 良いブレーキ: forward=${forward.toFixed(2)}G, side=${side.toFixed(2)}G, jerk=${jerk_forward.toFixed(2)}g/s`);
+        console.log(`👍 良いブレーキ: forward=${forward.toFixed(2)}G, side=${side.toFixed(2)}G`);
     });
 }
 
 // === 警告条件の個別判定 ======================================
 
 function checkSuddenAccel(now, forward, jerk_forward) {
-    if (forward >= SUDDEN_ACCEL_G_THRESHOLD && jerk_forward >= SUDDEN_ACCEL_JERK_THRESHOLD) {
+    if (forward >= SUDDEN_ACCEL_G_THRESHOLD) {
         if (now - window.lastWarningTime.suddenAccel >= COOLDOWN_MS) {
-            console.log(`🚨 急発進検出! forward=${forward.toFixed(2)}G, jerk=${jerk_forward.toFixed(2)}g/s, sessionId=${window.sessionId || 'NONE'}`);
+            console.log(`🚨 急発進検出! forward=${forward.toFixed(2)}G, sessionId=${window.sessionId || 'NONE'}`);
             
             window.lastWarningTime.suddenAccel = now;
             window.suddenAccels++;
@@ -334,7 +328,7 @@ function checkSuddenAccel(now, forward, jerk_forward) {
             console.log(`🎵 急発進音声再生をリクエスト: sudden_accel`);
             playRandomAudio("sudden_accel");
             updateRealtimeScore("accel", -4);
-            console.log(`⚠️ 急発進: forward=${forward.toFixed(2)}G, jerk=${jerk_forward.toFixed(2)}g/s`);
+            console.log(`⚠️ 急発進: forward=${forward.toFixed(2)}G`);
         } else {
             console.log(`🕐 急発進検出（クールダウン中）: ${Math.round((COOLDOWN_MS - (now - window.lastWarningTime.suddenAccel)) / 1000)}s remaining`);
         }
@@ -342,9 +336,9 @@ function checkSuddenAccel(now, forward, jerk_forward) {
 }
 
 function checkSuddenBrake(now, forward, jerk_forward) {
-    if (forward <= SUDDEN_BRAKE_G_THRESHOLD && jerk_forward <= SUDDEN_BRAKE_JERK_THRESHOLD) {
+    if (forward <= SUDDEN_BRAKE_G_THRESHOLD) {
         if (now - window.lastWarningTime.suddenBrake >= COOLDOWN_MS) {
-            console.log(`🚨 急ブレーキ検出! forward=${forward.toFixed(2)}G, jerk=${jerk_forward.toFixed(2)}g/s, sessionId=${window.sessionId || 'NONE'}`);
+            console.log(`🚨 急ブレーキ検出! forward=${forward.toFixed(2)}G, sessionId=${window.sessionId || 'NONE'}`);
             
             window.lastWarningTime.suddenBrake = now;
             window.suddenBrakes++;
@@ -364,7 +358,7 @@ function checkSuddenBrake(now, forward, jerk_forward) {
             console.log(`🎵 急ブレーキ音声再生をリクエスト: sudden_brake`);
             playRandomAudio("sudden_brake");
             updateRealtimeScore("brake", -7);
-            console.log(`⚠️ 急ブレーキ: forward=${forward.toFixed(2)}G, jerk=${jerk_forward.toFixed(2)}g/s`);
+            console.log(`⚠️ 急ブレーキ: forward=${forward.toFixed(2)}G`);
         } else {
             console.log(`🕐 急ブレーキ検出（クールダウン中）: ${Math.round((COOLDOWN_MS - (now - window.lastWarningTime.suddenBrake)) / 1000)}s remaining`);
         }

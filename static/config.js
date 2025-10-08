@@ -21,21 +21,17 @@ export const GOOD_TURN_DURATION = 1500;   // 良い旋回 持続時間（1.5s）
 export const GOOD_ACCEL_MIN_G = 0.10;     // 良い加速 最小前後G
 export const GOOD_ACCEL_MAX_G = 0.25;     // 良い加速 最大前後G
 export const GOOD_ACCEL_MAX_LAT_G = 0.20; // 良い加速時の最大横G
-export const GOOD_ACCEL_MAX_JERK = 0.12;  // 良い加速 最大ジャーク（g/s）
 export const GOOD_ACCEL_DURATION = 1000;  // 良い加速 持続時間（1.0s）
 
 export const GOOD_BRAKE_MIN_G = -0.30;    // 良いブレーキ 最小前後G
 export const GOOD_BRAKE_MAX_G = -0.15;    // 良いブレーキ 最大前後G
 export const GOOD_BRAKE_MAX_LAT_G = 0.20; // 良いブレーキ時の最大横G
-export const GOOD_BRAKE_MAX_JERK = 0.12;  // 良いブレーキ 最大ジャーク（g/s）
 export const GOOD_BRAKE_DURATION = 1000;  // 良いブレーキ 持続時間（1.0s）
 
 // ■ 警告条件の閾値
 export const SUDDEN_ACCEL_G_THRESHOLD = 0.35;     // 急発進 前後G閾値
-export const SUDDEN_ACCEL_JERK_THRESHOLD = 0.12;  // 急発進 ジャーク閾値（g/s）
 
 export const SUDDEN_BRAKE_G_THRESHOLD = -0.45;    // 急ブレーキ 前後G閾値
-export const SUDDEN_BRAKE_JERK_THRESHOLD = -0.12; // 急ブレーキ ジャーク閾値（g/s）
 
 export const SHARP_TURN_G_THRESHOLD = 0.40;       // 急旋回 横G閾値
 
