@@ -32,6 +32,7 @@ import {
 } from './config.js';
 import { playRandomAudio } from './audio.js';
 import { updateRealtimeScore } from './utils.js';
+import { addEventMarker } from './maps.js';
 
 console.log('=== sensors.js (final synced version) LOADED ===');
 
@@ -271,6 +272,7 @@ function checkGoodTurn(now, side, forward) {
                       absForward < GOOD_TURN_MAX_LONG_G);
     
     handleHold("goodTurn", condition, now, GOOD_TURN_DURATION, () => {
+        console.log(`🎵 良い旋回音声再生をリクエスト: ang_vel_low, sessionId=${window.sessionId || 'NONE'}`);
         playRandomAudio("ang_vel_low");
         updateRealtimeScore("turn", +3);
         console.log(`👍 良い旋回: side=${side.toFixed(2)}G, forward=${forward.toFixed(2)}G`);
@@ -285,6 +287,7 @@ function checkGoodAccel(now, forward, side, jerk_forward) {
                       absSide < GOOD_ACCEL_MAX_LAT_G && absJerk <= GOOD_ACCEL_MAX_JERK);
     
     handleHold("goodAccel", condition, now, GOOD_ACCEL_DURATION, () => {
+        console.log(`🎵 良い加速音声再生をリクエスト: good_accel, sessionId=${window.sessionId || 'NONE'}`);
         playRandomAudio("good_accel");
         updateRealtimeScore("accel", +2);
         console.log(`👍 良い加速: forward=${forward.toFixed(2)}G, side=${side.toFixed(2)}G, jerk=${jerk_forward.toFixed(2)}g/s`);
@@ -299,6 +302,7 @@ function checkGoodBrake(now, forward, side, jerk_forward) {
                       absSide < GOOD_BRAKE_MAX_LAT_G && absJerk <= GOOD_BRAKE_MAX_JERK);
     
     handleHold("goodBrake", condition, now, GOOD_BRAKE_DURATION, () => {
+        console.log(`🎵 良いブレーキ音声再生をリクエスト: good_brake, sessionId=${window.sessionId || 'NONE'}`);
         playRandomAudio("good_brake");
         updateRealtimeScore("brake", +2);
         console.log(`👍 良いブレーキ: forward=${forward.toFixed(2)}G, side=${side.toFixed(2)}G, jerk=${jerk_forward.toFixed(2)}g/s`);
@@ -310,15 +314,29 @@ function checkGoodBrake(now, forward, side, jerk_forward) {
 function checkSuddenAccel(now, forward, jerk_forward) {
     if (forward >= SUDDEN_ACCEL_G_THRESHOLD && jerk_forward >= SUDDEN_ACCEL_JERK_THRESHOLD) {
         if (now - window.lastWarningTime.suddenAccel >= COOLDOWN_MS) {
+            console.log(`🚨 急発進検出! forward=${forward.toFixed(2)}G, jerk=${jerk_forward.toFixed(2)}g/s, sessionId=${window.sessionId || 'NONE'}`);
+            
             window.lastWarningTime.suddenAccel = now;
             window.suddenAccels++;
 
             const accelElement = document.getElementById('accel-count');
             if (accelElement) accelElement.textContent = window.suddenAccels;
 
+            // GPS位置が利用可能な場合、地図にマーカーを追加
+            if (window.prevLatLng && typeof addEventMarker === 'function') {
+                addEventMarker(window.prevLatLng.lat, window.prevLatLng.lng, 'sudden_accel');
+                console.log(`📍 急発進マーカー追加: lat=${window.prevLatLng.lat.toFixed(5)}, lng=${window.prevLatLng.lng.toFixed(5)}`);
+            }
+
+            // GPSログに保存するためのイベント設定
+            window.currentDrivingEvent = 'sudden_accel';
+
+            console.log(`🎵 急発進音声再生をリクエスト: sudden_accel`);
             playRandomAudio("sudden_accel");
             updateRealtimeScore("accel", -4);
             console.log(`⚠️ 急発進: forward=${forward.toFixed(2)}G, jerk=${jerk_forward.toFixed(2)}g/s`);
+        } else {
+            console.log(`🕐 急発進検出（クールダウン中）: ${Math.round((COOLDOWN_MS - (now - window.lastWarningTime.suddenAccel)) / 1000)}s remaining`);
         }
     }
 }
@@ -326,15 +344,29 @@ function checkSuddenAccel(now, forward, jerk_forward) {
 function checkSuddenBrake(now, forward, jerk_forward) {
     if (forward <= SUDDEN_BRAKE_G_THRESHOLD && jerk_forward <= SUDDEN_BRAKE_JERK_THRESHOLD) {
         if (now - window.lastWarningTime.suddenBrake >= COOLDOWN_MS) {
+            console.log(`🚨 急ブレーキ検出! forward=${forward.toFixed(2)}G, jerk=${jerk_forward.toFixed(2)}g/s, sessionId=${window.sessionId || 'NONE'}`);
+            
             window.lastWarningTime.suddenBrake = now;
             window.suddenBrakes++;
 
             const brakeElement = document.getElementById('brake-count');
             if (brakeElement) brakeElement.textContent = window.suddenBrakes;
 
+            // GPS位置が利用可能な場合、地図にマーカーを追加
+            if (window.prevLatLng && typeof addEventMarker === 'function') {
+                addEventMarker(window.prevLatLng.lat, window.prevLatLng.lng, 'sudden_brake');
+                console.log(`📍 急ブレーキマーカー追加: lat=${window.prevLatLng.lat.toFixed(5)}, lng=${window.prevLatLng.lng.toFixed(5)}`);
+            }
+
+            // GPSログに保存するためのイベント設定
+            window.currentDrivingEvent = 'sudden_brake';
+
+            console.log(`🎵 急ブレーキ音声再生をリクエスト: sudden_brake`);
             playRandomAudio("sudden_brake");
             updateRealtimeScore("brake", -7);
             console.log(`⚠️ 急ブレーキ: forward=${forward.toFixed(2)}G, jerk=${jerk_forward.toFixed(2)}g/s`);
+        } else {
+            console.log(`🕐 急ブレーキ検出（クールダウン中）: ${Math.round((COOLDOWN_MS - (now - window.lastWarningTime.suddenBrake)) / 1000)}s remaining`);
         }
     }
 }
@@ -344,15 +376,29 @@ function checkSharpTurn(now, side) {
     
     if (absSide >= SHARP_TURN_G_THRESHOLD) {
         if (now - window.lastWarningTime.sharpTurn >= COOLDOWN_MS) {
+            console.log(`🚨 急旋回検出! side=${side.toFixed(2)}G, sessionId=${window.sessionId || 'NONE'}`);
+            
             window.lastWarningTime.sharpTurn = now;
             window.sharpTurns++;
 
             const turnElement = document.getElementById('turn-count');
             if (turnElement) turnElement.textContent = window.sharpTurns;
 
+            // GPS位置が利用可能な場合、地図にマーカーを追加
+            if (window.prevLatLng && typeof addEventMarker === 'function') {
+                addEventMarker(window.prevLatLng.lat, window.prevLatLng.lng, 'sharp_turn');
+                console.log(`📍 急旋回マーカー追加: lat=${window.prevLatLng.lat.toFixed(5)}, lng=${window.prevLatLng.lng.toFixed(5)}`);
+            }
+
+            // GPSログに保存するためのイベント設定
+            window.currentDrivingEvent = 'sharp_turn';
+
+            console.log(`🎵 急旋回音声再生をリクエスト: sharp_turn`);
             playRandomAudio("sharp_turn");
             updateRealtimeScore("turn", -3);
             console.log(`⚠️ 急旋回: side=${side.toFixed(2)}G`);
+        } else {
+            console.log(`🕐 急旋回検出（クールダウン中）: ${Math.round((COOLDOWN_MS - (now - window.lastWarningTime.sharpTurn)) / 1000)}s remaining`);
         }
     }
 }
