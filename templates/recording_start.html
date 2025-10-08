@@ -2,7 +2,10 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
     <title id="app-title-tag">ドライブバディ - 記録開始</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -52,6 +55,16 @@
         <div class="flex flex-col items-center p-6 bg-bg-dark rounded-xl shadow-2xl transition duration-500">
             <h1 class="text-4xl font-extrabold text-primary-green mb-6 animate-pulse">ドライブバディ</h1>
             
+            <!-- iOS音声アンロック用のバナー（必要な場合のみ表示） -->
+            <div id="ios-audio-banner" class="hidden w-full mb-4 p-3 bg-yellow-100 border border-yellow-400 rounded-lg">
+                <p class="text-sm text-yellow-800 text-center">
+                    📱 iOS端末をお使いの場合、音声機能を有効にするため下のボタンをタップしてください
+                </p>
+                <button id="ios-audio-unlock-btn" class="w-full mt-2 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg text-sm">
+                    🔊 音声機能を有効にする
+                </button>
+            </div>
+            
             <button id="start-button" 
                     class="w-full py-4 text-xl bg-primary-green hover:bg-emerald-600 text-white rounded-xl shadow-lg transition duration-300 transform hover:scale-[1.02] mb-4">
                 記録開始
@@ -87,6 +100,32 @@
         };
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
+
+        // iOS音声アンロック用のバナー表示制御
+        document.addEventListener('DOMContentLoaded', function() {
+            // iOS端末かどうかの判定
+            const isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+            
+            if (isIOSDevice) {
+                const banner = document.getElementById('ios-audio-banner');
+                const unlockBtn = document.getElementById('ios-audio-unlock-btn');
+                
+                if (banner && unlockBtn) {
+                    banner.classList.remove('hidden');
+                    
+                    unlockBtn.addEventListener('click', function() {
+                        // main.jsのunlockAudio関数を呼び出し
+                        if (window.unlockAudio) {
+                            const result = window.unlockAudio();
+                            if (result) {
+                                banner.style.display = 'none';
+                                console.log('✅ iOS audio manually unlocked');
+                            }
+                        }
+                    });
+                }
+            }
+        });
     </script>
 
     <script type="module" src="{{ url_for('static', filename='main.js') }}"></script>

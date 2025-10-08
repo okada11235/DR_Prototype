@@ -4,6 +4,7 @@ import { startSession, endSession, startLogFlush, startPraiseCheck } from './ses
 import { initMap, watchPosition } from './maps.js';
 import { startMotionDetection, startAutoCalibration } from './sensors.js';
 import { startTimer, initScores } from './utils.js';
+import { unlockAudio } from './audio.js';
 
 console.log('=== main.js LOADED ===');
 console.log('Current URL:', window.location.href);
@@ -14,6 +15,7 @@ console.log('Document ready state:', document.readyState);
 window.startSession = startSession;
 window.endSession = endSession;
 window.initMap = initMap;
+window.unlockAudio = unlockAudio; // iOS音声アンロック用に追加
 
 // 記録中画面の初期化処理
 function initActiveRecording() {
