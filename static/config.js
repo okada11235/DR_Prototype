@@ -3,17 +3,41 @@
 // === 基本テスト用ログ ===
 console.log('=== config.js LOADED ===');
 
-// ★★★ 判定閾値とクールダウン期間の定数化 ★★★
-// ※ ご要望により「しきい値」は変更していません
-export const COOLDOWN_MS = 3000; // イベント発生後のクールダウン期間（3秒に延長）
+// ★★★ 新しい判定閾値とクールダウン期間の定数化 ★★★
+export const COOLDOWN_MS = 3000; // イベント発生後のクールダウン期間（3秒）
+export const BUMP_DETECTION_THRESHOLD = 0.30; // バンプ検出用縦G閾値（0.30g）
+export const BUMP_DISABLE_DURATION = 300; // バンプ検出時の他軸判定休止時間（0.3s）
 
-// ■ イベント（指摘）用 - ユーザー指定の閾値（※変更なし）
-export const ACCEL_EVENT_MS2   = 1.0;  // |加速度| >= 1.0 m/s^2 -> 急発進/急ブレーキ
-export const BRAKE_EVENT_MS2   = 1.0;  // |減速度| >= 1.0 m/s^2 -> 急ブレーキ
-export const JERK_EVENT_MS3    = 3.0;  // |ジャーク| >= 3.0 m/s^3 -> 速度のカクつき指摘
-export const YAW_RATE_EVENT    = 0.8;  // |角速度| >= 0.8 rad/s -> 急ハンドル
-export const ANG_ACCEL_EVENT   = 1.5;  // |角加速度| >= 1.5 rad/s^2 -> カーブのカクつき指摘
-export const SHARP_TURN_G_THRESHOLD = 0.5; // 横Gのしきい値 (やや厳しく: 0.5G)（※変更なし）
+// ■ スムージング設定
+export const SMOOTHING_ALPHA = 0.25; // 指数平滑化係数（α=0.2-0.3の中間値）
+export const SMOOTHING_WINDOW_MS = 400; // 移動平均ウィンドウ（300-500msの中間値）
+
+// ■ 褒め条件の閾値
+export const GOOD_TURN_MIN_G = 0.10;     // 良い旋回 最小横G
+export const GOOD_TURN_MAX_G = 0.25;     // 良い旋回 最大横G
+export const GOOD_TURN_MAX_LONG_G = 0.20; // 良い旋回時の最大前後G
+export const GOOD_TURN_DURATION = 1500;   // 良い旋回 持続時間（1.5s）
+
+export const GOOD_ACCEL_MIN_G = 0.10;     // 良い加速 最小前後G
+export const GOOD_ACCEL_MAX_G = 0.25;     // 良い加速 最大前後G
+export const GOOD_ACCEL_MAX_LAT_G = 0.20; // 良い加速時の最大横G
+export const GOOD_ACCEL_MAX_JERK = 0.12;  // 良い加速 最大ジャーク（g/s）
+export const GOOD_ACCEL_DURATION = 1000;  // 良い加速 持続時間（1.0s）
+
+export const GOOD_BRAKE_MIN_G = -0.30;    // 良いブレーキ 最小前後G
+export const GOOD_BRAKE_MAX_G = -0.15;    // 良いブレーキ 最大前後G
+export const GOOD_BRAKE_MAX_LAT_G = 0.20; // 良いブレーキ時の最大横G
+export const GOOD_BRAKE_MAX_JERK = 0.12;  // 良いブレーキ 最大ジャーク（g/s）
+export const GOOD_BRAKE_DURATION = 1000;  // 良いブレーキ 持続時間（1.0s）
+
+// ■ 警告条件の閾値
+export const SUDDEN_ACCEL_G_THRESHOLD = 0.35;     // 急発進 前後G閾値
+export const SUDDEN_ACCEL_JERK_THRESHOLD = 0.12;  // 急発進 ジャーク閾値（g/s）
+
+export const SUDDEN_BRAKE_G_THRESHOLD = -0.45;    // 急ブレーキ 前後G閾値
+export const SUDDEN_BRAKE_JERK_THRESHOLD = -0.12; // 急ブレーキ ジャーク閾値（g/s）
+
+export const SHARP_TURN_G_THRESHOLD = 0.40;       // 急旋回 横G閾値
 
 // DeviceMotionEventのフレームスキップ管理（60Hzを15Hzに削減）
 export const MOTION_FRAME_SKIP = 4; // 4フレームに1回処理（元は6フレーム）

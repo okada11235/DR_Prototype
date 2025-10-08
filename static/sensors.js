@@ -1,13 +1,34 @@
-// sensors.js - DriveBuddy 新ロジック版（旋回・加速・減速・直進判定）
+// sensors.js - DriveBuddy 新ロジック版（改良版運転評価システム）
 // ============================================================
 
 import { 
     MOTION_FRAME_SKIP, 
     MOTION_INIT_DURATION, 
     AUDIO_COOLDOWN_MS,
-    ACCEL_EVENT_MS2,
-    SHARP_TURN_G_THRESHOLD,
-    COOLDOWN_MS
+    COOLDOWN_MS,
+    SMOOTHING_ALPHA,
+    SMOOTHING_WINDOW_MS,
+    BUMP_DETECTION_THRESHOLD,
+    BUMP_DISABLE_DURATION,
+    GOOD_TURN_MIN_G,
+    GOOD_TURN_MAX_G,
+    GOOD_TURN_MAX_LONG_G,
+    GOOD_TURN_DURATION,
+    GOOD_ACCEL_MIN_G,
+    GOOD_ACCEL_MAX_G,
+    GOOD_ACCEL_MAX_LAT_G,
+    GOOD_ACCEL_MAX_JERK,
+    GOOD_ACCEL_DURATION,
+    GOOD_BRAKE_MIN_G,
+    GOOD_BRAKE_MAX_G,
+    GOOD_BRAKE_MAX_LAT_G,
+    GOOD_BRAKE_MAX_JERK,
+    GOOD_BRAKE_DURATION,
+    SUDDEN_ACCEL_G_THRESHOLD,
+    SUDDEN_ACCEL_JERK_THRESHOLD,
+    SUDDEN_BRAKE_G_THRESHOLD,
+    SUDDEN_BRAKE_JERK_THRESHOLD,
+    SHARP_TURN_G_THRESHOLD
 } from './config.js';
 import { playRandomAudio } from './audio.js';
 import { updateRealtimeScore } from './utils.js';
@@ -46,17 +67,29 @@ export function adjustOrientation(ax, ay, az) {
 
 // === 内部状態管理 =============================================
 
-window.latestValues = { forward: 0, side: 0, rotation: 0, speed: 0 };
-window.holdStart = { turn: null, accel: null, brake: null, straight: null };
-window.lastAudioPlayTime = {};
-window.speedHistory = [];
+// 最新値とスムージング用データ
+window.latestValues = { forward: 0, side: 0, up: 0, rotation: 0, speed: 0 };
+window.smoothedValues = { forward: 0, side: 0, up: 0 };
+window.jerkValues = { forward: 0 };
+window.gHistory = []; // スムージング用履歴
 
-// GPS速度変化追跡用
+// 継続状態管理
+window.holdStart = { goodTurn: null, goodAccel: null, goodBrake: null };
+window.lastAudioPlayTime = {};
+
+// バンプ検出・無効化
+window.bumpDisableUntil = 0;
+
+// 警告クールダウン管理
+window.lastWarningTime = { suddenAccel: 0, suddenBrake: 0, sharpTurn: 0 };
+
+// 旧システム互換用
+window.speedHistory = [];
 window.prevGpsSpeed = null;
 window.prevGpsTime = null;
-window.lastAccelEventTime = 0;
-window.lastBrakeEventTime = 0;
-window.lastTurnEventTime = 0;
+window.suddenAccels = 0;
+window.suddenBrakes = 0;
+window.sharpTurns = 0;
 
 // === DeviceMotionイベント ====================================
 
@@ -78,33 +111,51 @@ export function handleDeviceMotion(event) {
     const acc = event.accelerationIncludingGravity || event.acceleration;
     if (!acc) return;
 
-    const { forward, side } = adjustOrientation(acc.x || 0, acc.y || 0, acc.z || 0);
+    const { forward, side, up } = adjustOrientation(acc.x || 0, acc.y || 0, acc.z || 0);
     let rotationZ = 0;
     if (event.rotationRate?.alpha !== undefined) {
         rotationZ = (event.rotationRate.alpha * Math.PI) / 180;
     }
 
-    // 最新値更新（G単位換算）
+    // 生データ更新（G単位換算）
     window.latestValues.forward = forward / 9.8;
     window.latestValues.side = side / 9.8;
+    window.latestValues.up = up / 9.8;
     window.latestValues.rotation = rotationZ;
-    const speed = window.latestSpeed || 0;
+    window.latestValues.speed = window.latestSpeed || 0;
+
+    // 履歴追加（スムージング用）
+    window.gHistory.push({
+        time: now,
+        forward: window.latestValues.forward,
+        side: window.latestValues.side,
+        up: window.latestValues.up
+    });
     
-    // 最新のG値を後方互換のためにグローバルに保存
+    // 古いデータを削除（指定時間以上前のデータ）
+    const cutoffTime = now - SMOOTHING_WINDOW_MS;
+    window.gHistory = window.gHistory.filter(h => h.time > cutoffTime);
+
+    // スムージング処理
+    applySmoothing();
+
+    // ジャーク計算
+    calculateJerk(now);
+
+    // バンプ検出と他軸判定無効化
+    checkBumpDetection(now);
+
+    // 運転状況評価（バンプ無効化中でなければ実行）
+    if (now > window.bumpDisableUntil) {
+        checkDrivingConditions(now);
+    }
+
+    // === 互換性維持：旧システム用グローバル変数の更新 ===
     window.latestGX = window.latestValues.side;
     window.latestGY = window.latestValues.rotation;
     window.latestGZ = window.latestValues.forward;
 
-    // 速度変化履歴（過去約0.5〜1秒）
-    window.speedHistory.push({ time: now, speed });
-    if (window.speedHistory.length > 10) window.speedHistory.shift();
-    const prevSpeed = window.speedHistory[0]?.speed || speed;
-    window.speedDelta = speed - prevSpeed;
-
-    // 条件チェック
-    checkDrivingConditions(now);
-
-    // === Gログバッファに追加 ===
+    // === Gログバッファに追加（互換性維持）===
     if (window.sessionId) {
         const gData = {
             timestamp: now,
@@ -116,113 +167,226 @@ export function handleDeviceMotion(event) {
         window.gLogBuffer.push(gData);
     }
 
-    console.log(`G: fwd=${(forward/9.8).toFixed(2)}G, side=${(side/9.8).toFixed(2)}G, speed=${speed.toFixed(1)}km/h, Δv=${window.speedDelta.toFixed(2)}km/h`);
+    console.log(`G: fwd=${window.smoothedValues.forward.toFixed(2)}G, side=${window.smoothedValues.side.toFixed(2)}G, up=${window.smoothedValues.up.toFixed(2)}G, jerk_fwd=${window.jerkValues.forward.toFixed(2)}g/s`);
 }
 
-// === 運転状況判定（4分類） =====================================
+// === スムージング処理 ==========================================
+
+function applySmoothing() {
+    if (window.gHistory.length === 0) return;
+
+    // 指数平滑化を使用
+    if (!window.smoothedValues.forward && !window.smoothedValues.side && !window.smoothedValues.up) {
+        // 初回は生データを使用
+        window.smoothedValues.forward = window.latestValues.forward;
+        window.smoothedValues.side = window.latestValues.side;
+        window.smoothedValues.up = window.latestValues.up;
+    } else {
+        // 指数平滑化: smoothed = α * current + (1-α) * previous
+        window.smoothedValues.forward = SMOOTHING_ALPHA * window.latestValues.forward + (1 - SMOOTHING_ALPHA) * window.smoothedValues.forward;
+        window.smoothedValues.side = SMOOTHING_ALPHA * window.latestValues.side + (1 - SMOOTHING_ALPHA) * window.smoothedValues.side;
+        window.smoothedValues.up = SMOOTHING_ALPHA * window.latestValues.up + (1 - SMOOTHING_ALPHA) * window.smoothedValues.up;
+    }
+}
+
+// === ジャーク計算 ===============================================
+
+function calculateJerk(now) {
+    // 前回の前後G値を保存しておき、差分から前後ジャークを計算
+    if (!window.prevForwardG || !window.prevForwardTime) {
+        window.prevForwardG = window.smoothedValues.forward;
+        window.prevForwardTime = now;
+        window.jerkValues.forward = 0;
+        return;
+    }
+
+    const dt = (now - window.prevForwardTime) / 1000; // 秒単位
+    if (dt > 0) {
+        const deltaG = window.smoothedValues.forward - window.prevForwardG;
+        window.jerkValues.forward = deltaG / dt; // g/s単位
+        
+        window.prevForwardG = window.smoothedValues.forward;
+        window.prevForwardTime = now;
+    }
+}
+
+// === バンプ検出・無効化 =========================================
+
+function checkBumpDetection(now) {
+    // 縦G（ハイパスフィルタ相当）の絶対値が閾値を超えた場合
+    if (Math.abs(window.smoothedValues.up) > BUMP_DETECTION_THRESHOLD) {
+        window.bumpDisableUntil = now + BUMP_DISABLE_DURATION;
+        console.log(`🚧 バンプ検出: up=${window.smoothedValues.up.toFixed(2)}G, 他軸判定を${BUMP_DISABLE_DURATION}ms休止`);
+    }
+}
+
+// === 運転状況判定（新システム） ==================================
 
 function checkDrivingConditions(now) {
-    const { forward, side, rotation } = window.latestValues;
-    const speed = window.latestSpeed || 0;
+    const { forward, side } = window.smoothedValues;
+    const jerk_forward = window.jerkValues.forward;
 
-    // --- GPS速度変化による指摘機能 ---
-    checkSpeedBasedEvents(now, speed);
+    // === 褒め条件（警告中は褒めを抑制） ===
+    const isWarningActive = isAnyWarningActive(now);
+
+    if (!isWarningActive) {
+        // 1. 良い旋回（なめらかカーブ）
+        checkGoodTurn(now, side, forward);
+
+        // 2. 良い加速（無理のない踏み増し）
+        checkGoodAccel(now, forward, side, jerk_forward);
+
+        // 3. 良いブレーキ（予見的減速）
+        checkGoodBrake(now, forward, side, jerk_forward);
+    }
+
+    // === 警告条件 ===
+    // 1. 急発進
+    checkSuddenAccel(now, forward, jerk_forward);
+
+    // 2. 急ブレーキ
+    checkSuddenBrake(now, forward, jerk_forward);
+
+    // 3. 急旋回
+    checkSharpTurn(now, side);
+}
+
+// === 警告状態チェック ===========================================
+
+function isAnyWarningActive(now) {
+    const SAME_CATEGORY_COOLDOWN = 3000; // 同カテゴリ3秒クールダウン
     
-    // --- 横G急旋回指摘（rotationRate非対応端末用） ---
-    checkLateralGEvents(now, speed);
+    return (now - window.lastWarningTime.suddenAccel < SAME_CATEGORY_COOLDOWN) ||
+           (now - window.lastWarningTime.suddenBrake < SAME_CATEGORY_COOLDOWN) ||
+           (now - window.lastWarningTime.sharpTurn < SAME_CATEGORY_COOLDOWN);
+}
 
-    // --- 1. 旋回（コーナリング評価） ---
-    if (Math.abs(side) >= 0.15 && Math.abs(forward) < 0.25 && speed >= 15) {
-        handleHold("turn", true, now);
-    } else handleHold("turn", false, now);
+// === 褒め条件の個別判定 ======================================
 
-    // --- 2. 加速（forward 正方向） ---
-    if (forward >= 0.2 && window.speedDelta > 3 && Math.abs(side) < 0.2 && speed > 3) {
-        handleHold("accel", true, now);
-    } else handleHold("accel", false, now);
+function checkGoodTurn(now, side, forward) {
+    const absSide = Math.abs(side);
+    const absForward = Math.abs(forward);
+    
+    const condition = (absSide >= GOOD_TURN_MIN_G && absSide <= GOOD_TURN_MAX_G && 
+                      absForward < GOOD_TURN_MAX_LONG_G);
+    
+    handleHold("goodTurn", condition, now, GOOD_TURN_DURATION, () => {
+        playRandomAudio("ang_vel_low");
+        updateRealtimeScore("turn", +3);
+        console.log(`👍 良い旋回: side=${side.toFixed(2)}G, forward=${forward.toFixed(2)}G`);
+    });
+}
 
-    // --- 3. 減速（forward 負方向） ---
-    if (forward <= -0.2 && window.speedDelta < -3 && Math.abs(side) < 0.25) {
-        handleHold("brake", true, now);
-    } else handleHold("brake", false, now);
+function checkGoodAccel(now, forward, side, jerk_forward) {
+    const absSide = Math.abs(side);
+    const absJerk = Math.abs(jerk_forward);
+    
+    const condition = (forward >= GOOD_ACCEL_MIN_G && forward <= GOOD_ACCEL_MAX_G &&
+                      absSide < GOOD_ACCEL_MAX_LAT_G && absJerk <= GOOD_ACCEL_MAX_JERK);
+    
+    handleHold("goodAccel", condition, now, GOOD_ACCEL_DURATION, () => {
+        playRandomAudio("good_accel");
+        updateRealtimeScore("accel", +2);
+        console.log(`👍 良い加速: forward=${forward.toFixed(2)}G, side=${side.toFixed(2)}G, jerk=${jerk_forward.toFixed(2)}g/s`);
+    });
+}
 
-    // --- 4. 直進 ---
-    if (speed >= 25 && Math.abs(forward) < 0.25 && Math.abs(side) < 0.25 && Math.abs(rotation) < 0.08) {
-        handleHold("straight", true, now);
-    } else handleHold("straight", false, now);
+function checkGoodBrake(now, forward, side, jerk_forward) {
+    const absSide = Math.abs(side);
+    const absJerk = Math.abs(jerk_forward);
+    
+    const condition = (forward >= GOOD_BRAKE_MIN_G && forward <= GOOD_BRAKE_MAX_G &&
+                      absSide < GOOD_BRAKE_MAX_LAT_G && absJerk <= GOOD_BRAKE_MAX_JERK);
+    
+    handleHold("goodBrake", condition, now, GOOD_BRAKE_DURATION, () => {
+        playRandomAudio("good_brake");
+        updateRealtimeScore("brake", +2);
+        console.log(`👍 良いブレーキ: forward=${forward.toFixed(2)}G, side=${side.toFixed(2)}G, jerk=${jerk_forward.toFixed(2)}g/s`);
+    });
+}
+
+// === 警告条件の個別判定 ======================================
+
+function checkSuddenAccel(now, forward, jerk_forward) {
+    if (forward >= SUDDEN_ACCEL_G_THRESHOLD && jerk_forward >= SUDDEN_ACCEL_JERK_THRESHOLD) {
+        if (now - window.lastWarningTime.suddenAccel >= COOLDOWN_MS) {
+            window.lastWarningTime.suddenAccel = now;
+            window.suddenAccels++;
+
+            const accelElement = document.getElementById('accel-count');
+            if (accelElement) accelElement.textContent = window.suddenAccels;
+
+            playRandomAudio("sudden_accel");
+            updateRealtimeScore("accel", -4);
+            console.log(`⚠️ 急発進: forward=${forward.toFixed(2)}G, jerk=${jerk_forward.toFixed(2)}g/s`);
+        }
+    }
+}
+
+function checkSuddenBrake(now, forward, jerk_forward) {
+    if (forward <= SUDDEN_BRAKE_G_THRESHOLD && jerk_forward <= SUDDEN_BRAKE_JERK_THRESHOLD) {
+        if (now - window.lastWarningTime.suddenBrake >= COOLDOWN_MS) {
+            window.lastWarningTime.suddenBrake = now;
+            window.suddenBrakes++;
+
+            const brakeElement = document.getElementById('brake-count');
+            if (brakeElement) brakeElement.textContent = window.suddenBrakes;
+
+            playRandomAudio("sudden_brake");
+            updateRealtimeScore("brake", -7);
+            console.log(`⚠️ 急ブレーキ: forward=${forward.toFixed(2)}G, jerk=${jerk_forward.toFixed(2)}g/s`);
+        }
+    }
+}
+
+function checkSharpTurn(now, side) {
+    const absSide = Math.abs(side);
+    
+    if (absSide >= SHARP_TURN_G_THRESHOLD) {
+        if (now - window.lastWarningTime.sharpTurn >= COOLDOWN_MS) {
+            window.lastWarningTime.sharpTurn = now;
+            window.sharpTurns++;
+
+            const turnElement = document.getElementById('turn-count');
+            if (turnElement) turnElement.textContent = window.sharpTurns;
+
+            playRandomAudio("sharp_turn");
+            updateRealtimeScore("turn", -3);
+            console.log(`⚠️ 急旋回: side=${side.toFixed(2)}G`);
+        }
+    }
 }
 
 // === 継続判定・音声発火 ==========================================
 
-function handleHold(type, active, now) {
-    const HOLD_TIME = { turn: 1500, accel: 1000, brake: 1000, straight: 3000 };
-
+function handleHold(type, active, now, duration, callback) {
     if (active) {
-        if (!window.holdStart[type]) window.holdStart[type] = now;
-        const duration = now - window.holdStart[type];
+        if (!window.holdStart[type]) {
+            window.holdStart[type] = now;
+        }
+        const holdDuration = now - window.holdStart[type];
         const lastPlay = window.lastAudioPlayTime[type] || 0;
 
-        if (duration >= HOLD_TIME[type] && now - lastPlay >= AUDIO_COOLDOWN_MS) {
-            playFeedback(type);
+        if (holdDuration >= duration && now - lastPlay >= AUDIO_COOLDOWN_MS) {
+            callback();
             window.lastAudioPlayTime[type] = now;
-            window.holdStart[type] = null;
+            window.holdStart[type] = null; // リセットして再判定可能にする
         }
     } else {
         window.holdStart[type] = null;
     }
 }
 
-// === GPS速度変化による指摘機能 ===============================
+// === 旧システム互換用（GPS速度変化による指摘） =================
 
 function checkSpeedBasedEvents(now, currentSpeed) {
+    // 互換性のために残しておく（必要に応じて新システムに統合可能）
     if (window.prevGpsSpeed !== null && window.prevGpsTime !== null) {
         const dt = (now - window.prevGpsTime) / 1000;
         
-        // GPS品質ガード（0.3〜3秒間隔）
         if (dt >= 0.3 && dt <= 3.0) {
-            const accelMs2 = (currentSpeed / 3.6 - window.prevGpsSpeed / 3.6) / dt; // m/s²
-            
-            // === 急発進（強め加速） ===
-            if (accelMs2 >= ACCEL_EVENT_MS2 * 1.8 && speed > 10 && now - window.lastAccelEventTime > COOLDOWN_MS) {
-                if (!window.suddenAccels) window.suddenAccels = 0;
-                window.suddenAccels++;
-
-                const accelElement = document.getElementById('accel-count');
-                if (accelElement) accelElement.textContent = window.suddenAccels;
-
-                window.lastAccelEventTime = now;
-                window.currentDrivingEvent = 'sudden_accel';
-
-                const lastAccelAudio = window.lastAudioPlayTime['sudden_accel'] || 0;
-                if (now - lastAccelAudio >= AUDIO_COOLDOWN_MS) {
-                    playRandomAudio("sudden_accel");
-                    window.lastAudioPlayTime['sudden_accel'] = now;
-                }
-
-                updateRealtimeScore("accel", -4);
-                console.log(`⚠️ 急発進検出: ${accelMs2.toFixed(2)} m/s²`);
-            }
-            
-            // === 強ブレーキ判定（加速度ベース） ===
-            if (window.latestValues.forward <= -0.5 && speed > 10 && now - window.lastBrakeEventTime > COOLDOWN_MS) {
-                if (!window.suddenBrakes) window.suddenBrakes = 0;
-                window.suddenBrakes++;
-
-                const brakeElement = document.getElementById('brake-count');
-                if (brakeElement) brakeElement.textContent = window.suddenBrakes;
-
-                window.lastBrakeEventTime = now;
-                window.currentDrivingEvent = 'hard_brake';
-
-                const lastHardBrakeAudio = window.lastAudioPlayTime['hard_brake'] || 0;
-                if (now - lastHardBrakeAudio >= AUDIO_COOLDOWN_MS) {
-                    playRandomAudio("hard_brake");
-                    window.lastAudioPlayTime['hard_brake'] = now;
-                }
-
-                updateRealtimeScore("brake", -7); // 強ブレーキはより減点
-                console.log(`💥 強ブレーキ検出: forward=${window.latestValues.forward.toFixed(2)} G`);
-            }
+            const accelMs2 = (currentSpeed / 3.6 - window.prevGpsSpeed / 3.6) / dt;
+            // 旧システムの処理は新システムに統合済みのため、ここでは省略
         }
     }
     
@@ -230,79 +394,38 @@ function checkSpeedBasedEvents(now, currentSpeed) {
     window.prevGpsTime = now;
 }
 
-function checkLateralGEvents(now, speed) {
-    // === 急カーブ（急旋回） ===
-    if (!window._rotationAvailable &&
-        Math.abs(window.latestValues.side) > SHARP_TURN_G_THRESHOLD * 1.3 && 
-        speed > 25 && 
-        now - window.lastTurnEventTime > COOLDOWN_MS) {
-
-        if (!window.sharpTurns) window.sharpTurns = 0;
-        window.sharpTurns++;
-
-        const turnElement = document.getElementById('turn-count');
-        if (turnElement) turnElement.textContent = window.sharpTurns;
-
-        window.lastTurnEventTime = now;
-        window.currentDrivingEvent = 'sharp_turn';
-
-        const lastTurnAudio = window.lastAudioPlayTime['sharp_turn'] || 0;
-        if (now - lastTurnAudio >= AUDIO_COOLDOWN_MS) {
-            playRandomAudio("sharp_turn");
-            window.lastAudioPlayTime['sharp_turn'] = now;
-        }
-
-        updateRealtimeScore("turn", -3);
-        console.log(`⚠️ 急旋回検出: ${window.latestValues.side.toFixed(2)} G`);
-    }
-}
-
-// === フィードバック音声＋スコア反映 ===============================
-
-function playFeedback(type) {
-    switch (type) {
-        case "turn":
-            playRandomAudio("ang_vel_low");
-            updateRealtimeScore("turn", +3);
-            break;
-        case "accel":
-            playRandomAudio("good_accel");
-            updateRealtimeScore("accel", +2);
-            break;
-        case "brake":
-            playRandomAudio("good_brake");
-            updateRealtimeScore("brake", +2);
-            break;
-        case "straight":
-            playRandomAudio("stable_drive");
-            updateRealtimeScore("straight", +1);
-            break;
-    }
-}
-
 // === 検出開始・停止 =============================================
 
 export function startMotionDetection() {
     if (window.DeviceMotionEvent && !window.isMotionDetectionActive) {
+        // 基本初期化
         window.motionFrameCounter = 0;
         window.motionInitTime = null;
         window.lastAudioPlayTime = {};
-        window.holdStart = {};
         
-        // 指摘用変数の初期化
+        // 新システム用初期化
+        window.holdStart = { goodTurn: null, goodAccel: null, goodBrake: null };
+        window.smoothedValues = { forward: 0, side: 0, up: 0 };
+        window.jerkValues = { forward: 0 };
+        window.gHistory = [];
+        window.bumpDisableUntil = 0;
+        window.lastWarningTime = { suddenAccel: 0, suddenBrake: 0, sharpTurn: 0 };
+        
+        // 互換性用初期化
         window.suddenAccels = window.suddenAccels || 0;
         window.suddenBrakes = window.suddenBrakes || 0;
         window.sharpTurns = window.sharpTurns || 0;
         window.prevGpsSpeed = null;
         window.prevGpsTime = null;
-        window.lastAccelEventTime = 0;
-        window.lastBrakeEventTime = 0;
-        window.lastTurnEventTime = 0;
-        window.currentDrivingEvent = 'normal'; // イベント状態初期化
+        window.currentDrivingEvent = 'normal';
+        
+        // ジャーク計算用初期化
+        window.prevForwardG = null;
+        window.prevForwardTime = null;
         
         window.addEventListener('devicemotion', handleDeviceMotion, { passive: true });
         window.isMotionDetectionActive = true;
-        console.log('📱 Motion detection started.');
+        console.log('📱 Motion detection started with new evaluation system.');
     }
 }
 
