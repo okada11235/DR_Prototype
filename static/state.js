@@ -76,6 +76,7 @@ window.lastAudioPlayTime = {};
 
 // グローバル音声ロック（どのカテゴリでも1つしか同時再生しない）
 window.isAudioPlaying = false;
+window.isUnlockAudioPlaying = false; // アンロック用音声の再生フラグ
 window.audioLockTimeout = null;
 
 // GPS関連の前回値
