@@ -8,6 +8,7 @@ window.audioCtx = null;
 window.audioUnlocked = false;
 window.audioPreloadedFiles = new Map();
 window.isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+window.isUnlockAudioPlaying = false; // アンロック用音声再生フラグ
 
 // === 音声ファイルプリロード機能（Android対策で無効化） ===============
 function preloadAudioFiles() {
@@ -199,16 +200,9 @@ function handleUserGesture(event) {
 
 // Android対応：静かな音声テスト再生
 function testQuietAudioPlayback() {
-    const testAudio = new Audio('/static/audio/silence.wav');
-    testAudio.volume = 0.01;
-    testAudio.play().then(() => {
-        console.log('✅ Android quiet test successful');
-        window.audioUnlocked = true;
-    }).catch(e => {
-        console.warn('⚠️ Android quiet test failed:', e);
-        // フォールバック: 強制的にアンロック状態に設定
-        window.audioUnlocked = true;
-    });
+    // アンロック用のsilence.wav再生なので、playRandomAudio経由で実行
+    console.log('🔇 Playing silence.wav for unlock (won\'t block other audio)');
+    playRandomAudio('silence', true); // isUnlockAudio = true
 }
 
 // 複数のイベントタイプでユーザージェスチャーを検出
@@ -230,7 +224,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // === 強化されたランダム音声再生（Android対応デバッグ強化版） ============
-export function playRandomAudio(category) {
+export function playRandomAudio(category, isUnlockAudio = false) {
     // === 詳細デバッグ情報 ===
     console.log('=== AUDIO PLAY REQUEST DEBUG ===');
     console.log(`📱 Device: ${navigator.userAgent}`);
@@ -240,13 +234,15 @@ export function playRandomAudio(category) {
     console.log(`🔓 AudioUnlocked: ${window.audioUnlocked}`);
     console.log(`🎧 AudioCtx State: ${window.audioCtx ? window.audioCtx.state : 'NONE'}`);
     console.log(`📁 Audio Files Available: ${Object.keys(audioFiles).length}`);
+    console.log(`🔓 IsUnlockAudio: ${isUnlockAudio}`);
     
     // 基本的な再生条件チェック
-    if (!window.sessionId) {
+    if (!window.sessionId && !isUnlockAudio) {
         console.log(`🔇 Audio skipped (not recording): ${category}`);
         return;
     }
-    if (window.isAudioPlaying) {
+    // アンロック用音声でない場合のみ音声ロックをチェック
+    if (!isUnlockAudio && window.isAudioPlaying && !window.isUnlockAudioPlaying) {
         console.log(`🔇 Audio locked (another audio playing): ${category}`);
         return;
     }
@@ -256,12 +252,14 @@ export function playRandomAudio(category) {
         return;
     }
 
-    // クールダウンチェック
-    const now = Date.now();
-    const lastPlayTime = window.lastAudioPlayTime?.[category] || 0;
-    if (now - lastPlayTime < AUDIO_COOLDOWN_MS) {
-        console.log(`🔇 Audio cooldown active for ${category} (${Math.round((AUDIO_COOLDOWN_MS - (now - lastPlayTime)) / 1000)}s remaining)`);
-        return;
+    // クールダウンチェック（アンロック音声は除外）
+    if (!isUnlockAudio) {
+        const now = Date.now();
+        const lastPlayTime = window.lastAudioPlayTime?.[category] || 0;
+        if (now - lastPlayTime < AUDIO_COOLDOWN_MS) {
+            console.log(`🔇 Audio cooldown active for ${category} (${Math.round((AUDIO_COOLDOWN_MS - (now - lastPlayTime)) / 1000)}s remaining)`);
+            return;
+        }
     }
 
     // Android対策：音声システムの状態詳細チェック
@@ -271,38 +269,47 @@ export function playRandomAudio(category) {
     console.log(`📱 User Gesture Detected: ${window.audioUnlocked}`);
     console.log(`🔊 Preloaded Files: ${window.audioPreloadedFiles ? window.audioPreloadedFiles.size : 0}`);
 
-    // iOS特有の事前チェック
-    if (window.isIOSDevice && !window.audioUnlocked) {
+    // iOS特有の事前チェック（アンロック音声は除外）
+    if (!isUnlockAudio && window.isIOSDevice && !window.audioUnlocked) {
         console.warn('⚠️ iOS device detected but audio not unlocked yet');
         return;
     }
 
     // AudioContext状態チェック（AndroidにもAudioContext対応）
-    if (window.audioCtx && window.audioCtx.state === "suspended") {
+    if (window.audioCtx && window.audioCtx.state === "suspended" && !isUnlockAudio) {
         console.log('🔄 Attempting to resume AudioContext before playback...');
         window.audioCtx.resume().then(() => {
             console.log("🔈 AudioContext resumed, proceeding with playback");
-            executeAudioPlayback(category, now);
+            executeAudioPlayback(category, Date.now(), isUnlockAudio);
         }).catch(e => {
             console.warn("Failed to resume AudioContext:", e);
             // AudioContextが失敗してもHTML5 Audioで試行
-            executeAudioPlayback(category, now);
+            executeAudioPlayback(category, Date.now(), isUnlockAudio);
         });
     } else {
         console.log('✅ AudioContext ready or not needed, proceeding with playback');
-        executeAudioPlayback(category, now);
+        executeAudioPlayback(category, Date.now(), isUnlockAudio);
     }
 }
 
 // === 実際の音声再生実行（Android対応デバッグ強化版） =================
-function executeAudioPlayback(category, timestamp) {
-    window.isAudioPlaying = true;
+function executeAudioPlayback(category, timestamp, isUnlockAudio = false) {
+    // アンロック音声用の特別なフラグ管理
+    if (isUnlockAudio) {
+        window.isUnlockAudioPlaying = true;
+        console.log('🔓 Unlock audio playback started, other audio can still play');
+    } else {
+        window.isAudioPlaying = true;
+        console.log('🔒 Regular audio playback started, blocking other regular audio');
+    }
+    
     const files = audioFiles[category];
     const file = files[Math.floor(Math.random() * files.length)];
-    console.log(`🔊 Playing audio: ${category} -> ${file}`);
+    console.log(`🔊 Playing audio: ${category} -> ${file} (unlock: ${isUnlockAudio})`);
 
     // Android対応：プリロードを使わずシンプルな音声再生
-    const audio = new Audio(file);
+    let audio = new Audio(file);
+    let usingPreloaded = false;
     audio.volume = 1.0;
     audio.preload = 'auto';
     
@@ -371,39 +378,47 @@ function executeAudioPlayback(category, timestamp) {
         playPromise
             .then(() => {
                 // 再生成功
-                window.lastAudioPlayTime = window.lastAudioPlayTime || {};
-                window.lastAudioPlayTime[category] = timestamp;
-                console.log(`✅ Audio played successfully: ${category}`);
+                if (!isUnlockAudio) {
+                    window.lastAudioPlayTime = window.lastAudioPlayTime || {};
+                    window.lastAudioPlayTime[category] = timestamp;
+                }
+                console.log(`✅ Audio played successfully: ${category} (unlock: ${isUnlockAudio})`);
                 console.log(`📊 Final audio state - duration: ${audio.duration}s, currentTime: ${audio.currentTime}s`);
                 
                 // 再生終了またはタイムアウトでロック解除
                 const unlockAudioLock = () => {
-                    window.isAudioPlaying = false;
-                    console.log(`🔓 Audio lock released for ${category}`);
+                    if (isUnlockAudio) {
+                        window.isUnlockAudioPlaying = false;
+                        console.log(`🔓 Unlock audio lock released for ${category}`);
+                    } else {
+                        window.isAudioPlaying = false;
+                        console.log(`🔓 Regular audio lock released for ${category}`);
+                    }
                 };
 
                 // 音声終了イベントリスナー
                 audio.addEventListener('ended', () => {
-                    console.log(`🏁 Audio ended naturally: ${category}`);
+                    console.log(`🏁 Audio ended naturally: ${category} (unlock: ${isUnlockAudio})`);
                     unlockAudioLock();
                 }, { once: true });
                 
                 audio.addEventListener('error', (e) => {
-                    console.error(`❌ Audio error during playback: ${category}`, e);
+                    console.error(`❌ Audio error during playback: ${category} (unlock: ${isUnlockAudio})`, e);
                     unlockAudioLock();
                 }, { once: true });
 
                 // フォールバック：最大再生時間でタイムアウト
+                const timeoutDuration = isUnlockAudio ? 1000 : Math.max(5000, AUDIO_COOLDOWN_MS);
                 window.audioLockTimeout = setTimeout(() => {
-                    console.log(`⏰ Audio timeout for ${category}`);
+                    console.log(`⏰ Audio timeout for ${category} (unlock: ${isUnlockAudio})`);
                     unlockAudioLock();
-                }, Math.max(5000, AUDIO_COOLDOWN_MS));
+                }, timeoutDuration);
             })
             .catch(err => {
                 // 再生失敗
                 console.error("❌ Promise-based audio play failed:", err);
                 console.log(`📊 Error details - name: ${err.name}, message: ${err.message}`);
-                handleAudioPlayFailure(category, err);
+                handleAudioPlayFailure(category, err, isUnlockAudio);
             });
     } else {
         // Promise未対応ブラウザ（古いAndroid等）
@@ -411,39 +426,62 @@ function executeAudioPlayback(category, timestamp) {
         playAttempted = true;
         
         audio.addEventListener('canplaythrough', () => {
-            window.lastAudioPlayTime = window.lastAudioPlayTime || {};
-            window.lastAudioPlayTime[category] = timestamp;
-            console.log(`✅ Audio played successfully (fallback): ${category}`);
+            if (!isUnlockAudio) {
+                window.lastAudioPlayTime = window.lastAudioPlayTime || {};
+                window.lastAudioPlayTime[category] = timestamp;
+            }
+            console.log(`✅ Audio played successfully (fallback): ${category} (unlock: ${isUnlockAudio})`);
         }, { once: true });
 
         audio.addEventListener('error', (err) => {
             console.error("❌ Event-based audio play failed:", err);
-            handleAudioPlayFailure(category, err);
+            handleAudioPlayFailure(category, err, isUnlockAudio);
         }, { once: true });
 
         // 再生終了でロック解除
         audio.addEventListener('ended', () => {
-            window.isAudioPlaying = false;
-            console.log(`🔓 Audio lock released (fallback) for ${category}`);
+            if (isUnlockAudio) {
+                window.isUnlockAudioPlaying = false;
+                console.log(`🔓 Unlock audio lock released (fallback) for ${category}`);
+            } else {
+                window.isAudioPlaying = false;
+                console.log(`🔓 Regular audio lock released (fallback) for ${category}`);
+            }
         }, { once: true });
 
         // フォールバックタイムアウト
+        const timeoutDuration = isUnlockAudio ? 1000 : Math.max(5000, AUDIO_COOLDOWN_MS);
         window.audioLockTimeout = setTimeout(() => {
-            window.isAudioPlaying = false;
-            console.log(`🔓 Audio lock timeout (fallback) for ${category}`);
-        }, Math.max(5000, AUDIO_COOLDOWN_MS));
+            if (isUnlockAudio) {
+                window.isUnlockAudioPlaying = false;
+                console.log(`🔓 Unlock audio lock timeout (fallback) for ${category}`);
+            } else {
+                window.isAudioPlaying = false;
+                console.log(`🔓 Regular audio lock timeout (fallback) for ${category}`);
+            }
+        }, timeoutDuration);
     }
 
     // 再生試行が行われなかった場合の緊急処理
     if (!playAttempted) {
         console.error('❌ No audio playback method available');
-        window.isAudioPlaying = false;
+        if (isUnlockAudio) {
+            window.isUnlockAudioPlaying = false;
+        } else {
+            window.isAudioPlaying = false;
+        }
     }
 }
 
 // === 音声再生失敗時の処理（Android対応強化） ======================
-function handleAudioPlayFailure(category, error) {
-    window.isAudioPlaying = false;
+function handleAudioPlayFailure(category, error, isUnlockAudio = false) {
+    if (isUnlockAudio) {
+        window.isUnlockAudioPlaying = false;
+        console.log('🔓 Unlock audio playback failed, releasing unlock lock');
+    } else {
+        window.isAudioPlaying = false;
+        console.log('🔒 Regular audio playback failed, releasing regular lock');
+    }
     
     if (window.audioLockTimeout) {
         clearTimeout(window.audioLockTimeout);
@@ -529,7 +567,8 @@ window.showAudioStatus = function() {
     console.log(`🎧 AudioContext: ${window.audioCtx ? window.audioCtx.state : 'Not Created'}`);
     console.log(`📦 Preloaded Files: ${window.audioPreloadedFiles ? window.audioPreloadedFiles.size : 0}`);
     console.log(`🔒 Is Playing: ${window.isAudioPlaying}`);
-    console.log(`📊 Session ID: ${window.sessionId || 'NONE'}`);
+    console.log(`� Is Unlock Playing: ${window.isUnlockAudioPlaying}`);
+    console.log(`�📊 Session ID: ${window.sessionId || 'NONE'}`);
     console.log(`🕐 Last Play Times:`, window.lastAudioPlayTime || 'NONE');
     
     if (window.audioPreloadedFiles && window.audioPreloadedFiles.size > 0) {
