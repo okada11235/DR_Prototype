@@ -358,12 +358,19 @@
 
         // グラフ描画関数
         // イベントマーカーの色定義
+        // === イベントマーカーの色定義（8分類対応） ===
         const colorMap = {
-            normal: 'transparent',
-            sudden_brake: 'red',
-            sudden_accel: 'green',
-            sharp_turn: 'orange',
-            speed_violation: 'purple'
+            // ⚠️ 指摘系
+            sudden_brake: '#ff3b30',     // 赤
+            sudden_accel: '#34c759',     // 緑
+            sharp_turn: '#ff9500',       // オレンジ
+            unstable_drive: '#ffcc00',   // 黄
+
+            // 💙 褒め系
+            smooth_turn: '#007aff',      // 青
+            smooth_accel: '#5ac8fa',     // 水色
+            smooth_brake: '#4cd964',     // 明るい緑
+            stable_drive: '#5856d6',     // 紫
         };
 
         // イベントを表示する対象の軸
