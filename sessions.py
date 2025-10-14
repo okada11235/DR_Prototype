@@ -271,6 +271,8 @@ def log_g_only():
                 'g_x': float(log.get('g_x', 0.0)),
                 'g_y': float(log.get('g_y', 0.0)),
                 'g_z': float(log.get('g_z', 0.0)),
+                'speed': float(log.get('speed', 0.0)),
+                'event': log.get('event', 'normal'),
                 'timestamp': ts_dt,       # Firestore標準のTimestamp型
                 'timestamp_ms': ts_ms     # スマホ内部のミリ秒値をそのまま保存
             })
@@ -281,6 +283,59 @@ def log_g_only():
         return jsonify({'status': 'ok', 'saved_count': saved_count})
     except Exception as e:
         print(f"Error saving G logs: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+    
+# 平滑化Gログ一括保存（avg_g_logs）
+@sessions_bp.route('/log_avg_g_bulk', methods=['POST'])
+@login_required
+def log_avg_g_bulk():
+    data = request.get_json()
+    session_id = data.get('session_id')
+    avg_g_logs = data.get('avg_g_logs', [])
+    
+    print(f"Received AVG-G bulk save request for session {session_id}")
+    print(f"Avg G logs count: {len(avg_g_logs)}")
+    if avg_g_logs:
+        print(f"First avg G log sample: {avg_g_logs[0]}")
+
+    if not session_id:
+        return jsonify({'status': 'error', 'message': 'Missing session_id'}), 400
+
+    # セッション確認
+    session_ref = db.collection('sessions').document(session_id)
+    session_doc = session_ref.get()
+    if not session_doc.exists or session_doc.to_dict().get('user_id') != current_user.id:
+        return jsonify({'status': 'error', 'message': 'Permission denied or session not found'}), 403
+
+    try:
+        batch = db.batch()
+        avg_collection = session_ref.collection('avg_g_logs')
+        saved_count = 0
+        
+        for log in avg_g_logs:
+            ts_ms = log.get('timestamp')
+            if ts_ms:
+                ts_dt = datetime.fromtimestamp(ts_ms / 1000.0, JST)
+            else:
+                ts_dt = datetime.now(JST)
+
+            doc_ref = avg_collection.document()
+            batch.set(doc_ref, {
+                'g_x': float(log.get('g_x', 0.0)),
+                'g_y': float(log.get('g_y', 0.0)),
+                'g_z': float(log.get('g_z', 0.0)),
+                'speed': float(log.get('speed', 0.0)),
+                'event': log.get('event', 'normal'),
+                'timestamp': ts_dt,
+                'timestamp_ms': ts_ms
+            })
+            saved_count += 1
+        
+        batch.commit()
+        print(f"✅ Successfully saved {saved_count} avg G logs to session {session_id}")
+        return jsonify({'status': 'ok', 'saved_count': saved_count})
+    except Exception as e:
+        print(f"Error saving avg G logs: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 # 反省文保存

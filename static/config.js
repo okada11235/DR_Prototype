@@ -42,27 +42,78 @@ export const MOTION_FRAME_SKIP = 4; // 4フレームに1回処理（元は6フ�
 export const MOTION_INIT_DURATION = 3000; // 3秒間は初期化期間
 export const STABLE_SAMPLES_REQUIRED = 10; // 10回連続で安定したら処理開始
 
-// 褒め条件（3分間適切な運転を維持）
-export const PRAISE_INTERVAL = 180000; // 3分間に戻す 
+// === 褒め条件 ===============================================
+export const PRAISE_INTERVAL = 180000; // 3分間に戻す
 
-// 音声再生のクールダウン管理
-export const AUDIO_COOLDOWN_MS = 3000; // 運転中の適切な指摘間隔（5秒）
+// === 音声再生クールダウン ==================================
+export const AUDIO_COOLDOWN_MS = 3000; // 3秒間隔で音声再生を抑制
 
-// ★FIX: 音声ファイルパスの重複/不足を修正（カテゴリ名の不整合を解消）
+// === Firestore コレクション名 ================================
+export const FIRESTORE_COLLECTIONS = {
+    sessions: 'sessions',
+    gps_logs: 'gps_logs',
+    g_logs: 'g_logs',
+    avg_g_logs: 'avg_g_logs',
+    events: 'events'
+};
+
+// === 音声ファイルパス一覧 ===================================
 export const audioFiles = {
+    // ---------------- 旧構成（保持） ----------------
     jerk_low: ["/static/audio/jerk_low_praise_1.wav", "/static/audio/jerk_low_praise_2.wav"],
     good_accel: ["/static/audio/acceleration_good_1.wav", "/static/audio/acceleration_good_2.wav"],
     ang_accel_good: ["/static/audio/angular_acceleration_good_1.wav", "/static/audio/angular_acceleration_good_2.wav"],
-    ang_accel_high: ["/static/audio/angular_acceleration_good_1.wav", "/static/audio/angular_acceleration_good_2.wav"], // ★追加
+    ang_accel_high: ["/static/audio/angular_acceleration_good_1.wav", "/static/audio/angular_acceleration_good_2.wav"],
     ang_vel_high: ["/static/audio/angular_velocity_high_1.wav", "/static/audio/angular_velocity_high_2.wav"],
     ang_vel_low: ["/static/audio/angular_velocity_low_1.wav", "/static/audio/angular_velocity_low_2.wav"],
-    sharp_turn: ["/static/audio/sharp_turn_1.wav", "/static/audio/sharp_turn_2.wav", "/static/audio/sharp_turn_3.wav"],
-    yaw_rate_high: ["/static/audio/sharp_turn_1.wav", "/static/audio/sharp_turn_2.wav", "/static/audio/sharp_turn_3.wav"], // ★重複キーを1本化
-    sudden_brake: ["/static/audio/sudden_brake_1.wav", "/static/audio/sudden_brake_2.wav", "/static/audio/sudden_brake_3.wav"],
-    sudden_accel: ["/static/audio/sudden_acceleration_1.wav", "/static/audio/sudden_acceleration_2.wav"],
+    yaw_rate_high: ["/static/audio/sharp_turn_1.wav", "/static/audio/sharp_turn_2.wav", "/static/audio/sharp_turn_3.wav"],
     speed_fluct: ["/static/audio/speed_jerkiness_1.wav", "/static/audio/speed_jerkiness_2.wav"],
     jerk: ["/static/audio/speed_jerkiness_1.wav", "/static/audio/speed_jerkiness_2.wav"],
     good_brake: ["/static/audio/good_brake_1.wav", "/static/audio/good_brake_2.wav"],
     stable_drive: ["/static/audio/stable_drive_1.wav", "/static/audio/stable_drive_2.wav"],
-    silence: ["/static/audio/silence.wav"]
+    silence: ["/static/audio/silence.wav"],
+
+    // ---------------- 新構成（8分類） ----------------
+    // 🚘 褒め系
+    smooth_turn: [
+        "/static/audio/angular_velocity_low_1.wav",
+        "/static/audio/angular_velocity_low_2.wav"
+    ],
+    smooth_accel: [
+        "/static/audio/acceleration_good_1.wav",
+        "/static/audio/acceleration_good_2.wav"
+    ],
+    smooth_brake: [
+        "/static/audio/good_brake_1.wav",
+        "/static/audio/good_brake_2.wav"
+    ],
+    stable_drive: [
+        "/static/audio/stable_drive_1.wav",
+        "/static/audio/stable_drive_2.wav"
+    ],
+
+    // ⚠️ 注意系
+    sharp_turn: [
+        "/static/audio/sharp_turn_1.wav",
+        "/static/audio/sharp_turn_2.wav",
+        "/static/audio/sharp_turn_3.wav"
+    ],
+    sudden_accel: [
+        "/static/audio/sudden_acceleration_1.wav",
+        "/static/audio/sudden_acceleration_2.wav"
+    ],
+    sudden_brake: [
+        "/static/audio/sudden_brake_1.wav",
+        "/static/audio/sudden_brake_2.wav",
+        "/static/audio/sudden_brake_3.wav"
+    ],
+    unstable_drive: [
+        "/static/audio/speed_jerkiness_1.wav",
+        "/static/audio/speed_jerkiness_2.wav"
+    ]
 };
+
+// === 音量設定 ===============================================
+export const AUDIO_VOLUME = 1.0; // 0.0〜1.0（audio.jsで使用）
+
+console.log("✅ config.js (既存＋8分類対応版) loaded");

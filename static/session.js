@@ -284,57 +284,56 @@ export function endSession(showAlert = true) {
 export function startLogFlush() {
     if (window.logFlushInterval) clearInterval(window.logFlushInterval);
     window.logFlushInterval = setInterval(() => {
-        console.log(`Interval flush check: sessionId=${window.sessionId}, G buffer=${window.gLogBuffer.length}, GPS buffer=${window.gpsLogBuffer.length}`);
-        if (window.sessionId) {
-            if (window.gLogBuffer.length > 0) {
-                const logsToSend = window.gLogBuffer.splice(0, window.gLogBuffer.length);
-                console.log(`Sending ${logsToSend.length} G logs for session ${window.sessionId}`);
-                fetch('/log_g_only', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ session_id: window.sessionId, g_logs: logsToSend })
-                })
-                .then(response => response.json())
-                .then(data => {
-                    console.log('G logs save response:', data);
-                })
-                .catch(err => console.error('Gログ送信エラー:', err));
-            }
-            if (window.gpsLogBuffer.length > 0) {
-                const logsToSend = window.gpsLogBuffer.splice(0, window.gpsLogBuffer.length);
-                console.log(`=== GPS BULK SEND STARTED ===`);
-                console.log(`Sending ${logsToSend.length} GPS logs for session ${window.sessionId}`);
-                if (logsToSend.length > 0) {
-                    console.log('First GPS log sample:', logsToSend[0]);
-                    console.log('Last GPS log sample:', logsToSend[logsToSend.length - 1]);
-                }
-                const requestBody = { session_id: window.sessionId, gps_logs: logsToSend };
-                console.log('GPS bulk request body:', requestBody);
-                fetch('/log_gps_bulk', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(requestBody)
-                })
-                .then(response => {
-                    console.log('GPS bulk response status:', response.status);
-                    console.log('GPS bulk response ok:', response.ok);
-                    return response.json();
-                })
-                .then(data => {
-                    console.log('GPS logs save response:', data);
-                    console.log(`=== GPS BULK SEND COMPLETED ===`);
-                })
-                .catch(err => {
-                    console.error('GPSログ送信エラー:', err);
-                    console.log(`=== GPS BULK SEND FAILED ===`);
-                });
-            } else {
-                console.log('No GPS logs to send (buffer empty)');
-            }
-        } else {
+        console.log(`Interval flush check: sessionId=${window.sessionId}, G buffer=${window.gLogBuffer.length}, AVG buffer=${window.avgGLogBuffer?.length || 0}, GPS buffer=${window.gpsLogBuffer.length}`);
+
+        if (!window.sessionId) {
             console.log('No session ID available for log flush');
+            return;
         }
-    }, 10000); // 10秒ごと
+
+        // === Gログ送信 ===
+        if (window.gLogBuffer.length > 0) {
+            const logsToSend = window.gLogBuffer.splice(0, window.gLogBuffer.length);
+            console.log(`Sending ${logsToSend.length} G logs for session ${window.sessionId}`);
+            fetch('/log_g_only', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_id: window.sessionId, g_logs: logsToSend })
+            })
+            .then(r => r.json())
+            .then(data => console.log('G logs save response:', data))
+            .catch(err => console.error('Gログ送信エラー:', err));
+        }
+
+        // === 平滑化Gログ送信 ===
+        if (window.avgGLogBuffer && window.avgGLogBuffer.length > 0) {
+            const avgToSend = window.avgGLogBuffer.splice(0, window.avgGLogBuffer.length);
+            console.log(`Sending ${avgToSend.length} AVG-G logs for session ${window.sessionId}`);
+            fetch('/log_avg_g_bulk', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_id: window.sessionId, avg_g_logs: avgToSend })
+            })
+            .then(r => r.json())
+            .then(data => console.log('AVG G logs save response:', data))
+            .catch(err => console.error('AVG Gログ送信エラー:', err));
+        }
+
+        // === GPSログ送信 ===
+        if (window.gpsLogBuffer.length > 0) {
+            const logsToSend = window.gpsLogBuffer.splice(0, window.gpsLogBuffer.length);
+            console.log(`Sending ${logsToSend.length} GPS logs for session ${window.sessionId}`);
+            fetch('/log_gps_bulk', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_id: window.sessionId, gps_logs: logsToSend })
+            })
+            .then(r => r.json())
+            .then(data => console.log('GPS logs save response:', data))
+            .catch(err => console.error('GPSログ送信エラー:', err));
+        }
+
+    }, 10000); // 🔹10秒ごと
 }
 
 // 褒めチェック開始
