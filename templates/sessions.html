@@ -136,6 +136,23 @@
                 </div>
                 {% endif %}
 
+                {% if session.audio_records and session.audio_records|length > 0 %}
+                <h4>音声記録 🎧</h4>
+                <ul>
+                {% for audio in session.audio_records %}
+                {% if audio.url %}
+                <li>
+                <audio controls style="width:100%;">
+                    <source src="{{ audio.url }}" type="{{ audio.mime_type or 'audio/webm' }}">
+                    ブラウザが audio タグをサポートしていません。
+                </audio>
+                <small>記録日時: {{ audio.created_at.strftime('%Y/%m/%d %H:%M:%S') if audio.created_at else 'N/A' }}</small>
+                </li>
+                {% endif %}
+                {% endfor %}
+                </ul>
+                {% endif %}
+
                 <div class="reflection-section">
                     <h4>反省文:</h4>
                     <textarea id="reflection-{{ session.id }}" class="reflection-textarea" rows="4"
@@ -716,6 +733,6 @@
 
     </script>
     
-    <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBUyc6mj-SEOP8lopM2laEywMILL8qknvo&callback=initAllSessionMaps&loading=async"></script>
+    <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDU9txYivjPCIe66l6bPYsPifQKcQxjnrA&callback=initAllSessionMaps&loading=async"></script>
 </body>
 </html>

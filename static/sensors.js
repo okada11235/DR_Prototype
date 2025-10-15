@@ -4,7 +4,16 @@
 import {
   MOTION_FRAME_SKIP,
   AUDIO_COOLDOWN_MS,
-  COOLDOWN_MS
+  COOLDOWN_MS,
+  GOOD_ACCEL_MIN_G,
+  GOOD_ACCEL_MAX_G,
+  GOOD_BRAKE_MIN_G,
+  GOOD_BRAKE_MAX_G,
+  GOOD_TURN_MIN_G,
+  GOOD_TURN_MAX_G,
+  SUDDEN_ACCEL_G_THRESHOLD,
+  SUDDEN_BRAKE_G_THRESHOLD,
+  SHARP_TURN_G_THRESHOLD
 } from './config.js';
 import { playRandomAudio } from './audio.js';
 import { updateRealtimeScore } from './utils.js';
@@ -155,116 +164,123 @@ export function handleDeviceMotion(event) {
   let gy = acc.y || 0;
   let gz = acc.z || 0;
 
-  // Z回りの角速度（deg/s → rad/s に統一したいが端末依存のためそのまま相対指標として使用）
+  // ✅ m/s² → G（1G ≈ 9.80665 m/s²）
+  gx /= 9.80665;
+  gy /= 9.80665;
+  gz /= 9.80665;
+
+  // ✅ 重力方向を低周波フィルタで追従（傾き補正）
+  const alpha = 0.95; // 応答係数（0.9〜0.99推奨）
+  gravityOffset.x = alpha * gravityOffset.x + (1 - alpha) * gx;
+  gravityOffset.y = alpha * gravityOffset.y + (1 - alpha) * gy;
+  gravityOffset.z = alpha * gravityOffset.z + (1 - alpha) * gz;
+
+  // ✅ 重力を除去
+  gx -= gravityOffset.x;
+  gy -= gravityOffset.y;
+  gz -= gravityOffset.z;
+
+  // Z回りの角速度
   const rot = event.rotationRate || {};
   const rotZ = (rot.alpha ?? rot.z ?? 0); // iOS: alpha=Z、Android: z
 
-  // キャリブ中はサンプルだけ貯めて終了
   if (isCalibrating) {
     calibrationSamples.push({ x: gx, y: gy, z: gz });
     return;
   }
 
-  // 初回フラグ
   if (!motionInitialized) {
     motionInitialized = true;
     console.log('DeviceMotion initialized');
   }
 
-  // フレーム間引き
   if (++sampleCount % MOTION_FRAME_SKIP !== 0) return;
 
-  // 重力除去＋姿勢補正
-  ({ gx, gy, gz } = applyOrientationCorrection(gx, gy, gz));
+  // ✅ applyOrientationCorrection は削除またはコメントアウト
+  // ({ gx, gy, gz } = applyOrientationCorrection(gx, gy, gz));
 
-  // 平滑化バッファ
+  // === 以下、平滑化処理・Firestoreバッファ処理はそのまま ===
   gWindow.push({ t: now, x: gx, y: gy, z: gz });
   updateSmoothedG(now);
   const gxs = smoothedG.x;
   const gys = smoothedG.y;
   const gzs = smoothedG.z;
 
-  // 速度履歴（window.currentSpeed は別モジュールでセット）
   const speed = window.currentSpeed ?? 0;
   speedHistory.push({ t: now, speed });
   while (speedHistory.length && speedHistory[0].t < now - SPEED_WINDOW_MS) speedHistory.shift();
 
-  // 角速度履歴
   rotationHistory.push({ t: now, rotZ });
   while (rotationHistory.length && rotationHistory[0].t < now - ROT_WINDOW_MS) rotationHistory.shift();
 
-  // 判定に使う変化量
   const deltaSpeed = calcDeltaSpeed();
   const avgRotZ = calcAvgRotZ();
 
-  // 8分類判定（褒め/指摘）
   const eventType = detectDrivingPattern(gxs, gys, gzs, speed, deltaSpeed, avgRotZ, now);
 
-  // Firestore バッファ：生G（g_logs）
-  window.gLogBuffer.push({
-    timestamp_ms: now,
-    g_x: gx,
-    g_y: gy,
-    g_z: gz,
-    speed: speed,
-    event: eventType || 'normal'
-  });
+  window.gLogBuffer.push({ timestamp_ms: now, g_x: gx, g_y: gy, g_z: gz, speed, event: eventType || 'normal' });
+  window.avgGLogBuffer.push({ timestamp_ms: now, g_x: gxs, g_y: gys, g_z: gzs, speed, event: eventType || 'normal' });
 
-  // Firestore バッファ：平滑G（avg_g_logs）
-  window.avgGLogBuffer.push({
-    timestamp_ms: now,
-    g_x: gxs,
-    g_y: gys,
-    g_z: gzs,
-    speed: speed,
-    event: eventType || 'normal'
-  });
+  const gxElem = document.getElementById('g-x');
+  const gyElem = document.getElementById('g-y');
+  const gzElem = document.getElementById('g-z');
+
+  if (gxElem) gxElem.textContent = gxs.toFixed(2);
+  if (gyElem) gyElem.textContent = gys.toFixed(2);
+  if (gzElem) gzElem.textContent = gzs.toFixed(2);
 }
+
 
 // =======================
 // 8分類（褒め/指摘）判定
 // =======================
 function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now) {
-  // 左右＝gx（side）、前後＝gz（forward）に統一済み
   const absSide = Math.abs(gx);
   const absFwd  = Math.abs(gz);
   let type = null;
 
-  // 1) 旋回（スムーズ／急）
-  if (absSide >= 0.25 && absFwd < 0.2 && speed >= 15) {
-    type = (absSide < 0.4 && Math.abs(rotZ) < 0.2) ? 'smooth_turn' : 'sharp_turn';
+  // 🚗 旋回（スムーズ／急）
+  if (absSide >= GOOD_TURN_MIN_G && absSide <= GOOD_TURN_MAX_G && absFwd < 0.25 && speed >= 10) {
+    type = 'smooth_turn';
+  } else if (absSide > SHARP_TURN_G_THRESHOLD && speed >= 10) {
+    type = 'sharp_turn';
   }
 
-  // 2) 加速（スムーズ／急）
-  else if (gz <= -0.3 && deltaSpeed > 5 && speed >= 5) {
-    type = (absSide < 0.2 && deltaSpeed <= 10) ? 'smooth_accel' : 'sudden_accel';
+  // 🚀 加速（スムーズ／急発進）
+  else if (gz <= -GOOD_ACCEL_MIN_G && gz >= -GOOD_ACCEL_MAX_G && absSide < 0.25 && speed >= 5) {
+    type = 'smooth_accel';
+  } else if (gz <= -SUDDEN_ACCEL_G_THRESHOLD && speed >= 5) {
+    type = 'sudden_accel';
   }
 
-  // 3) 減速（スムーズ／急）
-  else if (gz >= 0.3 && deltaSpeed < -5 && speed >= 10) {
-    type = (absSide < 0.2 && absFwd < 0.5) ? 'smooth_brake' : 'sudden_brake';
+  // 🛑 ブレーキ（スムーズ／急ブレーキ）
+  else if (gz >= Math.abs(GOOD_BRAKE_MIN_G) && gz <= Math.abs(GOOD_BRAKE_MAX_G) && absSide < 0.25 && speed >= 10) {
+    type = 'smooth_brake';
+  } else if (gz >= Math.abs(SUDDEN_BRAKE_G_THRESHOLD) && speed >= 10) {
+    type = 'sudden_brake';
   }
 
-  // 4) 直進（安定走行）
-  else if (speed >= 30 && absFwd < 0.15 && absSide < 0.15 && Math.abs(rotZ) < 0.05) {
+  // 🚘 安定走行（直進）
+  else if (speed >= 20 && absFwd < 0.12 && absSide < 0.12 && Math.abs(rotZ) < 0.05) {
     type = 'stable_drive';
   }
 
+  // === イベントなし ===
   if (!type) return null;
 
-  // クールダウン
+  // === クールダウン ===
   if (now - lastEventTime < COOLDOWN_MS) return null;
   lastEventTime = now;
 
-  // スコア・ログ・音声
   console.log(
-    `🎯 ${type} | side(gx)=${gx.toFixed(2)} fwd(gz)=${gz.toFixed(2)} ΔV=${deltaSpeed.toFixed(1)} rotZ=${Number(rotZ).toFixed(2)}`
+    `🎯 ${type} | gx=${gx.toFixed(2)}, gz=${gz.toFixed(2)}, rotZ=${rotZ.toFixed(2)}`
   );
 
   updateRealtimeScore(type);
 
+  // === 音声再生（重複防止） ===
   if (now - lastAudioTime > AUDIO_COOLDOWN_MS) {
-    playRandomAudio(type);     // config.audioFiles のキーと一致
+    playRandomAudio(type);
     lastAudioTime = now;
   }
 

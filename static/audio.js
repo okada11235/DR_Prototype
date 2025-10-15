@@ -1,7 +1,7 @@
-// audio.js - 音声再生機能（iOS対応強化版）
+// audio.js - 音声再生機能（iOS対応強化版＋無音パルス安定化）
 import { audioFiles, AUDIO_COOLDOWN_MS } from './config.js';
 
-console.log('=== audio.js LOADED (iOS Enhanced Version) ===');
+console.log('=== audio.js LOADED (iOS Enhanced + KeepAlive Version) ===');
 
 // --- iOS対策用のグローバル状態管理 ---
 window.audioCtx = null;
@@ -9,35 +9,29 @@ window.audioUnlocked = false;
 window.audioPreloadedFiles = new Map();
 window.isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
 window.isUnlockAudioPlaying = false; // アンロック用音声再生フラグ
+window.keepAliveIntervalId = null;   // ←★ 無音パルス管理用を追加
 
 // === 音声ファイルプリロード機能（Android対策で無効化） ===============
 function preloadAudioFiles() {
     console.log('🔄 Audio preload disabled for Android compatibility');
-    // Android対策：プリロードを無効化してシンプルな再生を優先
     return;
 }
 
 // === Android/iOS対応：強化されたオーディオアンロック処理 ==============
 export function unlockAudio() {
     console.log('=== AUDIO UNLOCK REQUEST ===');
-    console.log(`� User Agent: ${navigator.userAgent}`);
-    console.log(`🤖 Is Android: ${/Android/.test(navigator.userAgent)}`);
-    console.log(`📱 Is iOS: ${window.isIOSDevice}`);
-    
-    // AudioContext初期化（Android ChromeでもWebAudio APIを使用）
+    console.log(`📱 User Agent: ${navigator.userAgent}`);
+
     if (!window.audioCtx) {
         try {
             window.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             console.log(`🎧 AudioContext created - state: ${window.audioCtx.state}`);
         } catch (e) {
             console.warn("❌ AudioContext init failed:", e);
-            // AudioContextが作成できなくてもHTML5 Audioで継続
         }
     }
 
-    // AudioContextの再開（Android/iOS共通）
     if (window.audioCtx && window.audioCtx.state === "suspended") {
-        console.log('🔄 AudioContext is suspended, attempting resume...');
         window.audioCtx.resume().then(() => {
             console.log("🔈 AudioContext resumed successfully (user gesture)");
         }).catch(e => {
@@ -45,73 +39,67 @@ export function unlockAudio() {
         });
     }
 
-    // 無音を再生してモバイルロック解除（Android/iOS共通）
-    if (window.audioCtx && window.audioCtx.state === "running") {
-        try {
-            const buffer = window.audioCtx.createBuffer(1, 1, 22050);
-            const source = window.audioCtx.createBufferSource();
-            source.buffer = buffer;
-            source.connect(window.audioCtx.destination);
-            source.start(0);
-            console.log("🎧 Silent WebAudio played to unlock mobile");
-        } catch (e) {
-            console.warn("⚠️ Silent WebAudio failed:", e);
+    try {
+        const buffer = window.audioCtx.createBuffer(1, 1, 22050);
+        const source = window.audioCtx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(window.audioCtx.destination);
+        source.start(0);
+        console.log("🎧 Silent WebAudio played to unlock mobile");
+    } catch (e) {
+        console.warn("⚠️ Silent WebAudio failed:", e);
+    }
+
+    window.audioUnlocked = true;
+
+    // ✅ === ここから追加：AudioContext維持用 keep-alive ===
+    if (window.keepAliveIntervalId) clearInterval(window.keepAliveIntervalId);
+
+    function keepAudioAlive() {
+        if (!window.audioCtx) return;
+        if (window.audioCtx.state === "suspended") {
+            window.audioCtx.resume().catch(e => console.warn("⚠️ resume failed:", e));
+        } else {
+            try {
+                const osc = window.audioCtx.createOscillator();
+                const gain = window.audioCtx.createGain();
+                gain.gain.value = 0; // 無音
+                osc.connect(gain).connect(window.audioCtx.destination);
+                osc.start();
+                osc.stop(window.audioCtx.currentTime + 0.05);
+                console.log("💡 keep-alive pulse sent");
+            } catch (e) {
+                console.warn("⚠️ keepAudioAlive failed:", e);
+            }
         }
     }
 
-    // HTML5 Audio要素でテスト再生（Android対策強化）
+    window.keepAliveIntervalId = setInterval(keepAudioAlive, 15000);
+    console.log("✅ keep-alive interval started (15s)");
+    // ✅ === 追加ここまで ===
+
+    // 以下、既存のunlockAudio処理はそのまま維持
     try {
         const testAudio = new Audio();
-        
-        // Android対策：音声ファイルパスの確認
         const silencePath = '/static/audio/silence.wav';
         console.log(`🔍 Testing audio path: ${silencePath}`);
-        
         testAudio.src = silencePath;
         testAudio.volume = 0.01;
         testAudio.preload = 'auto';
-        
-        // Android特有の設定
-        if (/Android/.test(navigator.userAgent)) {
-            testAudio.crossOrigin = 'anonymous';
-            console.log('🤖 Android-specific audio settings applied');
-        }
-        
+
         const playPromise = testAudio.play();
         if (playPromise !== undefined) {
             playPromise
                 .then(() => {
                     console.log('✅ HTML5 Audio unlocked successfully');
                     window.audioUnlocked = true;
-                    
-                    // アンロック成功後にプリロード開始
-                    console.log('🔄 Starting audio preload after unlock...');
                     preloadAudioFiles();
-                    
-                    // テスト音声停止
                     testAudio.pause();
                     testAudio.currentTime = 0;
-                    
-                    // Android対策：実際の音声ファイルでも簡単なテスト
-                    if (/Android/.test(navigator.userAgent)) {
-                        testAndroidAudioSystem();
-                    }
                 })
                 .catch(e => {
                     console.error('❌ HTML5 Audio unlock failed:', e);
-                    console.log(`📊 Error details - name: ${e.name}, message: ${e.message}`);
-                    
-                    // Androidの場合、代替手段を試行
-                    if (/Android/.test(navigator.userAgent)) {
-                        console.log('🤖 Attempting Android fallback unlock...');
-                        attemptAndroidFallbackUnlock();
-                    }
                 });
-        } else {
-            console.warn('⚠️ Audio.play() does not return Promise');
-            // 古いブラウザ向けフォールバック
-            window.audioUnlocked = true;
-            preloadAudioFiles();
         }
     } catch (e) {
         console.error('❌ Test audio creation failed:', e);
@@ -123,51 +111,55 @@ export function unlockAudio() {
 // === Android専用の補助関数（無効化） ======================
 // Android対策：機能を簡素化するため無効化
 
+// === 新規追加：記録終了時にAudioContextを安全に停止 ===
+export function stopAudioSystem() {
+    console.log("🛑 Stopping Audio System...");
+    if (window.keepAliveIntervalId) {
+        clearInterval(window.keepAliveIntervalId);
+        window.keepAliveIntervalId = null;
+        console.log("⏹️ keep-alive interval cleared");
+    }
+    if (window.audioCtx) {
+        try {
+            window.audioCtx.close();
+            console.log("🔒 AudioContext closed");
+        } catch (e) {
+            console.warn("⚠️ AudioContext close failed:", e);
+        }
+    }
+    window.audioCtx = null;
+    window.audioUnlocked = false;
+}
+
 // --- iOS用：定期的にAudioContextを維持 + 追加のiOS対策 ---
 function keepAudioAlive() {
-    if (!window.audioCtx) return;
-    
-    // AudioContextの状態を定期チェック
-    if (window.audioCtx.state === "suspended") {
-        window.audioCtx.resume().then(() => {
-            console.log("🌀 AudioContext auto-resumed (keepAlive)");
-        }).catch(e => {
-            console.warn("AudioContext resume failed in keepAlive:", e);
-        });
-    } else if (window.audioCtx.state === "running") {
-        // AudioContextが動作中の場合、無音トーンでActivity維持
-        try {
-            const osc = window.audioCtx.createOscillator();
-            const gain = window.audioCtx.createGain();
-            gain.gain.value = 0;
-            osc.connect(gain).connect(window.audioCtx.destination);
-            osc.start();
-            osc.stop(window.audioCtx.currentTime + 0.05); // 50ms
-        } catch (e) {
-            console.warn("KeepAlive oscillator failed:", e);
-        }
-    }
+  if (!window.audioCtx) return;
 
-    // iOS Safari特有の対策：定期的に音声システムの状態確認
-    if (window.isIOSDevice && window.audioUnlocked) {
-        // プリロードされた音声の状態チェック
-        let healthyAudioCount = 0;
-        window.audioPreloadedFiles.forEach((audio, path) => {
-            if (audio.readyState >= 3) { // HAVE_FUTURE_DATA以上
-                healthyAudioCount++;
-            }
-        });
-        
-        if (healthyAudioCount === 0 && window.audioPreloadedFiles.size > 0) {
-            console.warn("⚠️ Audio files may need reloading on iOS");
-            // 必要に応じて再プリロード
-            preloadAudioFiles();
-        }
-    }
+  // 状態をチェックして必要なら再開
+  if (window.audioCtx.state === "suspended") {
+    window.audioCtx.resume().then(() => {
+      console.log("🌀 AudioContext auto-resumed (keepAlive)");
+      window.audioUnlocked = true;
+    }).catch(e => {
+      console.warn("⚠️ AudioContext resume failed in keepAlive:", e);
+    });
+  }
+
+  // 無音パルスを再生して Safari に「音声を維持中」と伝える
+  try {
+    const buffer = window.audioCtx.createBuffer(1, 1, 22050);
+    const source = window.audioCtx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(window.audioCtx.destination);
+    source.start(0);
+    console.log("💓 keep-alive silent pulse played");
+  } catch (e) {
+    console.warn("⚠️ keep-alive pulse failed:", e);
+  }
 }
 
 // iOS対策：より頻繁な維持間隔（iOS Safari対応）
-const keepAliveInterval = window.isIOSDevice ? 15000 : 30000; // iOS: 15秒, その他: 30秒
+const keepAliveInterval = window.isIOSDevice ? 5000 : 30000; // iOS: 5秒, その他: 30秒
 setInterval(keepAudioAlive, keepAliveInterval);
 
 // === 強化されたユーザー操作イベント検出（Android対応） =================

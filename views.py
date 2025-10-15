@@ -3,8 +3,12 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
 from firebase_admin import firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
-from datetime import datetime
 from models import db
+from datetime import datetime, timezone, timedelta
+
+
+JST = timezone(timedelta(hours=9))
+
 
 # Blueprintの作成
 views_bp = Blueprint('views', __name__)
@@ -108,6 +112,8 @@ def recording_completed():
 @views_bp.route('/sessions')
 @login_required
 def sessions():
+    from datetime import timezone, timedelta
+    JST = timezone(timedelta(hours=9))
     sessions_query_result = (
         db.collection('sessions')
         .where(filter=FieldFilter('user_id', '==', current_user.id))
@@ -120,8 +126,8 @@ def sessions():
         data = session_doc.to_dict()
         data['id'] = session_doc.id
         data['reflection'] = data.get('reflection', '')
-        
-        # セッションデータにデフォルト値を設定
+
+        # 🔹 基本データ
         data['distance'] = data.get('distance', None)
         data['sudden_accels'] = data.get('sudden_accels', 0)
         data['sudden_brakes'] = data.get('sudden_brakes', 0)
@@ -129,19 +135,56 @@ def sessions():
         data['speed_violations'] = data.get('speed_violations', 0)
         data['status'] = data.get('status', 'unknown')
 
+        # 🔹 GPSログとGログの取得
         data['gps_logs'] = get_gps_logs_for_session(session_doc.id)
         data['g_logs'] = get_g_logs_for_session(session_doc.id)
 
-        if 'start_time' in data and data['start_time']:
-            data['start_time'] = data['start_time'].astimezone(datetime.utcnow().tzinfo)
-        if 'end_time' in data and data['end_time']:
-            data['end_time'] = data['end_time'].astimezone(datetime.utcnow().tzinfo)
+        # 🔹 audio_records（音声記録）を取得
+        audio_records_ref = (
+            db.collection('sessions')
+            .document(session_doc.id)
+            .collection('audio_records')
+        )
 
-        # セッションデータをリストに追加（distanceの有無にかかわらず）
-        # デバッグ情報を追加
+        audio_records = []
+        for audio_doc in audio_records_ref.stream():
+            audio_data = audio_doc.to_dict()
+
+            # JST変換
+            from datetime import datetime, timezone, timedelta
+            JST = timezone(timedelta(hours=9))
+            if 'created_at' in audio_data and audio_data['created_at']:
+                ts = audio_data['created_at']
+                try:
+                    audio_data['created_at'] = ts.astimezone(JST)
+                except Exception:
+                    audio_data['created_at'] = datetime.fromtimestamp(ts / 1000, JST)
+
+            # 🔹 transcriptをクライアントに送らない（Firestoreには残す）
+            if 'transcript' in audio_data:
+                del audio_data['transcript']
+            
+            # 🔹 URLが存在するデータのみ追加
+            if 'url' in audio_data and audio_data['url']:
+                audio_records.append(audio_data)
+
+        # 🔹 時間降順でソート
+        data['audio_records'] = sorted(
+            audio_records,
+            key=lambda a: a.get('created_at', None) or 0,
+            reverse=True
+        )
+
+        # 🔹 時刻をUTCから日本時間（JST）に補正
+        if 'start_time' in data and data['start_time']:
+            data['start_time'] = data['start_time'].astimezone(JST)
+        if 'end_time' in data and data['end_time']:
+            data['end_time'] = data['end_time'].astimezone(JST)
+
+
         print(f"Session {session_doc.id}: distance={data.get('distance')}, status={data.get('status')}")
-        print(f"GPS logs count: {len(data['gps_logs'])}, G logs count: {len(data['g_logs'])}")
-        
+        print(f"GPS logs: {len(data['gps_logs'])}, G logs: {len(data['g_logs'])}, Audio: {len(audio_records)}")
+
         sessions_list.append(data)
 
     return render_template('sessions.html', sessions=sessions_list)
