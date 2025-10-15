@@ -9,7 +9,15 @@ transcribe_bp = Blueprint('transcribe', __name__)
 
 # --- 初期化 ---
 load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
+# .env に記載されたパスを取得
+key_path = os.getenv("OPENAI_KEY_PATH")
+
+# ファイルに書かれているキーを読み込む
+if key_path and os.path.exists(key_path):
+    with open(key_path, "r", encoding="utf-8") as f:
+        openai.api_key = f.read().strip()
+else:
+    raise FileNotFoundError(f"OpenAI APIキーのファイルが見つかりません: {key_path}")
 
 try:
     initialize_app()
