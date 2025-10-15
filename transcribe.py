@@ -10,7 +10,7 @@ transcribe_bp = Blueprint('transcribe', __name__)
 # --- 初期化 ---
 load_dotenv()
 # .env に記載されたパスを取得
-key_path = os.getenv("OPENAI_KEY_PATH")
+key_path = os.getenv("OPENAI_API_KEY")
 
 # ファイルに書かれているキーを読み込む
 if key_path and os.path.exists(key_path):
