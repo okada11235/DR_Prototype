@@ -97,20 +97,8 @@ tailwind.config = {
   <script src="{{ url_for('static', filename='record_voice_unified.js') }}"></script>
   <!-- AudioContextのアンロック処理（これは残す） -->
   <script type="module">
-    import { unlockAudio } from './static/audio.js';
-
-    document.addEventListener("DOMContentLoaded", () => {
-      if (window.isIOSDevice) {
-        console.log("📱 iOS detected → auto unlockAudio()");
-        unlockAudio();
-      } else {
-        // Android用：もし音声未アンロックなら安全に再試行
-        if (!window.audioUnlocked) {
-          console.log("🤖 Android: retrying audio unlock (safety)");
-          unlockAudio();
-        }
-      }
-    });
+    import { autoUnlockAudio } from "./audio.js";
+    autoUnlockAudio();
   </script>
 </body>
 </html>

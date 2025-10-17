@@ -261,6 +261,8 @@
 <!-- ===== ライブラリ ===== -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+
 
 <script>
 /** ========= データ ========= */
@@ -348,11 +350,9 @@ function renderGForceChart(canvasId, gpsLogs, gLogs){
     ...gpsLogs.map(l=>Number(l.timestamp_ms ?? l.timestamp)).filter(n=>!Number.isNaN(n)),
   ])].sort((a,b)=>a-b);
 
-  // 文字列ラベル（time scaleを使わず、adapter不要）
-  const labels = allTimestamps.map(ts=>{
-    const d=new Date(ts);
-    return d.toLocaleTimeString('ja-JP',{hour12:false})+"."+String(d.getMilliseconds()).padStart(3,"0");
-  });
+  // 修正版 labels
+  const labels = allTimestamps.map(ts => new Date(ts));
+
 
   function align(logs,key){
     const map=new Map(logs.map(l=>[Number(l.timestamp_ms ?? l.timestamp), l[key]]));
@@ -392,6 +392,13 @@ function renderGForceChart(canvasId, gpsLogs, gLogs){
       responsive:true, maintainAspectRatio:false,
       elements:{ line:{ cubicInterpolationMode:'monotone' } },
       scales:{
+        x: {
+          type: 'time',
+          time: {
+            unit: false, 
+          },
+          title: { display: true, text: '時間' },
+        },
         y:{ position:'left', title:{display:true,text:'G (重力加速度)'} },
         y1:{ position:'right', title:{display:true,text:'速度 (km/h)'}, grid:{drawOnChartArea:false}, min:0, max:120 }
       },
@@ -422,31 +429,28 @@ function renderGForceChart(canvasId, gpsLogs, gLogs){
 }
 
 /** ========= グラフ←→地図 連動 ========= */
-function highlightOnChart(canvasId, log){
-  const chart=chartInstances[canvasId];
-  if(!chart) return;
-  const ts=Number(log.timestamp_ms ?? log.timestamp);
-  // ラベルは時刻文字列なので index を timestamp から推定
-  // ここでは allTimestamps を持っていないので、速度データなどから近傍検索
-  // → 簡易的に最初のdataセットから最も近い値のindexを探す
-  const ds=chart.data.datasets[0]?.data||[];
-  let idx=-1, min=Infinity;
-  for(let i=0;i<ds.length;i++){
-    const label=chart.data.labels[i];            // "HH:mm:ss.mmm"
-    const [hms,ms]=label.split('.');
-    const [H,M,S]=hms.split(':').map(Number);
-    const t = new Date(); t.setHours(H,M,S,Number(ms||0));
-    const diff = Math.abs(t.getTime() - ts);
-    if(diff<min){min=diff;idx=i;}
-  }
-  if(idx>=0){
-    chart.setActiveElements([{datasetIndex:0,index:idx}]);
-    chart.tooltip.setActiveElements([{datasetIndex:0,index:idx}]);
-    chart.update();
+function highlightOnChart(canvasId, log) {
+  const chart = chartInstances[canvasId];
+  if (!chart) return;
 
-    // 軽めズーム（±0.5秒相当として横方向のみズーム）
-    // ラベルを数値時刻で持っていないため、ここではパンで擬似的に中央へ寄せる
-    // → 既存のZoom/Pan機能は保持（ボタン・ピンチ等）
+  const ts = Number(log.timestamp_ms ?? log.timestamp);
+  if (isNaN(ts)) return;
+
+  const focusStart = ts - 3000;
+  const focusEnd   = ts + 3000;
+
+  chart.options.scales.x.min = new Date(focusStart);
+  chart.options.scales.x.max = new Date(focusEnd);
+  chart.update('none');
+
+  // ラベルがDate型であればこれでOK
+  const idx = chart.data.labels.findIndex(
+    label => Math.abs(label.getTime() - ts) < 500
+  );
+  if (idx >= 0) {
+    chart.setActiveElements([{ datasetIndex: 0, index: idx }]);
+    chart.tooltip.setActiveElements([{ datasetIndex: 0, index: idx }]);
+    chart.update();
   }
 }
 

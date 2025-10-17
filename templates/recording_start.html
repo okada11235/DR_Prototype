@@ -157,11 +157,35 @@
 <body>
 
   <main class="main">
-    <!-- iOS音声アンロック用バナー -->
-    <div id="ios-audio-banner" class="hidden">
-      <p>📱 iOS端末をお使いの場合、音声機能を有効にするため下のボタンをタップしてください</p>
-      <button id="ios-audio-unlock-btn">🔊 音声機能を有効にする</button>
-    </div>
+  <!-- ✅ iOS専用バナー -->
+  <div id="ios-audio-banner" style="
+    display:none;
+    position:fixed;
+    bottom:80px;
+    left:0;
+    width:100%;
+    background:#007aff;
+    color:#fff;
+    text-align:center;
+    padding:12px;
+    font-size:1rem;
+    z-index:9999;
+    transition:opacity 0.4s ease;
+  ">
+    🔈 音声機能を有効にするにはタップしてください
+    <button id="ios-audio-enable" style="
+      background:#fff;
+      color:#007aff;
+      border:none;
+      border-radius:6px;
+      padding:6px 12px;
+      margin-left:10px;
+      font-weight:bold;
+      cursor:pointer;
+    ">
+      有効にする
+    </button>
+  </div>
 
     <button id="start-button" class="start-button">運転開始</button>
 
@@ -224,30 +248,47 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
 
-    // iOS音声アンロック用のバナー表示制御
-    document.addEventListener('DOMContentLoaded', function() {
-        // iOS端末かどうかの判定
-        const isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-            
-        if (isIOSDevice) {
-            const banner = document.getElementById('ios-audio-banner');
-            const unlockBtn = document.getElementById('ios-audio-unlock-btn');
-                
-            if (banner && unlockBtn) {
-                banner.classList.remove('hidden');
-                    
-                unlockBtn.addEventListener('click', function() {
-                    // main.jsのunlockAudio関数を呼び出し
-                    if (window.unlockAudio) {
-                        const result = window.unlockAudio();
-                        if (result) {
-                            banner.style.display = 'none';
-                            console.log('✅ iOS audio manually unlocked');
-                        }
-                    }
-                });
+    document.addEventListener('DOMContentLoaded', () => {
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+      const banner = document.getElementById('ios-audio-banner');
+      const enableBtn = document.getElementById('ios-audio-enable');
+
+      if (isIOS && banner && enableBtn) {
+        banner.style.display = 'block';
+
+        enableBtn.addEventListener('click', async () => {
+          try {
+            // AudioContextを作成して即時解放
+            if (!window.audioContext) {
+              window.audioContext = new (window.AudioContext || window.webkitAudioContext)();
             }
-        }
+            const ctx = window.audioContext;
+            if (ctx.state === 'suspended') await ctx.resume();
+
+            // 無音バッファで再生
+            const buffer = ctx.createBuffer(1, 1, 22050);
+            const source = ctx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(ctx.destination);
+            source.start(0);
+
+            // 保存して今後も自動アンロック
+            localStorage.setItem('audioUnlocked', 'true');
+            window.audioUnlocked = true;
+
+            // ✅ 成功アニメーション
+            banner.innerHTML = '✅ 音声機能が有効になりました';
+            banner.style.background = '#34c759';
+            setTimeout(() => { banner.style.opacity = '0'; }, 800);
+            setTimeout(() => { banner.style.display = 'none'; }, 1600);
+
+            console.log('🔓 Audio unlocked successfully on iOS');
+          } catch (err) {
+            console.error('❌ Audio unlock failed:', err);
+            alert('音声の有効化に失敗しました。もう一度お試しください。');
+          }
+        });
+      }
     });
 
     // ✅ チェックボックス排他処理

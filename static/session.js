@@ -3,11 +3,11 @@
 import { stopMotionDetection, startMotionDetection, startAutoCalibration } from './sensors.js';
 import { watchPosition, calculateDistance } from './maps.js';
 import { startTimer, stopTimer, formatTime, calculateStability } from './utils.js';
-import { unlockAudio } from './audio.js';
+import { unlockAudio, stopAudioSystem } from './audio.js'; // FIX: stopAudioSystemをimport
 import { resetState } from './state.js';
 
 
-console.log('=== session.js LOADED ===');
+console.log('=== session.js LOADED [FIXED] ===');
 
 // ✅ iOS用アンロックイベント（audio.jsのunlockAudioを使用）
 document.addEventListener("touchstart", unlockAudio, { once: true });
@@ -102,6 +102,7 @@ export function startSession() {
                 resetState();
                 window.gLogBuffer = [];
                 window.gpsLogBuffer = [];
+                window.avgGLogBuffer = []; // FIX: avgGLogBufferをリセット
                 window.path = [];
                 console.log('Cleared data buffers for new session');
                 console.log('SessionID now set to:', window.sessionId);
@@ -132,13 +133,21 @@ export function startSession() {
         (pos) => {
         const { latitude, longitude, speed } = pos.coords;
         const timestamp = Date.now();
-        const kmh = speed ? speed * 3.6 : 0;
+        const kmh = speed !== null ? speed * 3.6 : 0; // FIX: nullチェック
+
+        // FIX: G値をセンサーの最新値と同期
+        const gxs = window.latestGX || 0;
+        const gys = window.latestGY || 0;
+        const gzs = window.latestGZ || 0;
 
         const log = {
             latitude,
             longitude,
             speed: kmh,
-            timestamp_ms: timestamp,
+            timestamp: timestamp, // FIX: timestamp_ms -> timestamp に変更
+            g_x: gxs, // FIX: G値を追加
+            g_y: gys,
+            g_z: gzs,
             event: 'normal'
         };
 
@@ -175,17 +184,6 @@ export function startSession() {
 export function endSession(showAlert = true) {
     console.log("=== endSession called ===");
     
-    console.log("=== Debug: G Logs before save ===");
-    window.gLogBuffer.forEach((log, i) => {
-        console.log(`[${i}] timestamp=${log.timestamp}, g_x=${log.g_x}, g_y=${log.g_y}, g_z=${log.g_z}`);
-    });
-    console.log("=== Debug: GPS Logs before save ===");
-    window.gpsLogBuffer.forEach((log, i) => {
-        console.log(
-            `[${i}] ${log.timestamp} | event=${log.event} | g_x=${log.g_x} | g_y=${log.g_y} | lat=${log.latitude} | lon=${log.longitude} | speed=${log.speed}`
-        );
-    });
-    
     if (!window.sessionId) {
         console.log("No sessionId found");
         if (showAlert) alert('まだ記録が開始されていません');
@@ -214,20 +212,11 @@ export function endSession(showAlert = true) {
     console.log("Stopping motion detection...");
     stopMotionDetection();
 
-    console.log("Resetting audio locks...");
-    window.isAudioPlaying = false;
-    if (window.audioLockTimeout) {
-        clearTimeout(window.audioLockTimeout);
-        window.audioLockTimeout = null;
-    }
-    window.lastAudioPlayTime = {};
+    // FIX: AudioContextを安全に停止
+    console.log("Stopping audio system...");
+    stopAudioSystem();
 
     console.log("Calculating distance...");
-    console.log("Path points:", window.path.length);
-    if (window.path.length > 0) {
-        console.log("First point:", window.path[0]);
-        console.log("Last point:", window.path[window.path.length - 1]);
-    }
     let distance = 0;
     try {
         distance = calculateDistance(window.path);
@@ -236,55 +225,72 @@ export function endSession(showAlert = true) {
         console.error("Error calculating distance:", error);
         distance = 0;
     }
+    
+    // FIX: サーバーに終了リクエストを送信する前に、残りのログをすべて送信
+    const flushFinalLogs = () => {
+        // FIX: ローカルバッファを強制フラッシュする関数
+        const flushOneBuffer = (buffer, endpoint) => {
+            if (buffer.length === 0) return Promise.resolve({ status: 'ok', saved_count: 0 });
+            
+            const logsToSend = buffer.splice(0, buffer.length); // すべて取り出す
+            console.log(`Sending final ${logsToSend.length} logs to ${endpoint}`);
+            
+            return fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_id: window.sessionId, [endpoint.includes('gps') ? 'gps_logs' : endpoint.includes('avg') ? 'avg_g_logs' : 'g_logs']: logsToSend })
+            })
+            .then(r => r.json())
+            .then(data => {
+                console.log(`${endpoint} final save response:`, data);
+                return data;
+            })
+            .catch(err => {
+                console.error(`ERROR: Final ${endpoint} save failed:`, err);
+                return { status: 'error', message: err.message };
+            });
+        };
+        
+        // ログの保存順序: GPSログがセッションの座標の主となるため、先に送る
+        return Promise.all([
+            flushOneBuffer(window.gpsLogBuffer, '/log_gps_bulk'),
+            flushOneBuffer(window.gLogBuffer, '/log_g_only'),
+            flushOneBuffer(window.avgGLogBuffer, '/log_avg_g_bulk') // FIX: avgGLogBufferも最後にフラッシュ
+        ]);
+    };
+
 
     console.log("Sending end request to server...");
-    fetch('/end', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            session_id: window.sessionId,
-            distance: distance,
-            sudden_accels: window.suddenAccels,
-            sudden_brakes: window.suddenBrakes,
-            sharp_turns: window.sharpTurns,
-            speed_violations: window.speedViolations,
-        }),
-    })
-    .then(response => {
-        console.log("End request response status:", response.status);
-        if (!response.ok) {
-            return response.json().then(errorData => {
-                throw new Error(errorData.message || '記録終了時にサーバーエラーが発生しました');
+    flushFinalLogs() // ログを先に送信
+        .then(() => {
+            console.log("All logs flushed, proceeding with session end request.");
+            return fetch('/end', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    session_id: window.sessionId,
+                    distance: distance,
+                    sudden_accels: window.suddenAccels,
+                    sudden_brakes: window.suddenBrakes,
+                    sharp_turns: window.sharpTurns,
+                    speed_violations: window.speedViolations,
+                }),
             });
-        }
-        return response.json();
-    })
-    .then(data => {
-        console.log("End request response data:", data);
-        if (data.status === 'ok') {
-            const flushLogs = Promise.all([
-                window.gLogBuffer.length > 0
-                    ? fetch('/log_g_only', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ session_id: window.sessionId, g_logs: window.gLogBuffer })
-                    }).finally(() => { window.gLogBuffer = []; })
-                    : Promise.resolve(),
-                window.gpsLogBuffer.length > 0
-                    ? fetch('/log_gps_bulk', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ session_id: window.sessionId, gps_logs: window.gpsLogBuffer })
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        console.log(`Final GPS logs save for session ${window.sessionId}:`, data);
-                    })
-                    .finally(() => { window.gpsLogBuffer = []; })
-                    : Promise.resolve()
-            ]);
-            flushLogs.finally(() => {
-                console.log("All logs flushed, preparing session data...");
+        })
+        .then(response => {
+            console.log("End request response status:", response.status);
+            if (!response.ok) {
+                return response.json().then(errorData => {
+                    throw new Error(errorData.message || '記録終了時にサーバーエラーが発生しました');
+                });
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log("End request response data:", data);
+            if (data.status === 'ok' || data.status === 'warning') {
+                console.log("Session end confirmed, preparing redirect.");
+                
                 let elapsedTime = 0;
                 if (window.startTime && typeof window.startTime === 'number') {
                     elapsedTime = Math.floor((Date.now() - window.startTime) / 1000);
@@ -308,7 +314,6 @@ export function endSession(showAlert = true) {
                 window.sessionId = null;
                 resetState();
                 window.lastAudioPlayTime = {};
-                console.log('🔇 Audio playback disabled (recording ended)');
                 console.log("Cleaning up map elements...");
                 if (window.polyline) window.polyline.setPath([]);
                 if (window.currentPositionMarker) window.currentPositionMarker.setMap(null);
@@ -317,17 +322,16 @@ export function endSession(showAlert = true) {
                 window.eventMarkers = [];
                 console.log("Redirecting to completed page...");
                 window.location.href = '/recording/completed';
-            });
-        } else {
-            console.error("End session failed:", data);
-            if (showAlert) alert('記録終了に失敗しました: ' + (data.message || '不明なエラー'));
-        }
-    })
-    .catch(error => {
-        console.error('記録終了中にエラーが発生しました:', error);
-        console.error('Error stack:', error.stack);
-        if (showAlert) alert('記録終了中にネットワークまたは処理エラーが発生しました: ' + error.message);
-    });
+            } else {
+                console.error("End session failed:", data);
+                if (showAlert) alert('記録終了に失敗しました: ' + (data.message || '不明なエラー'));
+            }
+        })
+        .catch(error => {
+            console.error('記録終了中にエラーが発生しました:', error);
+            console.error('Error stack:', error.stack);
+            if (showAlert) alert('記録終了中にネットワークまたは処理エラーが発生しました: ' + error.message);
+        });
 }
 
 // ログフラッシュ処理を開始する関数

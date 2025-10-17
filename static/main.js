@@ -4,7 +4,7 @@ import { startSession, endSession, startLogFlush, startPraiseCheck } from './ses
 import { initMap, watchPosition } from './maps.js';
 import { startMotionDetection, startAutoCalibration } from './sensors.js';
 import { startTimer, initScores } from './utils.js';
-import { unlockAudio } from './audio.js';
+import { unlockAudio, relockAudio } from './audio.js';
 
 console.log('=== main.js LOADED ===');
 console.log('Current URL:', window.location.href);
@@ -80,6 +80,7 @@ document.addEventListener('DOMContentLoaded', function() {
         endButton.addEventListener('click', () => {
             const confirmEnd = confirm('記録を終了してよろしいですか？');
             if (confirmEnd) {
+                relockAudio(); // 🔒 終了時にロック
                 endSession(true);  // 正規の終了処理（Firestore保存含む）
             } else {
                 console.log('Recording end canceled by user.');
