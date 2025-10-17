@@ -256,7 +256,7 @@ def delete_session(sid):
     session_doc = session_ref.get()
     if not session_doc.exists or session_doc.to_dict().get('user_id') != current_user.id:
         flash('削除権限がありません')
-        return redirect(url_for('views.sessions'))
+        return redirect(url_for('sessions.results_page'))
 
     try:
         # GPSログを削除
@@ -277,4 +277,4 @@ def delete_session(sid):
         flash('セッションを削除しました')
     except Exception as e:
         flash(f'セッション削除中にエラーが発生しました: {e}')
-    return redirect(url_for('views.sessions'))
+    return redirect(url_for('sessions.results_page'))

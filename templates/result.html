@@ -27,6 +27,49 @@
     .active-glow .custom-nav-link.active{color:rgb(0, 0, 0);text-shadow:0 0 5px #000000,0 0 10px #7a8cff;background:rgba(255,255,255,.05)}
     .date { font-weight: bold; color: #444; }
     .time { color: #007e99; font-size: 0.95em; }
+    /* 🔴 通常の削除ボタン */
+    .btn-danger-custom {
+      background-color: #e74c3c;
+      border: none;
+      color: white;
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      transition: all 0.2s ease;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+    }
+
+    .btn-danger-custom:hover {
+      background-color: #c0392b;
+      transform: translateY(-1px);
+    }
+
+    /* 🌀 削除中の状態 */
+    .btn-deleting {
+      background-color: #b0b0b0 !important;
+      color: #333 !important;
+      border-color: #aaa !important;
+      cursor: not-allowed;
+      box-shadow: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      font-weight: 600;
+    }
+
+    /* Bootstrapのスピナーの大きさ調整 */
+    .spinner-border-sm {
+      width: 1rem;
+      height: 1rem;
+      border-width: 0.15em;
+    }
+
+    /* 削除フォームの余白 */
+    form {
+      margin-top: 10px;
+    }
   </style>
 </head>
 <body>
@@ -48,32 +91,51 @@
     <!-- セッション一覧 -->
     <div class="record-box mt-4">
       <div class="record-title">記録一覧</div>
-        <div class="record-list">
+      <div class="record-list">
         {% if sessions %}
-            {% for s in sessions %}
-            <div class="list-item">
-                <div>
-                {% if s.start_time %}
-                    {{ s.start_time.strftime('%Y/%m/%d %H:%M') }}
-                    〜
-                    {{ s.end_time.strftime('%H:%M') if s.end_time else '記録中' }}
-                {% else %}
-                    N/A
-                {% endif %}
-                </div>
-                <div>
-                距離: {{ "%.2f"|format(s.distance) if s.distance is not none else "N/A" }} km
-                <br>
-                <a href="{{ url_for('sessions.detail_result_page', session_id=s.id) }}">詳細へ ▶</a>
-                </div>
+          {% for s in sessions %}
+          <div class="list-item" id="session-{{ s.id }}">
+            <div>
+              {% if s.start_time %}
+                {{ s.start_time.strftime('%Y/%m/%d %H:%M') }}
+                〜
+                {{ s.end_time.strftime('%H:%M') if s.end_time else '記録中' }}
+              {% else %}
+                N/A
+              {% endif %}
             </div>
-            {% endfor %}
+            <div>
+              距離: {{ "%.2f"|format(s.distance) if s.distance is not none else "N/A" }} km
+              <br>
+              <a href="{{ url_for('sessions.detail_result_page', session_id=s.id) }}">詳細へ ▶</a>
+              <!-- 🔸削除ボタン（fetch版） -->
+              <div class="text-center mt-3">
+                <form action="{{ url_for('views.delete_session', sid=s.id) }}"
+                      method="post"
+                      onsubmit="
+                        if (!confirm('⚠️ 本当にこのセッションを削除しますか？この操作は取り消せません。')) {
+                          return false;
+                        }
+                        const btn = this.querySelector('button');
+                        btn.disabled = true;
+                        btn.classList.add('btn-deleting');
+                        btn.innerHTML = `
+                          <span class='spinner-border spinner-border-sm me-2' role='status' aria-hidden='true'></span>
+                          削除中…
+                        `;
+                        return true;
+                      ">
+                  <button type="submit" class="btn btn-danger-custom">🗑️ 削除</button>
+                </form>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
         {% else %}
-            まだ記録がありません。
+          まだ記録がありません。
         {% endif %}
-        </div>
+      </div>
     </div>
-  </div>
 
     <nav class="navbar navbar-expand custom-nav-bar fixed-bottom">
     <div class="container-fluid justify-content-center">
@@ -96,7 +158,6 @@
         </ul>
     </div>
     </nav>
-
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

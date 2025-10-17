@@ -284,6 +284,12 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now) {
     lastAudioTime = now;
   }
 
+  // ✅ GPSログの末尾にもイベントを同期反映
+  if (window.gpsLogBuffer && window.gpsLogBuffer.length > 0) {
+    const lastGps = window.gpsLogBuffer[window.gpsLogBuffer.length - 1];
+    lastGps.event = type;
+  }
+
   return type;
 }
 

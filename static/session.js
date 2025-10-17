@@ -120,6 +120,55 @@ export function startSession() {
                 window.isSessionStarting = false;
             });
     });
+
+    // === GPS監視の開始 ===
+    if ('geolocation' in navigator) {
+    // 既存のwatchが残っていたら一度解除（再実行防止）
+    if (window.watchId) {
+        navigator.geolocation.clearWatch(window.watchId);
+    }
+
+    window.watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+        const { latitude, longitude, speed } = pos.coords;
+        const timestamp = Date.now();
+        const kmh = speed ? speed * 3.6 : 0;
+
+        const log = {
+            latitude,
+            longitude,
+            speed: kmh,
+            timestamp_ms: timestamp,
+            event: 'normal'
+        };
+
+        // 🔹 バッファ初期化を安全側に
+        window.gpsLogBuffer = window.gpsLogBuffer || [];
+        window.gpsLogBuffer.push(log);
+
+        // 🔹 経路データ更新
+        window.path = window.path || [];
+        window.path.push({ lat: latitude, lng: longitude });
+
+        // 🔹 sensors.js 側で速度参照用
+        window.currentSpeed = kmh;
+
+        console.log(`📍 GPS更新: ${latitude.toFixed(5)}, ${longitude.toFixed(5)} (${kmh.toFixed(1)} km/h)`);
+        },
+        (err) => {
+        console.error('⚠️ GPS取得エラー:', err);
+        },
+        {
+        enableHighAccuracy: true, // ✅ 精度優先
+        maximumAge: 1000,         // ✅ キャッシュ許容1秒
+        timeout: 10000            // ✅ タイムアウト10秒
+        }
+    );
+
+    console.log('✅ GPS監視を開始しました');
+    } else {
+    console.warn('⚠️ この端末ではGPSが利用できません');
+    }
 }
 
 // 記録終了
