@@ -218,8 +218,8 @@ export function handleDeviceMotion(event) {
 
   const eventType = detectDrivingPattern(gxs, gys, gzs, speed, deltaSpeed, avgRotZ, now);
 
-  window.gLogBuffer.push({ timestamp_ms: now, g_x: gx, g_y: gy, g_z: gz, speed, event: eventType || 'normal' });
-  window.avgGLogBuffer.push({ timestamp_ms: now, g_x: gxs, g_y: gys, g_z: gzs, speed, event: eventType || 'normal' });
+  window.gLogBuffer.push({ timestamp: now, g_x: gx, g_y: gy, g_z: gz, speed, event: eventType || 'normal' });
+  window.avgGLogBuffer.push({ timestamp: now, g_x: gxs, g_y: gys, g_z: gzs, speed, event: eventType || 'normal' });
 
   const gxElem = document.getElementById('g-x');
   const gyElem = document.getElementById('g-y');

@@ -51,23 +51,24 @@
                 <p><strong>急発進🟢回数：</strong> {{ session.sudden_accels if session.sudden_accels is not none else 'N/A' }} 回</p>
                 <p><strong>急カーブ🟡回数：</strong> {{ session.sharp_turns if session.sharp_turns is not none else 'N/A' }} 回</p>
                 
-                <!-- デバッグ情報 -->
+                <!-- デバッグ情報
                 <div style="background-color: #f8f9fa; padding: 10px; margin: 10px 0; border-radius: 5px; font-size: 0.9em;">
                     <strong>デバッグ情報:</strong><br>
                     GPS logs: {{ session.gps_logs|length if session.gps_logs else 0 }} 件<br>
-                    G logs: {{ session.g_logs|length if session.g_logs else 0 }} 件<br>
+                    avg_G logs: {{ session.avg_g_logs|length if session.avg_g_logs else 0 }} 件<br>
                     Status: {{ session.status }}<br>
                     {% if session.gps_logs and session.gps_logs|length > 0 %}
                     First GPS: lat={{ session.gps_logs[0].latitude }}, lng={{ session.gps_logs[0].longitude }}<br>
                     {% endif %}
-                    {% if session.g_logs and session.g_logs|length > 0 %}
-                    First G: x={{ session.g_logs[0].g_x }}, y={{ session.g_logs[0].g_y }}, z={{ session.g_logs[0].g_z }}<br>
+                    {% if session.avg_g_logs and session.avg_g_logs|length > 0 %}
+                    First avg_G: x={{ session.avg_g_logs[0].g_x }}, y={{ session.avg_g_logs[0].g_y }}, z={{ session.avg_g_logs[0].g_z }}<br>
                     {% endif %}
                 </div>
+                -->
                 
                 {% if session.gps_logs|length > 0 or session.g_logs|length > 0 %}
                 
-                {% if session.g_logs|length > 0 %}
+                {% if session.avg_g_logs|length > 0 %}
                 <h4>G加速度＆速度グラフ</h4>
                 <div class="chart-container">
                     <canvas id="gForceChart-{{ session.id }}"></canvas>
@@ -298,13 +299,13 @@
                 
                 // チャート初期化
                 {% for session in sessions %}
-                {% if session.g_logs %}
+                {% if session.avg_g_logs %}
                 try {
                     const gpsLogs = {{ session.gps_logs | tojson }};
-                    const gLogs = {{ session.g_logs | tojson }};
+                    const gLogs = {{ session.avg_g_logs | tojson }};
                     console.log('Session {{ session.id }} data check:');
                     console.log('- GPS logs:', gpsLogs ? gpsLogs.length : 0, 'items');
-                    console.log('- G logs:', gLogs ? gLogs.length : 0, 'items');
+                    console.log('- avg_G logs:', gLogs ? gLogs.length : 0, 'items');
                     console.log('- Distance:', {{ session.distance if session.distance else 'null' }});
                     console.log('- Status:', '{{ session.status }}');
                     
@@ -312,7 +313,7 @@
                         console.log('Rendering chart for session {{ session.id }}');
                         renderGForceChart('gForceChart-{{ session.id }}', gpsLogs || [], gLogs);
                     } else {
-                        console.warn('No G logs available for chart {{ session.id }}');
+                        console.warn('No avg_G logs available for chart {{ session.id }}');
                     }
                 } catch (error) {
                     console.error('Error rendering chart for session {{ session.id }}:', error);
@@ -483,7 +484,7 @@
                             backgroundColor: 'rgba(0,188,212,0.2)',
                             borderWidth: 2,
                             yAxisID: 'y',
-                            tension: 0,
+                            tension: 0.4,
                             spanGaps: true,
                             pointRadius: gzPoints.radius,
                             pointBackgroundColor: gzPoints.background,
@@ -496,7 +497,7 @@
                             backgroundColor: 'rgba(102,102,102,0.2)',
                             borderWidth: 2,
                             yAxisID: 'y',
-                            tension: 0,
+                            tension: 0.4,
                             spanGaps: true,
                             pointRadius: gyPoints.radius,
                             pointBackgroundColor: gyPoints.background,
@@ -509,7 +510,7 @@
                             backgroundColor: 'rgba(156,39,176,0.2)',
                             borderWidth: 2,
                             yAxisID: 'y',
-                            tension: 0,
+                            tension: 0.4,
                             spanGaps: true,
                             pointRadius: gxPoints.radius,
                             pointBackgroundColor: gxPoints.background,
@@ -534,6 +535,9 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    elements: {
+                        line: { cubicInterpolationMode: 'monotone' }
+                    },
                     scales: {
                         y: { position: 'left', title: { display: true, text: 'G (重力加速度)' } },
                         y1: {
@@ -630,6 +634,7 @@
                 return;
             }
 
+            let map = null;
             try {
                 const path = gpsLogs.map(log => ({ lat: log.latitude, lng: log.longitude }));
                 const map = new google.maps.Map(mapElement, {
@@ -655,36 +660,166 @@
                 // イベントマーカー
                 gpsLogs.forEach(log => {
                     if (log.event && log.event !== 'normal') {
-                        const colors = {
-                            'sudden_brake': 'red',
-                            'sudden_accel': 'green',
-                            'sharp_turn': 'orange',
-                            'speed_violation': 'purple'
-                        };
-                        
-                        new google.maps.Marker({
+                        const color = colorMap[log.event] || 'gray';
+
+                        const marker = new google.maps.Marker({
                             position: { lat: log.latitude, lng: log.longitude },
                             map: map,
                             icon: {
                                 path: google.maps.SymbolPath.CIRCLE,
-                                scale: 6,
-                                fillColor: colors[log.event] || 'gray',
-                                fillOpacity: 1,
-                                strokeWeight: 1,
-                                strokeColor: '#000'
+                                scale: 6,              // マーカーの大きさ
+                                fillColor: color,      // colorMap から取得
+                                fillOpacity: 0.9,      // 少し透明感
+                                strokeWeight: 1.5,     // 枠線の太さ
+                                strokeColor: '#000000' // 黒の枠線
                             },
-                            title: log.event.replace('_', ' ')
+                            title: log.event.replace(/_/g, ' ')
+                        });
+
+                        // 🔸クリック時にグラフへ同期（ハイライト）
+                        marker.addListener('click', () => {
+                            highlightOnChart(mapId.replace('map-', 'gForceChart-'), log);
                         });
                     }
                 });
-                
                 console.log('Map initialized successfully:', mapId);
             } catch (error) {
                 console.error('Error creating map:', mapId, error);
                 mapElement.innerHTML = '<p style="text-align: center; margin-top: 20px; color: red;">地図の初期化でエラーが発生しました。</p>';
             }
+            if (map) {
+                mapElement._google_map_instance = map;
+            }
+
+            // === 地図描画後に凡例を追加 ===
+            const legendId = `legend-${mapId}`;
+            if (!document.getElementById(legendId)) {
+                const legendDiv = document.createElement('div');
+                legendDiv.id = legendId;
+                legendDiv.classList.add('map-legend');
+                legendDiv.innerHTML = Object.entries(colorMap).map(([key, color]) => `
+                    <div style="display:flex;align-items:center;margin-right:10px;margin-bottom:4px;">
+                        <span style="display:inline-block;width:14px;height:14px;border-radius:50%;
+                                    background:${color};border:1px solid #333;margin-right:6px;"></span>
+                        <span>${key.replace(/_/g, ' ')}</span>
+                    </div>
+                `).join('');
+
+                // 見た目の改善
+                Object.assign(legendDiv.style, {
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: '6px',
+                    padding: '8px 10px',
+                    background: '#ffffffcc',
+                    borderRadius: '8px',
+                    marginTop: '8px',
+                    fontSize: '0.85rem',
+                    backdropFilter: 'blur(4px)',
+                    justifyContent: 'flex-start'
+                });
+
+                const container = mapElement.closest('.map-container');
+                if (container) container.appendChild(legendDiv);
+            }
         }
 
+        // === グラフ⇄地図 相互リンク ===
+        function highlightOnChart(canvasId, log) {
+            const chart = chartInstances[canvasId];
+            if (!chart) return;
+
+            const ts = Number(log.timestamp_ms ?? log.timestamp);
+            const idx = chart.data.labels.findIndex(label => {
+                const d = new Date(label);
+                return Math.abs(d.getTime() - ts) < 500;
+            });
+            if (idx >= 0) {
+                chart.setActiveElements([{ datasetIndex: 0, index: idx }]);
+                chart.tooltip.setActiveElements([{ datasetIndex: 0, index: idx }]);
+                chart.update();
+            }
+        }
+
+        function highlightOnMap(mapId, log) {
+            const mapEl = document.getElementById(mapId);
+            if (!mapEl) return;
+            const map = mapEl._google_map_instance;
+            if (!map) return;
+
+            const { latitude: lat, longitude: lng } = log;
+
+            // 一時的なハイライトマーカー
+            const marker = new google.maps.Marker({
+                position: { lat, lng },
+                map,
+                icon: {
+                    path: google.maps.SymbolPath.CIRCLE,
+                    scale: 10,
+                    fillColor: '#FFD700', // 黄色ゴールドで一瞬光る
+                    fillOpacity: 0.9,
+                    strokeColor: '#000',
+                    strokeWeight: 2
+                }
+            });
+
+            map.panTo({ lat, lng });
+            setTimeout(() => marker.setMap(null), 2000);
+        }
+
+        function highlightOnChart(canvasId, log) {
+            const chart = chartInstances[canvasId];
+            if (!chart) return;
+
+            const ts = Number(log.timestamp_ms ?? log.timestamp);
+            const idx = chart.data.labels.findIndex(label => {
+                const d = new Date(label);
+                return Math.abs(d.getTime() - ts) < 500;
+            });
+            if (idx >= 0) {
+                // 該当点をハイライト
+                chart.setActiveElements([{ datasetIndex: 0, index: idx }]);
+                chart.tooltip.setActiveElements([{ datasetIndex: 0, index: idx }]);
+                chart.update();
+
+                // 💡 X軸のズーム範囲を変更（前後5秒にズーム）
+                const centerTime = new Date(ts).getTime();
+                const range = 500; // ミリ秒（前後0.5秒）
+                chart.options.scales.x.min = centerTime - range;
+                chart.options.scales.x.max = centerTime + range;
+                chart.update();
+            }
+        }
+
+        function highlightOnMap(mapId, log) {
+            const mapEl = document.getElementById(mapId);
+            if (!mapEl) return;
+            const map = mapEl._google_map_instance;
+            if (!map) return;
+
+            const { latitude: lat, longitude: lng } = log;
+
+            map.setZoom(17); // 💡 ズームイン
+            map.panTo({ lat, lng });
+
+            // 一時的なハイライトマーカーを出す
+            const marker = new google.maps.Marker({
+                position: { lat, lng },
+                map,
+                icon: {
+                    path: google.maps.SymbolPath.CIRCLE,
+                    scale: 10,
+                    fillColor: '#FFD700',
+                    fillOpacity: 0.9,
+                    strokeColor: '#000',
+                    strokeWeight: 2
+                }
+            });
+
+            // 2秒後に削除
+            setTimeout(() => marker.setMap(null), 2000);
+        }
+    
         // ズーム・パン関数
         function startZoom(canvasId, direction) {
             const chart = chartInstances[canvasId];

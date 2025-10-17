@@ -83,6 +83,42 @@ def get_g_logs_for_session(session_id):
     except Exception as e:
         print(f"Error getting G logs for session {session_id}: {e}")
         return []
+    
+def get_avg_g_logs_for_session(session_id):
+    """セッションの平均Gログ(avg_g_logs)を取得"""
+    try:
+        logs_ref = db.collection('sessions').document(session_id).collection('avg_g_logs')
+        logs = logs_ref.order_by('timestamp').stream()
+        result = []
+
+        for log_doc in logs:
+            log_data = log_doc.to_dict()
+            # timestamp_msを優先して使用
+            timestamp_value = 0
+            if 'timestamp_ms' in log_data and log_data['timestamp_ms']:
+                timestamp_value = log_data['timestamp_ms']
+            elif 'timestamp' in log_data and log_data['timestamp']:
+                timestamp_value = log_data['timestamp'].timestamp() * 1000
+
+            result.append({
+                "timestamp": timestamp_value,
+                "timestamp_ms": timestamp_value,  # 互換性のため
+                "g_x": log_data.get('g_x', 0.0),
+                "g_y": log_data.get('g_y', 0.0),
+                "g_z": log_data.get('g_z', 0.0),
+                "speed": log_data.get('speed', 0.0),
+                "event": log_data.get('event', 'normal')
+            })
+
+        print(f"avg_g_logs for session {session_id}: {len(result)} records")
+        if len(result) > 0:
+            print(f"First avg_g_log: {result[0]}")
+
+        return result
+    except Exception as e:
+        print(f"Error getting avg_g_logs for session {session_id}: {e}")
+        return []
+
 
 # メインページ（記録開始画面にリダイレクト）
 @views_bp.route('/')
@@ -138,6 +174,7 @@ def sessions():
         # 🔹 GPSログとGログの取得
         data['gps_logs'] = get_gps_logs_for_session(session_doc.id)
         data['g_logs'] = get_g_logs_for_session(session_doc.id)
+        data['avg_g_logs'] = get_avg_g_logs_for_session(session_doc.id)
 
         # 🔹 audio_records（音声記録）を取得
         audio_records_ref = (
@@ -183,7 +220,7 @@ def sessions():
 
 
         print(f"Session {session_doc.id}: distance={data.get('distance')}, status={data.get('status')}")
-        print(f"GPS logs: {len(data['gps_logs'])}, G logs: {len(data['g_logs'])}, Audio: {len(audio_records)}")
+        print(f"GPS logs: {len(data['gps_logs'])}, G logs: {len(data['g_logs'])}, avg_G logs: {len(data['avg_g_logs'])}, Audio: {len(audio_records)}")
 
         sessions_list.append(data)
 

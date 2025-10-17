@@ -114,6 +114,7 @@ export function watchPosition() {
 
         // 現在の速度をセンサーシステムに提供
         window.latestSpeed = speed;
+        window.currentSpeed = speed;  // ★ sensors.js 判定用に追加
         
         // イベント情報はセンサーシステムから取得
         let currentEvent = window.currentDrivingEvent || 'normal';
