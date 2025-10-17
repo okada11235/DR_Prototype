@@ -1,135 +1,224 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title id="app-title-tag">ドライブバディ - 記録終了</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        'primary-green': '#00bcd4', 
-                        'danger-red': '#f44336',
-                        'bg-dark': '#ffffff',
-                        'card-dark': '#e0f7fa',
-                    },
-                    fontFamily: {
-                        sans: ['Inter', 'sans-serif'],
-                    },
-                }
-            }
-        }
-    </script>
-    <style>
-        body {
-            background-color: #f0f8ff;
-            color: #ffffff; 
-            min-height: 100vh;
-        }
-        .text-gray-300 { color: #00bcd4; }
-        .text-gray-400 { color: #00838f; }
-        .border-gray-600 { border-color: #b2ebf2; }
-        /* text-whiteクラスを持つ特定の要素の色を上書き */
-        div .text-white, p .text-white { color: #1e3a8a; }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ドライブバディ - 記録完了</title>
 
-        .bg-indigo-600 { background-color: #03a9f4; }
-        .hover\:bg-indigo-700:hover { background-color: #0288d1; }
-        .bg-green-600 { background-color: #00bcd4; }
-        .hover\:bg-green-700:hover { background-color: #0097a7; }
+  <!-- ✅ Bootstrapを追加 -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
 
-        /* 吹き出しのしっぽ */
-        .speech-bubble:after {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: -10px;
-            margin-top: -10px;
-            border-style: solid;
-            border-width: 10px 10px 10px 0;
-            border-color: transparent #e0f7fa transparent transparent;
-        }
-    </style>
+  <style>
+    body {
+      font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #cdeae0;
+      color: #333;
+      padding-bottom: 55px; /* ナビ分の余白 */
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 15px;
+    }
+
+    .logo-area {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logo-area img {
+      width: 50px;
+      height: 50px;
+    }
+
+    .title {
+      font-size: 1.5em;
+      font-weight: bold;
+      color: #2090c2;
+    }
+
+    .main {
+      text-align: center;
+      padding: 20px;
+    }
+
+    .robot {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      object-fit: cover;
+      background-color: #fff;
+      border: 2px solid #2b8ca6;
+      margin-bottom: 5px;
+    }
+
+    .main-title {
+      color: #4db6ac;
+      font-size: 1.8em;
+      font-weight: bold;
+      margin-bottom: 10px;
+    }
+
+    .drive-info {
+      display: flex;
+      justify-content: center;
+      gap: 40px;
+      font-weight: bold;
+      margin-bottom: 20px;
+    }
+
+    .section {
+      background-color: #fff;
+      border-radius: 6px;
+      margin: 15px auto;
+      padding: 15px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      width: 90%;
+      text-align: left;
+    }
+
+    .section h2 {
+      font-size: 1.3em;
+      color: #2090c2;
+      margin-bottom: 8px;
+      border-bottom: 2px solid #a5dbe0;
+      padding-bottom: 4px;
+    }
+
+    .score {
+      font-size: 1.6em;
+      font-weight: bold;
+      color: #d32f2f;
+      margin-left: 5px;
+    }
+
+    .comment {
+      font-size: 0.95em;
+      color: #444;
+      margin-top: 5px;
+    }
+
+    .highlight {
+      color: #e44d8f;
+      font-weight: bold;
+    }
+
+    /* === ナビバー統一スタイル（result.htmlと完全一致） === */
+    .custom-nav-bar {
+      background: #378da0;
+      border-top: 2px solid #5a7d8d;
+      box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.2);
+      height: 45px;
+    }
+
+    /* 各項目 */
+    .custom-nav-item {
+      flex: 1;
+    }
+
+    .custom-nav-bar{background:#378da0;border-top:2px solid #5a7d8d;box-shadow:inset 0 0 5px rgba(0,0,0,.2);height:45px}
+    .custom-nav-link{color:#fff;font-weight:bold;font-size:1rem;padding:0 1rem;line-height:41px;height:100%;display:block}
+    .custom-nav-item:not(:last-child){border-right:1px solid #5a7d8d}
+    .active-glow .custom-nav-link.active{color:rgb(0, 0, 0);background:rgba(255,255,255,.05)}
+
+  </style>
 </head>
-<body class="font-sans">
-    <div class="container mx-auto p-4 max-w-lg">
-        
-        <div class="flex flex-col items-center p-6 bg-bg-dark rounded-xl shadow-2xl transition duration-500">
-            <h1 class="text-4xl font-extrabold text-primary-green mb-4">お疲れ様でした！</h1>
-            
-            <!-- ▼▼▼ キャラクターフィードバックセクション ▼▼▼ -->
-            <div class="w-full flex items-center mb-6 p-4 bg-card-dark/50 rounded-lg">
-                <div class="flex-shrink-0">
-                    <img src="https://i.imgur.com/H5Fh9nO.png" alt="キャラクター" class="w-24 h-24 rounded-full border-4 border-primary-green bg-card-dark object-cover object-top shadow-md"/>
-                </div>
-                <div class="relative ml-4 flex-1">
-                    <div class="relative bg-card-dark p-4 rounded-lg shadow-inner speech-bubble">
-                        <!-- ★★★ この中の文章を自由に変更してください ★★★ -->
-                        <p id="feedback-text" class="text-base font-medium" style="color: #1e3a8a;">
-                            今回の運転、お疲れ様でした！詳細な記録を確認して、次の運転に活かしましょう！
-                        </p>
-                         <!-- ★★★ ここまで ★★★ -->
-                    </div>
-                </div>
-            </div>
-            <!-- ▲▲▲ キャラクターフィードバックセクション ▲▲▲ -->
+<body>
 
-            <div class="w-full text-center mb-6">
-                <div class="bg-card-dark p-4 rounded-lg shadow-inner border border-gray-600">
-                    <h2 class="text-xl font-semibold text-primary-green mb-4">今回の運転データ</h2>
-                    
-                    <!-- ▼▼▼ 運転データレイアウト変更 ▼▼▼ -->
-                    <div class="flex flex-col gap-4 text-sm">
-                        <!-- 上段 -->
-                        <div class="flex gap-4">
-                            <div class="bg-bg-dark p-3 rounded-lg w-1/2">
-                                <p class="text-gray-400">走行時間</p>
-                                <p id="total-time" class="text-2xl font-bold text-gray-300">--:--</p>
-                            </div>
-                            <div class="bg-bg-dark p-3 rounded-lg w-1/2">
-                                <p class="text-gray-400">走行距離</p>
-                                <p id="total-distance" class="text-2xl font-bold text-gray-300">-- km</p>
-                            </div>
-                        </div>
-                        <!-- 下段 -->
-                        <div class="flex gap-4">
-                            <div class="bg-bg-dark p-3 rounded-lg w-1/3">
-                                <p class="text-gray-400">急ブレーキ🔴</p>
-                                <p id="final-brake-count" class="text-2xl font-bold text-gray-300">-- 回</p>
-                            </div>
-                            <div class="bg-bg-dark p-3 rounded-lg w-1/3">
-                                <p class="text-gray-400">急加速🟢</p>
-                                <p id="final-accel-count" class="text-2xl font-bold text-gray-300">-- 回</p>
-                            </div>
-                            <div class="bg-bg-dark p-3 rounded-lg w-1/3">
-                                <p class="text-gray-400">急カーブ🟡</p>
-                                <p id="final-turn-count" class="text-2xl font-bold text-gray-300">-- 回</p>
-                            </div>
-                        </div>
-                    </div>
-                    <!-- ▲▲▲ 運転データレイアウト変更 ▲▲▲ -->
-                </div>
-            </div>
-            
-            <div class="w-full space-y-3">
-                <button onclick="startNewSession()" 
-                        class="w-full py-4 text-xl bg-green-600 hover:bg-green-700 rounded-xl shadow-lg transition duration-300 transform hover:scale-[1.02]">
-                    新しい記録を開始
-                </button>
-                
-                <a href="{{ url_for('views.sessions') }}" 
-                   class="w-full py-3 text-lg bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md transition duration-300 flex items-center justify-center font-medium">
-                    詳細な記録を確認する
-                </a>
-                
-                <button onclick="goToHome()" 
-                        class="w-full py-3 text-lg bg-gray-500 hover:bg-gray-600 rounded-xl shadow-md transition duration-300">
-                    ホームに戻る
-                </button>
-            </div>
-        </div>
+  <header>
+    <div class="logo-area">
+      <img src="{{ url_for('static', filename='img/icon.png') }}" alt="ドライブバディロゴ">
+      <div class="title">ドライブバディ</div>
     </div>
+  </header>
+
+  <main class="main">
+    <img src="{{ url_for('static', filename='img/robot.png') }}" alt="ドライボ" class="robot">
+    <div class="main-title">お疲れさまでした！</div>
+
+    <div class="drive-info">
+      <div>走行時間<br><span id="total-time">--:--</span></div>
+      <div>走行距離<br><span id="total-distance">-- km</span></div>
+    </div>
+
+    <!-- 減速 -->
+    <div class="section">
+      <h2>減速 <span class="score">80点</span></h2>
+      <p>結果：丁寧で安定！</p>
+      <p>詳細：平均前方向G = 0.28、急ブレーキ検知 1回</p>
+      <p class="comment">コメント：ブレーキのタイミング完璧！乗り心地バッチリ👏</p>
+    </div>
+
+    <!-- 加速 -->
+    <div class="section">
+      <h2>加速 <span class="score">75点</span></h2>
+      <p>結果：少し強いかな？</p>
+      <p>詳細：平均後方向G = -0.35、急発進検知 2回</p>
+      <p class="comment">コメント：勢いあるドライブ！でももう少し抑えるとよりスムーズ💨</p>
+    </div>
+
+    <!-- 旋回 -->
+    <div class="section">
+      <h2>旋回 <span class="score">70点</span></h2>
+      <p>結果：やや急め？</p>
+      <p>詳細：平均横G = 0.32、急カーブ検知 4回</p>
+      <p class="comment">コメント：少し内側に切り込み気味！次はもう少し外へふんわり回ろう！</p>
+    </div>
+
+    <!-- 直進 -->
+    <div class="section">
+      <h2>直進 <span class="score" style="color:#00796b;">90点</span></h2>
+      <p>結果：安定感バッチリ！</p>
+      <p>詳細：平均速度 42km/h、前後左右Gともに安定</p>
+      <p class="comment">コメント：真っすぐ走行キープ！安定感すごい🔥</p>
+    </div>
+
+    <!-- 総評 -->
+    <div class="section">
+      <h2>総評 <span class="score" style="color:#4b63d1;">79点</span></h2>
+      <p>今回の総評は79点でした！全体的に安定した運転でした👏<br>
+         特に直進の安定感が素晴らしいです🚗💨<br>
+         旋回時のG変化をもう少し抑えられれば、さらに上級者レベルです🔥</p>
+    </div>
+
+    <!-- 今回の重点ポイント -->
+    <div class="section">
+      <h2 style="color:#e44d8f;">今回の重点ポイント</h2>
+      <p>今回の重点ポイントは <b>減速</b> でしたが、運転開始前と比べてとても良くなってたよ！👏<br>
+      この調子で次は<b>加速</b>も意識して全体のスコアを伸ばそう🔥</p>
+    </div>
+  </main>
+
+  <!-- ✅ 共通ナビバー -->
+  <nav class="navbar navbar-expand custom-nav-bar fixed-bottom">
+    <div class="container-fluid justify-content-center">
+      <ul class="navbar-nav w-100 text-center">
+        <li class="nav-item flex-fill custom-nav-item">
+          <a href="{{ url_for('views.home') }}" class="nav-link custom-nav-link">ホーム</a>
+        </li>
+        <li class="nav-item flex-fill custom-nav-item active-glow">
+          <a class="nav-link custom-nav-link active" href="{{ url_for('views.recording_start') }}">運転</a>
+        </li>
+
+        <!-- ✅ ここに active-glow を付ける（このページが“リザルト”なら） -->
+        <li class="nav-item flex-fill custom-nav-item">
+          <a href="{{ url_for('sessions.results_page') }}" class="nav-link custom-nav-link">リザルト</a>
+        </li>
+
+        <li class="nav-item flex-fill custom-nav-item">
+          <a class="nav-link custom-nav-link" href="#">マップ</a>
+        </li>
+        <li class="nav-item flex-fill custom-nav-item border-end-0">
+          <a class="nav-link custom-nav-link" href="#">説明</a>
+        </li>
+      </ul>
+    </div>
+  </nav>
 
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
@@ -150,20 +239,7 @@
         function displaySessionResults(sessionData) {
             document.getElementById('total-time').textContent = sessionData.totalTime || '--:--';
             document.getElementById('total-distance').textContent = (sessionData.distance || 0).toFixed(2) + ' km';
-            document.getElementById('final-brake-count').textContent = (sessionData.sudden_brakes || 0) + ' 回';
-            document.getElementById('final-accel-count').textContent = (sessionData.sudden_accels || 0) + ' 回';
-            document.getElementById('final-turn-count').textContent = (sessionData.sharp_turns || 0) + ' 回';
             // 安定度の項目を削除
-        }
-
-        function startNewSession() {
-            // 仮のリンク先
-            window.location.href = "/";
-        }
-
-        function goToHome() {
-            // 仮のリンク先
-            window.location.href = "/";
         }
 
         document.addEventListener('DOMContentLoaded', function() {
@@ -186,4 +262,3 @@
     </script>
 </body>
 </html>
-

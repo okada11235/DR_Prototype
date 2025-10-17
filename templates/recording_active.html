@@ -34,7 +34,7 @@ tailwind.config = {
 
   <!-- キャラアイコン -->
   <div class="w-36 h-36 rounded-full bg-white shadow-md flex items-center justify-center overflow-hidden mb-6">
-    <img src="robot.png" alt="ロボット" class="object-cover w-full h-full">
+    <img src="{{ url_for('static', filename='img/robot_active.png') }}" alt="ロボット" class="object-cover w-full h-full">
   </div>
 
   <!-- 情報ボックス -->
@@ -64,8 +64,7 @@ tailwind.config = {
 
   <!-- 終了ボタン -->
   <button id="end-button"
-          class="bg-primary-green text-white text-xl font-bold py-3 px-10 rounded-xl shadow-lg hover:bg-cyan-400 transition"
-          onclick="confirmEnd()">
+          class="bg-primary-green text-white text-xl font-bold py-3 px-10 rounded-xl shadow-lg hover:bg-cyan-400 transition">
     記録を終了する
   </button>
 
@@ -96,20 +95,22 @@ tailwind.config = {
   <!--<script src="{{ url_for('static', filename='record.js') }}"></script>-->
   <!--<script src="{{ url_for('static', filename='record_voice.js') }}"></script>-->
   <script src="{{ url_for('static', filename='record_voice_unified.js') }}"></script>
+  <!-- AudioContextのアンロック処理（これは残す） -->
   <script type="module">
-    import { unlockAudio, stopAudioSystem } from './static/audio.js';
+    import { unlockAudio } from './static/audio.js';
 
     document.addEventListener("DOMContentLoaded", () => {
-      unlockAudio(); // ページ読み込み時にアンロック＋無音維持開始
-    });
-
-    function confirmEnd() {
-      if (confirm("記録を終了してよろしいですか？")) {
-        stopAudioSystem(); // AudioContext終了＋keep-alive停止
-        window.location.href = "/recording_completed";
+      if (window.isIOSDevice) {
+        console.log("📱 iOS detected → auto unlockAudio()");
+        unlockAudio();
+      } else {
+        // Android用：もし音声未アンロックなら安全に再試行
+        if (!window.audioUnlocked) {
+          console.log("🤖 Android: retrying audio unlock (safety)");
+          unlockAudio();
+        }
       }
-    }
-    window.confirmEnd = confirmEnd;
+    });
   </script>
 </body>
 </html>

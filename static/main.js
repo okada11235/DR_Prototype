@@ -65,12 +65,26 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log('End button found:', !!endButton);
     if (startButton && !startButton.hasEventListener) {
         console.log('Adding click listener to start button');
-        startButton.addEventListener('click', () => startSession());
+        startButton.addEventListener('click', () => {
+            const confirmStart = confirm('記録を開始してよろしいですか？');
+            if (confirmStart) {
+                startSession();
+            } else {
+                console.log('Recording start canceled by user.');
+            }
+        });
         startButton.hasEventListener = true;
     }
     if (endButton && !endButton.hasEventListener) {
         console.log('Adding click listener to end button');
-        endButton.addEventListener('click', () => endSession(true));
+        endButton.addEventListener('click', () => {
+            const confirmEnd = confirm('記録を終了してよろしいですか？');
+            if (confirmEnd) {
+                endSession(true);  // 正規の終了処理（Firestore保存含む）
+            } else {
+                console.log('Recording end canceled by user.');
+            }
+        });
         endButton.hasEventListener = true;
     }
     console.log('Initializing based on current path...');

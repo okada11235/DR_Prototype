@@ -120,11 +120,17 @@ def get_avg_g_logs_for_session(session_id):
         return []
 
 
-# メインページ（記録開始画面にリダイレクト）
+# メインページ（ホーム画面にリダイレクト）
 @views_bp.route('/')
 @login_required
 def index():
-    return redirect(url_for('views.recording_start'))
+    return redirect(url_for('views.home'))
+
+# ホーム画面
+@views_bp.route('/home')
+@login_required
+def home():
+    return render_template('home.html')
 
 # 記録開始画面
 @views_bp.route('/recording/start')
