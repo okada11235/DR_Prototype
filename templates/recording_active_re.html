@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<title>ドライブバディ - 記録再生中</title>
+
+<!-- Tailwind -->
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        'primary-green': '#00bcd4',
+        'danger-red': '#f44336',
+        'bg-light': '#d8f5e3',
+        'card-light': '#aafaff'
+      },
+      fontFamily: {
+        sans: ['"Hiragino Maru Gothic ProN"', 'sans-serif']
+      }
+    }
+  }
+}
+</script>
+</head>
+<body class="bg-bg-light text-gray-800 font-sans flex flex-col items-center justify-center min-h-screen p-4">
+
+  <h1 class="text-3xl font-bold text-primary-green mb-6">記録中</h1>
+
+  <!-- キャラアイコン -->
+  <div class="w-36 h-36 rounded-full bg-white shadow-md flex items-center justify-center overflow-hidden mb-6">
+    <img src="{{ url_for('static', filename='img/robot_active.png') }}" alt="ロボット" class="object-cover w-full h-full">
+  </div>
+
+  <!-- 情報ボックス -->
+  <div class="flex justify-center gap-6 mb-6">
+    <div class="bg-card-light rounded-lg px-6 py-3 shadow">
+      <p class="text-sm text-gray-700">速度</p>
+      <p class="text-2xl font-bold"><span id="speed">0.0</span> km/h</p>
+    </div>
+    <!-- 記録時間ボックス -->
+    <div class="bg-card-light rounded-lg px-6 py-3 shadow text-center">
+      <p class="text-sm text-gray-700">記録時間</p>
+      <p class="text-2xl font-bold" id="timer">00:00</p>
+    </div>
+  </div>
+
+  <!-- G値 -->
+  <div class="bg-card-light rounded-lg p-4 text-gray-800 shadow mb-8 w-72 text-center">
+    横G：<span id="g-x">0.00</span>
+    前後G：<span id="g-z">0.00</span>
+    上下G：<span id="g-y">0.00</span>
+  </div>
+
+  <!-- 停止ボタン -->
+  <button id="StopBtn"
+          class="bg-danger-red text-white text-xl font-bold py-3 px-10 rounded-xl shadow-lg hover:bg-red-500 transition"
+          href="{{ url_for('views.detail_result_play', session_id=session.id) }}">
+    記録を終了する
+  </button>
+
+  <script>
+    window.isReplayMode = true; // 🔹 再生モードであることを明示
+    window.replaySessionId = "{{ session_id }}";
+    window.replayStart = "{{ start }}";
+    window.replayEnd = "{{ end }}";
+    window.replaySessionStart = "{{ session_start or 0 }}";
+  </script>
+
+  <!-- 🔊 再生ロジック -->
+  <script type="module">
+    import { playRandomAudio, autoUnlockAudio } from "{{ url_for('static', filename='audio.js') }}";
+    autoUnlockAudio(); // iOS用アンロック
+
+    async function fetchLogs(sessionId, start, end) {
+      const res = await fetch(`/api/replay_data/${sessionId}?start=${start}&end=${end}`);
+      const json = await res.json();
+      return (json.avg_g_logs || []).sort((a,b)=>a.timestamp_ms-b.timestamp_ms);
+    }
+
+    function formatTime(ms) {
+      const s = Math.floor(ms / 1000);
+      return `${String(Math.floor(s/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`;
+    }
+
+    let logs = [], idx = 0, timer = null, playing = false;
+    let startReal = 0, t0 = 0, t1 = 0, sessionStart = 0;
+
+    function updateUI(log) {
+      document.getElementById("speed").textContent = (log.speed || 0).toFixed(1);
+      document.getElementById("g-x").textContent = (log.g_x || 0).toFixed(2);
+      document.getElementById("g-z").textContent = (log.g_z || 0).toFixed(2);
+      document.getElementById("g-y").textContent = (log.g_y || 0).toFixed(2);
+    }
+
+    function step() {
+      if (!playing) return;
+      const now = Date.now();
+      const virtualT = t0 + (now - startReal);
+
+      // ✅ 実走開始時刻からの経過時間を反映
+      const driveElapsedMs = Math.max(0, virtualT - sessionStart);
+      document.getElementById("timer").textContent = formatTime(driveElapsedMs);
+
+      while (idx < logs.length && logs[idx].timestamp_ms <= virtualT) {
+        const log = logs[idx];
+        updateUI(log);
+        if (log.event && log.event !== "normal") playRandomAudio(log.event);
+        idx++;
+      }
+
+      if (idx >= logs.length || virtualT >= t1) stop();
+    }
+
+    function start(sessionId, startMs, endMs, sessionStartMs) {
+      t0 = startMs;
+      t1 = endMs;
+      sessionStart = sessionStartMs;
+      startReal = Date.now();
+      playing = true;
+      // 🎵 10秒後に録音開始音（ポン）
+      setTimeout(() => {
+        if (typeof playStartBeep === "function") {
+          playStartBeep();
+          console.log("🔊 録音開始音を再生しました（10秒後）");
+        }
+      }, 20000);
+
+      // 🎵 さらに5秒後に録音終了音（ピッ）
+      setTimeout(() => {
+        if (typeof playEndBeep === "function") {
+          playEndBeep();
+          console.log("🔇 録音終了音を再生しました（15秒後）");
+        }
+      }, 25000);
+      timer = setInterval(step, 100);
+    }
+
+    // ✅ 記録終了ボタン処理
+    document.getElementById("StopBtn").onclick = () => {
+      const confirmEnd = confirm("記録を終了してよろしいですか？");
+      if (!confirmEnd) {
+        console.log("再生終了がキャンセルされました。");
+        return;
+      }
+
+      playing = false;
+      if (timer) clearInterval(timer);
+      document.getElementById("timer").textContent = "00:00";
+      window.location.href = "{{ url_for('views.detail_result_play', session_id=session_id) }}";
+    };
+
+    // 🔸 初期化
+    window.addEventListener("DOMContentLoaded", async () => {
+      const sessionId = window.replaySessionId;
+      const startMs = parseInt(window.replayStart);
+      const endMs = parseInt(window.replayEnd);
+      const sessionStartMs = parseInt(window.replaySessionStart); // ✅ 追加
+      logs = await fetchLogs(sessionId, startMs, endMs);
+      if (logs.length === 0) {
+        alert("この範囲にはデータがありません。");
+        return;
+      }
+      start(sessionId, startMs, endMs, sessionStartMs); // ✅ 追加
+    });
+  </script>
+  <script src="{{ url_for('static', filename='record_voice_unified.js') }}"></script>
+</body>
+</html>

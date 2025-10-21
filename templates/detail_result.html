@@ -234,6 +234,13 @@
       <div class="legend" id="legend"></div>
     </div>
   {% endif %}
+
+  <!--<div class="text-center mt-3">
+    <a class="btn btn-primary btn-lg"
+      href="{{ url_for('views.detail_result_play', session_id=session.id) }}">
+      🚗 この走行を“イベント音声つき”で再生
+    </a>
+  </div>-->
 </div>
 
     <nav class="navbar navbar-expand custom-nav-bar fixed-bottom">
@@ -283,9 +290,11 @@ const colorMap = {
 const eventAxisMap = { sudden_brake:'gz', sudden_accel:'gz', sharp_turn:'gx', speed_violation:'speed' };
 
 /** ========= Chart.js 初期化 ========= */
-let isChartReady=false;
-const chartInstances={};
-let zoomInterval, panInterval;
+let isChartReady = false;
+const chartInstances = {};          // ← グローバルに1回だけ定義
+const chartOriginalRanges = {};     // ← 初期範囲を保存
+let zoomInterval = null;
+let panInterval = null;
 
 function initializeChart(){
   if(typeof Chart!=='undefined' && !isChartReady){
@@ -345,14 +354,12 @@ function renderGForceChart(canvasId, gpsLogs, gLogs){
     if(wrap){ wrap.insertAdjacentHTML('beforeend', `<div class="warn mt-2">Gセンサーデータがありません</div>`); }
     return;
   }
+
   const allTimestamps=[...new Set([
     ...gLogs.map(l=>Number(l.timestamp_ms ?? l.timestamp)).filter(n=>!Number.isNaN(n)),
     ...gpsLogs.map(l=>Number(l.timestamp_ms ?? l.timestamp)).filter(n=>!Number.isNaN(n)),
   ])].sort((a,b)=>a-b);
-
-  // 修正版 labels
   const labels = allTimestamps.map(ts => new Date(ts));
-
 
   function align(logs,key){
     const map=new Map(logs.map(l=>[Number(l.timestamp_ms ?? l.timestamp), l[key]]));
@@ -378,9 +385,9 @@ function renderGForceChart(canvasId, gpsLogs, gLogs){
     data:{
       labels,
       datasets:[
-        { label:'前後G', data:gzData, borderColor:'#00bcd4', backgroundColor:'rgba(0,188,212,0.2)', borderWidth:2, yAxisID:'y', tension:0.4, spanGaps:true, pointRadius:gzPts.radius, pointBackgroundColor:gzPts.background, pointBorderColor:gzPts.border },
-        { label:'上下G', data:gyData, borderColor:'#666', backgroundColor:'rgba(102,102,102,0.2)', borderWidth:2, yAxisID:'y', tension:0.4, spanGaps:true, pointRadius:gyPts.radius, pointBackgroundColor:gyPts.background, pointBorderColor:gyPts.border },
-        { label:'左右G', data:gxData, borderColor:'#9c27b0', backgroundColor:'rgba(156,39,176,0.2)', borderWidth:2, yAxisID:'y', tension:0.4, spanGaps:true, pointRadius:gxPts.radius, pointBackgroundColor:gxPts.background, pointBorderColor:gxPts.border },
+        { label:'前後G', data:gzData, borderColor:'#00bcd4', backgroundColor:'rgba(0,188,212,0.2)', borderWidth:2, yAxisID:'y', tension:0.4, spanGaps:true, pointRadius:gzPts.radius, pointBackgroundColor:gzPts.background, pointBorderColor:gzPts.border, pointRadius:0 },
+        { label:'上下G', data:gyData, borderColor:'#666', backgroundColor:'rgba(102,102,102,0.2)', borderWidth:2, yAxisID:'y', tension:0.4, spanGaps:true, pointRadius:gyPts.radius, pointBackgroundColor:gyPts.background, pointBorderColor:gyPts.border, pointRadius:0 },
+        { label:'左右G', data:gxData, borderColor:'#9c27b0', backgroundColor:'rgba(156,39,176,0.2)', borderWidth:2, yAxisID:'y', tension:0.4, spanGaps:true, pointRadius:gxPts.radius, pointBackgroundColor:gxPts.background, pointBorderColor:gxPts.border, pointRadius:0 },
         { label:'速度 (km/h)', data:speedData, borderColor:'rgba(255,99,132,0.7)', backgroundColor:'rgba(255,99,132,0.1)', borderWidth:1, yAxisID:'y1', tension:0, spanGaps:true,
           pointStyle: ctx => (spPts.radius[ctx.dataIndex] > 0 ? 'circle' : false),
           pointRadius: ctx => spPts.radius[ctx.dataIndex],
@@ -394,17 +401,27 @@ function renderGForceChart(canvasId, gpsLogs, gLogs){
       scales:{
         x: {
           type: 'time',
-          time: {
-            unit: false, 
-          },
+          time: { unit: false },
           title: { display: true, text: '時間' },
+          min: labels[0],
+          max: labels[labels.length - 1], // ← ✅ 初期範囲を確定
         },
         y:{ position:'left', title:{display:true,text:'G (重力加速度)'} },
         y1:{ position:'right', title:{display:true,text:'速度 (km/h)'}, grid:{drawOnChartArea:false}, min:0, max:120 }
       },
       plugins:{
         decimation:{ enabled:true, algorithm:'lttb', samples:1000 },
-        zoom:{ pan:{enabled:true,mode:'x'}, zoom:{wheel:{enabled:true}, pinch:{enabled:true}, mode:'x'} },
+        zoom:{
+          pan:{enabled:true,mode:'x'},
+          zoom:{
+            wheel:{enabled:true},
+            pinch:{enabled:true},
+            mode:'x',
+            limits:{  // ← ✅ ズームアウト制限を追加
+              x:{min: labels[0].getTime(), max: labels[labels.length - 1].getTime()}
+            }
+          }
+        },
         tooltip:{
           callbacks:{
             label:(ctx)=>{
@@ -425,7 +442,14 @@ function renderGForceChart(canvasId, gpsLogs, gLogs){
       }
     }
   });
-  chartInstances[canvasId]=chart;
+
+  chartInstances[canvasId] = chart;
+
+  // ✅ 初期範囲を保存（Date型のまま）
+  chartOriginalRanges[canvasId] = {
+    min: labels[0],
+    max: labels[labels.length - 1]
+  };
 }
 
 /** ========= グラフ←→地図 連動 ========= */
@@ -455,19 +479,72 @@ function highlightOnChart(canvasId, log) {
 }
 
 /** ========= ズーム/パン ボタン ========= */
-function startZoom(canvasId,dir){
-  const chart=chartInstances[canvasId]; if(!chart) return;
-  const factor=1.05;
-  zoomInterval=setInterval(()=>{ chart.zoom({x: dir==='in'?factor:1/factor, y:1}); },150);
+// 既存の startZoom 関数を以下のように修正:
+function startZoom(canvasId, dir) {
+  const chart = chartInstances[canvasId];
+  if (!chart) return;
+  const factor = 1.05;
+  const original = chartOriginalRanges[canvasId];
+
+  zoomInterval = setInterval(() => {
+    chart.zoom({ x: dir === 'in' ? factor : 1 / factor, y: 1 });
+
+    // 👇 ズームアウト制限（データ全体の範囲外に行かないようにする）
+    if (original) {
+      // **修正: 比較を数値に統一**
+      if (chart.scales.x.min < original.min.getTime()) chart.options.scales.x.min = original.min;
+      if (chart.scales.x.max > original.max.getTime()) chart.options.scales.x.max = original.max;
+    }
+
+    chart.update('none');
+  }, 150);
 }
-function stopZoom(){ if(zoomInterval){ clearInterval(zoomInterval); zoomInterval=null; } }
-function startPan(canvasId,dir){
-  const chart=chartInstances[canvasId]; if(!chart) return;
-  const distance = dir==='left' ? -50 : 50;
-  panInterval=setInterval(()=>{ chart.pan({x:distance,y:0}); },100);
+function stopZoom() {
+  if (zoomInterval) {
+    clearInterval(zoomInterval);
+    zoomInterval = null;
+  }
 }
-function stopPan(){ if(panInterval){ clearInterval(panInterval); panInterval=null; } }
-function resetChartZoom(canvasId){ const c=chartInstances[canvasId]; if(c) c.resetZoom(); }
+function startPan(canvasId, dir) {
+  const chart = chartInstances[canvasId];
+  if (!chart) return;
+  const distance = dir === 'left' ? -50 : 50;
+  panInterval = setInterval(() => {
+    chart.pan({ x: distance, y: 0 });
+  }, 100);
+}
+function stopPan() {
+  if (panInterval) {
+    clearInterval(panInterval);
+    panInterval = null;
+  }
+}
+
+/** ✅ 修正版：Resetボタンでズーム前範囲に戻し、ハイライトをクリア */
+function resetChartZoom(canvasId) {
+  const chart = chartInstances[canvasId];
+  if (!chart) return;
+  const original = chartOriginalRanges[canvasId];
+
+  // 1. Zoomプラグインのズーム・パン状態をリセット
+  chart.resetZoom(); 
+  
+  if (original) {
+    // 2. イベント指定で上書きされた min/max オプションを初期値に戻す
+    chart.options.scales.x.min = original.min; 
+    chart.options.scales.x.max = original.max;
+  }
+  
+  // 3. 【**新規追加**】ハイライト（アクティブエレメント）とツールチップをクリア
+  // これにより、イベント選択後の「重なり」表示を解消します。
+  chart.setActiveElements([]);
+  if (chart.tooltip) {
+    chart.tooltip.setActiveElements([]);
+  }
+
+  // 4. グラフを更新
+  chart.update('none'); // アニメーションなしで即時更新
+}
 
 /** ========= 地図 ========= */
 let mapInstance=null;

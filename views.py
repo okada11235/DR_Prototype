@@ -278,3 +278,53 @@ def delete_session(sid):
     except Exception as e:
         flash(f'セッション削除中にエラーが発生しました: {e}')
     return redirect(url_for('sessions.results_page'))
+
+# === 追記: 再生ページ ===
+@views_bp.route('/result/<session_id>/replay')
+@login_required
+def detail_result_play(session_id):
+    return render_template('detail_result_play.html', session_id=session_id)
+
+# === 追記: 範囲データAPI（eventつきavg_g_logsを返す） ===
+from flask import jsonify
+
+@views_bp.route('/api/replay_data/<session_id>')
+@login_required
+def api_replay_data(session_id):
+    start = request.args.get("start", type=int)
+    end   = request.args.get("end", type=int)
+    logs = get_avg_g_logs_for_session(session_id)  # 既存ヘルパで取得
+    if start and end:
+        logs = [l for l in logs if (l.get("timestamp_ms") or 0) >= start and (l.get("timestamp_ms") or 0) <= end]
+    # event / g_x / g_y / g_z / speed / timestamp_ms をそのまま返す
+    return jsonify({"avg_g_logs": logs})
+
+@views_bp.route('/replay_active/<session_id>')
+@login_required
+def replay_active(session_id):
+    start = request.args.get('start', type=int)
+    end = request.args.get('end', type=int)
+
+    # === Firestoreからセッション全体の最初のtimestamp_msを取得 ===
+    from google.cloud import firestore
+    db = firestore.Client()
+
+    logs_ref = db.collection(f"sessions/{session_id}/avg_g_logs") \
+                 .order_by("timestamp_ms") \
+                 .limit(1)
+    docs = list(logs_ref.stream())
+    if docs:
+        session_start = docs[0].to_dict().get("timestamp_ms", 0)
+    else:
+        session_start = 0
+
+    # === テンプレートに渡す ===
+    return render_template(
+        'recording_active_re.html',
+        session_id=session_id,
+        start=start,
+        end=end,
+        session_start=session_start
+    )
+
+

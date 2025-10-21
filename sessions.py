@@ -509,6 +509,12 @@ def detail_result_page(session_id):
                                gps_logs=[],
                                avg_g_logs=[],
                                display_error="権限がありません。")
+    
+    # 🔹 ここで JST 変換を追加！
+    if s.get('start_time'):
+        s['start_time'] = s['start_time'].astimezone(JST)
+    if s.get('end_time'):
+        s['end_time'] = s['end_time'].astimezone(JST)
 
     # GPSログ
     gps_logs = []

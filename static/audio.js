@@ -216,7 +216,7 @@ export async function playRandomAudio(category, isUnlockAudio = false) {
     }
     
     // 基本的な再生条件チェック
-    if (!window.sessionId && !isUnlockAudio) {
+    if (!window.sessionId && !isUnlockAudio && !window.isReplayMode) {
         console.log(`🔇 Audio skipped (not recording): ${category}`);
         return;
     }

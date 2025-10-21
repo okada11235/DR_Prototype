@@ -229,3 +229,6 @@ async function startRecordingAndUpload() {
     console.error("録音エラー:", err);
   }
 }
+
+window.playStartBeep = playStartBeep;
+window.playEndBeep = playEndBeep;
