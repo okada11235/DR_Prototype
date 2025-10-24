@@ -157,26 +157,37 @@ def generate_ai_evaluation(stats, focus_point=''):
     # スコア計算
     scores = calculate_scores(stats)
     
+    # 生成方法の記録
+    generation_method = "rule-based"  # デフォルト
+    
     # OpenAI APIが利用可能な場合はAIで生成、そうでなければフォールバック
     if client and openai.api_key:
         try:
+            print("🤖 Generating feedback using OpenAI GPT-3.5-turbo...")
             comments = generate_ai_comments(stats, scores, focus_point)
             overall_comment = generate_ai_overall_comment(stats, scores, focus_point)
+            generation_method = "openai"  # 成功時にOpenAIマーク
+            print("✅ OpenAI feedback generation completed successfully")
         except Exception as e:
-            print(f"OpenAI API error: {e}")
+            print(f"❌ OpenAI API error: {e}")
+            print("🔄 Switching to fallback rule-based evaluation...")
             # エラーの場合はフォールバック
             comments = generate_comments(stats, scores)
             overall_comment = generate_overall_comment_no_score(stats, scores)
+            print("✅ Fallback evaluation completed")
     else:
         # OpenAI APIが使用できない場合はフォールバック
+        print("⚠️ OpenAI API not available, using rule-based evaluation...")
         comments = generate_comments(stats, scores)
         overall_comment = generate_overall_comment_no_score(stats, scores)
+        print("✅ Rule-based evaluation completed")
     
     return {
         'scores': scores,
         'comments': comments,
         'overall_comment': overall_comment,
         'focus_point': focus_point,
+        'generation_method': generation_method,  # 生成方法を記録
         'generated_at': datetime.now(JST)
     }
 
