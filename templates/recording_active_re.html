@@ -152,7 +152,20 @@ tailwind.config = {
       playing = false;
       if (timer) clearInterval(timer);
       document.getElementById("timer").textContent = "00:00";
-      window.location.href = "{{ url_for('views.detail_result_play', session_id=session_id) }}";
+
+      // ✅ 再生した範囲（start / end）を含めてサーバへ送信
+      const sessionId = window.replaySessionId;
+      const startMs = parseInt(window.replayStart);
+      const endMs = parseInt(window.replayEnd);
+
+      fetch(`/replay_completed/${sessionId}?start=${startMs}&end=${endMs}`)
+        .then(() => {
+          window.location.href = `/recording/completed_re/${sessionId}?start=${startMs}&end=${endMs}`;
+        })
+        .catch(err => {
+          console.error("再生完了ページへの遷移エラー:", err);
+          window.location.href = `/recording/completed_re/${sessionId}?start=${startMs}&end=${endMs}`;
+        });
     };
 
     // 🔸 初期化

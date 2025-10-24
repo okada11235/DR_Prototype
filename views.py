@@ -424,15 +424,20 @@ def update_pin():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# === 音声ピン追加API ===
-@views_bp.route('/api/add_voice_pin', methods=['POST'])
+# === 🚗 走行中のピン設置API（pins直下に保存） ===
+@views_bp.route('/api/add_drive_pin', methods=['POST'])
 @login_required
 def add_voice_pin():
+    """
+    走行中の画面でピンを設置したときに呼ばれるAPI。
+    Firestoreの pins コレクション直下に保存。
+    """
     data = request.json
     try:
         lat = data.get("lat")
         lng = data.get("lng")
         label = data.get("label", "")
+
         pin_data = {
             "user_id": current_user.id,
             "lat": lat,
@@ -440,13 +445,65 @@ def add_voice_pin():
             "label": label,
             "speak_enabled": True,
             "created_at": datetime.now(JST),
+            "source": "driving",  # ← 区別したいなら追加（任意）
         }
-        doc_ref = db.collection("pins").add(pin_data)
-        pin_id = doc_ref[1].id  # ← ここでID取得
+
+        # ✅ pinsコレクション直下に保存
+        doc_ref, _ = db.collection("pins").add(pin_data)
+        pin_id = doc_ref.id
+
         return jsonify({"status": "success", "pin_id": pin_id})
     except Exception as e:
+        print("Error in add_voice_pin:", e)
         return jsonify({"status": "error", "error": str(e)}), 500
 
+# === 🗺️ マップ画面ピン追加API ===
+@views_bp.route('/api/add_manual_pin', methods=['POST'])
+@login_required
+def add_manual_pin():
+    """
+    マップ画面で直接ピンを追加したときに呼ばれるAPI。
+    Firestoreの pins コレクション直下に保存。
+    """
+    try:
+        data = request.get_json(force=True)
+        lat = float(data.get("lat"))
+        lng = float(data.get("lng"))
+        label = data.get("label", "")
+
+        pin_data = {
+            "user_id": current_user.id,
+            "lat": lat,
+            "lng": lng,
+            "label": label,
+            "speak_enabled": True,
+            "created_at": datetime.now(JST),
+            "source": "manual",
+        }
+
+        # ✅ add() の戻り値を受け取る
+        result = db.collection("pins").add(pin_data)
+        print("DEBUG Firestore add() result:", result, type(result))
+
+        # ✅ 返り値の型を安全に解釈
+        doc_ref = None
+        for item in result:
+            if hasattr(item, "id"):  # DocumentReference
+                doc_ref = item
+                break
+
+        if not doc_ref:
+            raise ValueError("Firestore DocumentReference が見つかりません")
+
+        pin_id = doc_ref.id
+        print(f"✅ add_manual_pin: 新しいピンを追加しました ID={pin_id}")
+        return jsonify({"status": "success", "pin_id": pin_id}), 200
+
+    except Exception as e:
+        print("❌ Error in add_manual_pin:", e)
+        import traceback
+        traceback.print_exc()
+        return jsonify({"status": "error", "error": str(e)}), 500
 
 # === Firestore API: セッション内の音声ピン一覧取得 ===
 @views_bp.route('/api/get_voice_pins')
@@ -499,3 +556,47 @@ def confirm_voice_pin():
     except Exception as e:
         print("Error in /api/confirm_voice_pin:", e)
         return jsonify({"status": "error", "error": str(e)}), 500
+
+@views_bp.route('/api/get_all_pins', methods=['GET'])
+@login_required
+def get_all_pins():
+    try:
+        pins_ref = db.collection("pins").where("user_id", "==", current_user.id).stream()
+        pins = []
+        for p in pins_ref:
+            d = p.to_dict()
+            pins.append({
+                "id": p.id,
+                "lat": d.get("lat"),
+                "lng": d.get("lng"),
+                "label": d.get("label", ""),
+                "speak_enabled": d.get("speak_enabled", True)
+            })
+        return jsonify({"status": "success", "pins": pins})
+    except Exception as e:
+        return jsonify({"status": "error", "error": str(e)}), 500
+    
+from flask import render_template, request
+from ai_evaluation import generate_feedback  # あなたのAI評価関数を使用
+
+@views_bp.route('/recording/completed_re/<session_id>')
+@login_required
+def recording_completed_re(session_id):
+    start = request.args.get('start')
+    end = request.args.get('end')
+
+    # 🔹 Firestoreなどから再生範囲のavg_g_logsを取得
+    from sessions import get_avg_g_logs_for_session
+    logs = get_avg_g_logs_for_session(session_id)
+    logs = [l for l in logs if (l.get("timestamp_ms") or 0) >= int(start) and (l.get("timestamp_ms") or 0) <= int(end)]
+
+    # 🔹 AI評価（ai_evaluation.py を利用）
+    ai_feedback = generate_feedback(logs)
+
+    return render_template(
+        'recording_completed_re.html',
+        session_id=session_id,
+        start=start,
+        end=end,
+        ai_feedback=ai_feedback
+    )

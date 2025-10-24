@@ -59,28 +59,14 @@ export const FIRESTORE_COLLECTIONS = {
 
 // === 音声ファイルパス一覧 ===================================
 export const audioFiles = {
-    // ---------------- 旧構成（保持） ----------------
-    jerk_low: ["/static/audio/jerk_low_praise_1.wav", "/static/audio/jerk_low_praise_2.wav"],
-    good_accel: ["/static/audio/acceleration_good_1.wav", "/static/audio/acceleration_good_2.wav"],
-    ang_accel_good: ["/static/audio/angular_acceleration_good_1.wav", "/static/audio/angular_acceleration_good_2.wav"],
-    ang_accel_high: ["/static/audio/angular_acceleration_good_1.wav", "/static/audio/angular_acceleration_good_2.wav"],
-    ang_vel_high: ["/static/audio/angular_velocity_high_1.wav", "/static/audio/angular_velocity_high_2.wav"],
-    ang_vel_low: ["/static/audio/angular_velocity_low_1.wav", "/static/audio/angular_velocity_low_2.wav"],
-    yaw_rate_high: ["/static/audio/sharp_turn_1.wav", "/static/audio/sharp_turn_2.wav", "/static/audio/sharp_turn_3.wav"],
-    speed_fluct: ["/static/audio/speed_jerkiness_1.wav", "/static/audio/speed_jerkiness_2.wav"],
-    jerk: ["/static/audio/speed_jerkiness_1.wav", "/static/audio/speed_jerkiness_2.wav"],
-    good_brake: ["/static/audio/good_brake_1.wav", "/static/audio/good_brake_2.wav"],
-    stable_drive: ["/static/audio/stable_drive_1.wav", "/static/audio/stable_drive_2.wav"],
-    silence: ["/static/audio/silence.wav"],
-
     // ---------------- 新構成（8分類） ----------------
     // 🚘 褒め系
     smooth_turn: [
-        "/static/audio/angular_velocity_low_1.wav",
+        "/static/audio/smooth_turn_1.wav",
         "/static/audio/angular_velocity_low_2.wav"
     ],
     smooth_accel: [
-        "/static/audio/acceleration_good_1.wav",
+        "/static/audio/smooth_accel_1.wav",
         "/static/audio/acceleration_good_2.wav"
     ],
     smooth_brake: [
@@ -108,7 +94,7 @@ export const audioFiles = {
         "/static/audio/sudden_brake_3.wav"
     ],
     unstable_drive: [
-        "/static/audio/speed_jerkiness_1.wav",
+        "/static/audio/unstable_drive_1.wav",
         "/static/audio/speed_jerkiness_2.wav"
     ]
 };

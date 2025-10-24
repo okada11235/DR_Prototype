@@ -103,7 +103,7 @@ async function initMap() {
 
     try {
       // Firestoreへ追加
-      const res = await fetch("/api/add_voice_pin", {
+      const res = await fetch("/api/add_manual_pin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ lat, lng, label: "" }),

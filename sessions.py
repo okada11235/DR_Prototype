@@ -666,3 +666,23 @@ def get_audio_records(session_id):
     # 時刻降順
     audio_records.sort(key=lambda a: a.get("created_at", datetime.min), reverse=True)
     return audio_records
+
+from firebase_admin import firestore
+
+db = firestore.client()
+
+def get_avg_g_logs_for_session(session_id):
+    """
+    Firestoreから指定セッションのavg_g_logsを取得する
+    """
+    collection_ref = db.collection("sessions").document(session_id).collection("avg_g_logs")
+    docs = collection_ref.stream()
+
+    logs = []
+    for doc in docs:
+        data = doc.to_dict()
+        data["id"] = doc.id
+        logs.append(data)
+    logs.sort(key=lambda x: x.get("timestamp_ms", 0))
+    return logs
+

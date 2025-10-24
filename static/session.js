@@ -417,6 +417,46 @@ export function startPraiseCheck() {
     console.log("⏸️ 定期褒めチェックは無効化されています。");
 }
 
+// === 現在地に仮ピンを追加 ===
+window.addVoicePin = async function(lat, lng) {
+  console.log("📍 addVoicePin() 実行:", lat, lng);
+
+  try {
+    const res = await fetch("/api/add_drive_pin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        lat: lat,
+        lng: lng,
+        label: "", // 仮ピンなので未入力
+      }),
+    });
+
+    const result = await res.json();
+    if (result.status === "success") {
+      console.log("✅ Firestoreに仮ピンを追加:", result.pin_id);
+
+      // 🔊 ピン追加音
+      const audio = new Audio("/static/audio/pin_set.wav");
+      audio.volume = 0.8;
+      audio.play().catch(() => console.warn("音声再生スキップ"));
+
+      // 🔵 UI上でも地図に追加（録音中の地図がある場合）
+      if (window.map && google?.maps) {
+        new google.maps.Marker({
+          position: { lat, lng },
+          map: window.map,
+          icon: "http://maps.google.com/mapfiles/ms/icons/blue-dot.png",
+        });
+      }
+    } else {
+      console.warn("❌ Firestore保存失敗:", result.error);
+    }
+  } catch (err) {
+    console.error("❌ addVoicePin エラー:", err);
+  }
+};
+
 // === ピン設置ボタン処理 ===
 document.addEventListener("DOMContentLoaded", () => {
   const pinBtn = document.getElementById("addPinBtn");
@@ -460,4 +500,95 @@ document.addEventListener("DOMContentLoaded", () => {
       alert("この端末では位置情報が利用できません。");
     }
   });
+});
+
+// === ピン付近読み上げ機能 ========================================
+
+// 音声読み上げ有効/無効の切替（別途UIでON/OFF予定）
+let speakEnabled = true;
+
+// ピンデータキャッシュ
+let pinsData = [];
+let notifiedPins = new Set(); // 一度読み上げたピンを記録
+
+// Firestoreからピン情報を取得
+async function loadPinsFromFirestore() {
+  try {
+    const res = await fetch("/api/get_all_pins");
+    const data = await res.json();
+    if (data.status === "success") {
+      pinsData = data.pins;
+      console.log(`📍 ${pinsData.length} 個のピンを読み込み完了`);
+    } else {
+      console.warn("❌ ピンデータ取得失敗:", data.error);
+    }
+  } catch (err) {
+    console.error("🔥 ピン取得エラー:", err);
+  }
+}
+
+// 2点間の距離をメートル単位で計算（Haversine formula）
+function calcDistance(lat1, lng1, lat2, lng2) {
+  const R = 6371000; // 地球半径（m）
+  const toRad = (deg) => (deg * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+// ピンとの距離を監視して30m以内なら読み上げ
+function monitorProximity() {
+  if (!navigator.geolocation) {
+    console.warn("⚠️ 位置情報が利用できません");
+    return;
+  }
+
+  navigator.geolocation.watchPosition(
+    (pos) => {
+      const { latitude, longitude } = pos.coords;
+      if (!pinsData.length) return;
+
+      for (const pin of pinsData) {
+        const distance = calcDistance(latitude, longitude, pin.lat, pin.lng);
+        if (distance <= 30 && !notifiedPins.has(pin.id)) {
+          console.log(`📢 ピン「${pin.label || "名前なし"}」に接近 (${Math.round(distance)}m)`);
+
+          // 読み上げ
+          if (speakEnabled && "speechSynthesis" in window) {
+            const utter = new SpeechSynthesisUtterance(pin.label || "ピン地点です");
+            utter.lang = "ja-JP";
+            utter.rate = 1.0;
+            speechSynthesis.speak(utter);
+          }
+
+          // 一定時間再読み上げしない
+          notifiedPins.add(pin.id);
+          setTimeout(() => notifiedPins.delete(pin.id), 60000); // 60秒後に再び許可
+        }
+      }
+    },
+    (err) => console.error("❌ 位置監視エラー:", err),
+    { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+  );
+}
+
+// === ページ判定：recording_active.html のみで実行 ===
+const isActive = document.body.dataset.page === "recording_active";
+if (isActive) {
+  console.log("🟡 このページではピン監視機能を無効化します:", window.location.pathname);
+}
+
+// 初期化
+window.addEventListener("load", async () => {
+  if (isActive) {
+    console.log("✅ ピン監視・読み上げ機能を起動");
+    await loadPinsFromFirestore();
+    monitorProximity();
+  } else {
+    console.log("🚫 recording_active 以外のページでは読み上げ機能をスキップ");
+  }
 });

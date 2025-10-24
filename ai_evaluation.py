@@ -592,3 +592,59 @@ def save_evaluation_to_session(session_id, user_id, evaluation):
     except Exception as e:
         print(f"Error saving evaluation: {e}")
         return False
+    
+def generate_feedback(logs):
+    """
+    走行データからAI評価を生成し、総評＋各項目のフィードバックを返す
+    """
+    if not logs:
+        return {
+            "overall": "この範囲にはデータがありません。",
+            "details": {}
+        }
+
+    # ==== 統計情報を抽出 ====
+    avg_speed = sum(l.get('speed', 0) for l in logs) / len(logs)
+    sudden_brakes = sum(1 for l in logs if l.get('event') == 'sudden_brake')
+    sudden_accels = sum(1 for l in logs if l.get('event') == 'sudden_accel')
+    sharp_turns = sum(1 for l in logs if l.get('event') == 'sharp_turn')
+
+    # Gセンサー値（平均値）
+    gx_values = [l.get('g_x', 0) for l in logs]
+    gy_values = [l.get('g_y', 0) for l in logs]
+    gz_values = [l.get('g_z', 0) for l in logs]
+    g_stats = {
+        "mean_g_x": sum(gx_values) / len(gx_values),
+        "mean_g_y": sum(gy_values) / len(gy_values),
+        "mean_g_z": sum(gz_values) / len(gz_values)
+    }
+
+    # ==== 簡易的な統計辞書を作成 ====
+    stats = {
+        "duration_minutes": len(logs) / 6,  # 約10Hz換算
+        "total_distance": 0,  # この範囲では不明
+        "sudden_brakes": sudden_brakes,
+        "sudden_accels": sudden_accels,
+        "sharp_turns": sharp_turns,
+        "g_stats": g_stats,
+        "speed_stats": {"avg_speed": avg_speed, "max_speed": max(gz_values) if gz_values else 0}
+    }
+
+    # ==== 各項目スコアを算出 ====
+    scores = calculate_scores(stats)
+
+    # ==== 各ポイントのコメント生成 ====
+    comments = generate_comments(stats, scores)
+
+    # ==== 総評コメント生成 ====
+    overall_comment = generate_overall_comment(stats, scores)
+
+    # ==== まとめて返す ====
+    feedback = {
+        "overall": overall_comment,
+        "details": comments,
+        "scores": scores
+    }
+
+    return feedback
+
