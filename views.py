@@ -142,7 +142,21 @@ def recording_start():
 @views_bp.route('/recording/active')
 @login_required
 def recording_active():
-    return render_template('recording_active.html')
+    # 最新のセッションを取得
+    session_ref = (
+        db.collection("sessions")
+        .where("user_id", "==", current_user.id)
+        .order_by("start_time", direction=firestore.Query.DESCENDING)
+        .limit(1)
+        .stream()
+    )
+    session_id = None
+    for doc in session_ref:
+        session_id = doc.id
+        break
+
+    return render_template('recording_active.html', session_id=session_id)
+
 
 # 記録完了画面
 @views_bp.route('/recording/completed')
@@ -370,9 +384,9 @@ def get_pins():
             d = doc.to_dict()
             d["id"] = doc.id
             pins.append(d)
-        return jsonify({"pins": pins})
+        return jsonify({"status": "success", "pins": pins})  # ✅ status追加！
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"status": "error", "error": str(e)}), 500
     
 # === Firestore API: ピン削除 ===
 @views_bp.route('/api/delete_pin', methods=['POST'])
@@ -418,18 +432,70 @@ def add_voice_pin():
     try:
         lat = data.get("lat")
         lng = data.get("lng")
-        session_id = data.get("session_id", "unknown_session")
-
-        new_pin = {
+        label = data.get("label", "")
+        pin_data = {
+            "user_id": current_user.id,
             "lat": lat,
             "lng": lng,
+            "label": label,
+            "speak_enabled": True,
             "created_at": datetime.now(JST),
-            "confirmed": False,
-            "label": "",
-            "user_id": current_user.id,
         }
-
-        doc_ref = db.collection("sessions").document(session_id).collection("voice_pins").add(new_pin)
-        return jsonify({"status": "success", "pin_id": doc_ref[1].id})
+        doc_ref = db.collection("pins").add(pin_data)
+        pin_id = doc_ref[1].id  # ← ここでID取得
+        return jsonify({"status": "success", "pin_id": pin_id})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+
+# === Firestore API: セッション内の音声ピン一覧取得 ===
+@views_bp.route('/api/get_voice_pins')
+@login_required
+def get_voice_pins():
+    try:
+        session_id = request.args.get("session_id", "unknown_session")
+        pins_ref = db.collection("sessions").document(session_id).collection("voice_pins")
+        docs = pins_ref.stream()
+
+        pins = []
+        for doc in docs:
+            pin_data = doc.to_dict()
+            pin_data["id"] = doc.id
+            pins.append(pin_data)
+
+        return jsonify({"status": "success", "pins": pins}), 200
+    except Exception as e:
+        print("Error in /api/get_voice_pins:", e)
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+# === Firestore API: ピン確定・メモ更新 ===
+@views_bp.route('/api/confirm_voice_pin', methods=['POST'])
+@login_required
+def confirm_voice_pin():
+    try:
+        data = request.get_json()
+        session_id = data.get("session_id", "unknown_session")
+        pin_id = data.get("id")
+        label = data.get("label", "")
+        confirmed = data.get("confirmed", True)
+
+        if not pin_id:
+            return jsonify({"status": "error", "error": "Missing pin ID"}), 400
+
+        pin_ref = (
+            db.collection("sessions")
+            .document(session_id)
+            .collection("voice_pins")
+            .document(pin_id)
+        )
+
+        pin_ref.update({
+            "label": label,
+            "confirmed": confirmed,
+            "updated_at": datetime.now(JST)
+        })
+
+        return jsonify({"status": "success"}), 200
+    except Exception as e:
+        print("Error in /api/confirm_voice_pin:", e)
+        return jsonify({"status": "error", "error": str(e)}), 500

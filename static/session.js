@@ -394,3 +394,48 @@ export function startLogFlush() {
 export function startPraiseCheck() {
     console.log("⏸️ 定期褒めチェックは無効化されています。");
 }
+
+// === ピン設置ボタン処理 ===
+document.addEventListener("DOMContentLoaded", () => {
+  const pinBtn = document.getElementById("addPinBtn");
+  if (!pinBtn) {
+    console.warn("⚠️ addPinBtn が見つかりません。HTML読み込み順を確認してください。");
+    return;
+  }
+
+  pinBtn.addEventListener("click", () => {
+    console.log("📍 ピンボタンが押されました");
+
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const { latitude, longitude } = pos.coords;
+          console.log(`✅ 現在地取得成功: ${latitude}, ${longitude}`);
+
+          // 🔊 効果音
+          try {
+            const audio = new Audio("/static/audio/pin_set.wav");
+            audio.play();
+          } catch (e) {
+            console.warn("🎵 効果音再生失敗:", e);
+          }
+
+          // 🔹 ピンを追加（maps.jsの関数利用）
+          if (window.addVoicePin) {
+            window.addVoicePin(latitude, longitude);
+            console.log("📍 addVoicePin() 呼び出し完了");
+          } else {
+            console.warn("⚠️ addVoicePin 未定義です");
+          }
+        },
+        (err) => {
+          console.error("❌ 現在地取得失敗:", err);
+          alert("位置情報の取得に失敗しました。許可設定を確認してください。");
+        },
+        { enableHighAccuracy: true, timeout: 30000, maximumAge: 0 }
+      );
+    } else {
+      alert("この端末では位置情報が利用できません。");
+    }
+  });
+});

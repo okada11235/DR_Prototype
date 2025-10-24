@@ -189,39 +189,31 @@ export function calculateDistance(path) {
     return dist;
 }
 
-// === 音声コマンドでピンを追加する関数 ===
-async function addVoicePin(lat, lng) {
-  console.log("🔥 Firestoreへ送信開始");
-  try {
-    console.log("🎯 音声ピンを追加:", lat, lng);
-    const marker = new google.maps.Marker({
-      position: { lat, lng },
-      map,
-      icon: "http://maps.google.com/mapfiles/ms/icons/blue-dot.png",
-      title: "仮ピン（未確定）"
-    });
+// === 📍 音声ピン・手動ピン追加（統合版） ===
+window.addVoicePin = async function(lat, lng) {
+  if (!window.map) return;
 
-    // Firestoreへ仮保存
+  // 地図に青ピンを追加
+  new google.maps.Marker({
+    position: { lat, lng },
+    map: window.map,
+    icon: "http://maps.google.com/mapfiles/ms/icons/blue-dot.png",
+  });
+
+  // ✅ Flask経由でpinsコレクションに保存
+  try {
     const res = await fetch("/api/add_voice_pin", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        lat,
-        lng,
-        session_id: window.sessionId || "unknown_session"
-      })
+      body: JSON.stringify({ lat, lng, label: "" }),
     });
-
     const result = await res.json();
     if (result.status === "success") {
-      console.log("✅ Firestoreに仮ピン追加:", result.pin_id);
+      console.log("✅ ピンをpinsコレクションに保存しました");
     } else {
-      console.warn("⚠️ Firestore追加失敗:", result.error);
+      console.warn("⚠️ ピン保存失敗:", result.error);
     }
-  } catch (err) {
-    console.error("❌ 音声ピン追加エラー:", err);
+  } catch (e) {
+    console.error("❌ サーバー保存エラー:", e);
   }
-}
-
-// グローバル登録（record_voice_unified.js から呼べるように）
-window.addVoicePin = addVoicePin;
+};
