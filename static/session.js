@@ -33,6 +33,15 @@ async function requestMotionPermission(callback) {
     }
 }
 
+// 重点ポイント取得機能
+function getFocusPoint() {
+    const focusCheckboxes = document.querySelectorAll('input[name="focus"]:checked');
+    if (focusCheckboxes.length > 0) {
+        return focusCheckboxes[0].value;
+    }
+    return '';
+}
+
 // 記録開始
 export function startSession() {
     console.log('=== startSession function called ===');
@@ -49,6 +58,11 @@ export function startSession() {
         alert('既に記録が開始されています');
         return;
     }
+    
+    // 重点ポイントを取得して保存
+    const focusPoint = getFocusPoint();
+    console.log('Selected focus point:', focusPoint);
+    localStorage.setItem('currentFocusPoint', focusPoint);
     const existingSessionId = localStorage.getItem('activeSessionId');
     if (existingSessionId) {
         console.warn('Active session found in localStorage:', existingSessionId);
@@ -261,9 +275,14 @@ export function endSession(showAlert = true) {
 
 
     console.log("Sending end request to server...");
+    
+    // 重点ポイントを localStorage から取得（fetchより前に取得）
+    const focusPoint = localStorage.getItem('currentFocusPoint') || '';
+    
     flushFinalLogs() // ログを先に送信
         .then(() => {
             console.log("All logs flushed, proceeding with session end request.");
+            
             return fetch('/end', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -274,6 +293,7 @@ export function endSession(showAlert = true) {
                     sudden_brakes: window.suddenBrakes,
                     sharp_turns: window.sharpTurns,
                     speed_violations: window.speedViolations,
+                    focus_point: focusPoint,  // 重点ポイントを追加
                 }),
             });
         })
@@ -305,7 +325,9 @@ export function endSession(showAlert = true) {
                     sharp_turns: window.sharpTurns,
                     speed_violations: window.speedViolations,
                     totalTime: formatTime(elapsedTime),
-                    stability: calculateStability(window.suddenAccels, window.suddenBrakes, window.sharpTurns, distance)
+                    stability: calculateStability(window.suddenAccels, window.suddenBrakes, window.sharpTurns, distance),
+                    session_id: window.sessionId,  // セッションIDを追加
+                    focus_point: focusPoint        // 重点ポイントを追加
                 };
                 console.log("Session data prepared:", sessionData);
                 localStorage.setItem('lastSessionData', JSON.stringify(sessionData));

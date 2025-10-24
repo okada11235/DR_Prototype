@@ -108,6 +108,12 @@
       font-weight: bold;
     }
 
+    /* ローディングアニメーション */
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
     /* === ナビバー統一スタイル（result.htmlと完全一致） === */
     .custom-nav-bar {
       background: #378da0;
@@ -146,51 +152,57 @@
       <div>走行距離<br><span id="total-distance">-- km</span></div>
     </div>
 
+    <!-- AI評価生成中ローディング -->
+    <div id="loading-section" class="section">
+      <h2>🤖 AI評価生成中...</h2>
+      <p style="text-align: center;">
+        <div style="display: inline-block; width: 20px; height: 20px; border: 3px solid #f3f3f3; border-top: 3px solid #2090c2; border-radius: 50%; animation: spin 1s linear infinite; margin-right: 10px;"></div>
+        運転データを分析しています...
+      </p>
+    </div>
+
     <!-- 減速 -->
-    <div class="section">
-      <h2>減速 <span class="score">80点</span></h2>
-      <p>結果：丁寧で安定！</p>
-      <p>詳細：平均前方向G = 0.28、急ブレーキ検知 1回</p>
-      <p class="comment">コメント：ブレーキのタイミング完璧！乗り心地バッチリ👏</p>
+    <div class="section evaluation-section" style="display: none;">
+      <h2>減速</h2>
+      <p>結果：分析中...</p>
+      <p>詳細：データを処理中...</p>
+      <p class="comment">コメント：評価を生成中...</p>
     </div>
 
     <!-- 加速 -->
-    <div class="section">
-      <h2>加速 <span class="score">75点</span></h2>
-      <p>結果：少し強いかな？</p>
-      <p>詳細：平均後方向G = -0.35、急発進検知 2回</p>
-      <p class="comment">コメント：勢いあるドライブ！でももう少し抑えるとよりスムーズ💨</p>
+    <div class="section evaluation-section" style="display: none;">
+      <h2>加速</h2>
+      <p>結果：分析中...</p>
+      <p>詳細：データを処理中...</p>
+      <p class="comment">コメント：評価を生成中...</p>
     </div>
 
     <!-- 旋回 -->
-    <div class="section">
-      <h2>旋回 <span class="score">70点</span></h2>
-      <p>結果：やや急め？</p>
-      <p>詳細：平均横G = 0.32、急カーブ検知 4回</p>
-      <p class="comment">コメント：少し内側に切り込み気味！次はもう少し外へふんわり回ろう！</p>
+    <div class="section evaluation-section" style="display: none;">
+      <h2>旋回</h2>
+      <p>結果：分析中...</p>
+      <p>詳細：データを処理中...</p>
+      <p class="comment">コメント：評価を生成中...</p>
     </div>
 
     <!-- 直進 -->
-    <div class="section">
-      <h2>直進 <span class="score" style="color:#00796b;">90点</span></h2>
-      <p>結果：安定感バッチリ！</p>
-      <p>詳細：平均速度 42km/h、前後左右Gともに安定</p>
-      <p class="comment">コメント：真っすぐ走行キープ！安定感すごい🔥</p>
+    <div class="section evaluation-section" style="display: none;">
+      <h2>直進</h2>
+      <p>結果：分析中...</p>
+      <p>詳細：データを処理中...</p>
+      <p class="comment">コメント：評価を生成中...</p>
     </div>
 
     <!-- 総評 -->
-    <div class="section">
-      <h2>総評 <span class="score" style="color:#4b63d1;">79点</span></h2>
-      <p>今回の総評は79点でした！全体的に安定した運転でした👏<br>
-         特に直進の安定感が素晴らしいです🚗💨<br>
-         旋回時のG変化をもう少し抑えられれば、さらに上級者レベルです🔥</p>
+    <div class="section evaluation-section" style="display: none;">
+      <h2>総評</h2>
+      <p>AI評価を生成中です...</p>
     </div>
 
     <!-- 今回の重点ポイント -->
-    <div class="section">
+    <div class="section evaluation-section" style="display: none;">
       <h2 style="color:#e44d8f;">今回の重点ポイント</h2>
-      <p>今回の重点ポイントは <b>減速</b> でしたが、運転開始前と比べてとても良くなってたよ！👏<br>
-      この調子で次は<b>加速</b>も意識して全体のスコアを伸ばそう🔥</p>
+      <p>重点ポイントの評価を生成中...</p>
     </div>
   </main>
 
@@ -236,27 +248,218 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
 
+        let currentSessionId = null;
+        let selectedFocusPoint = null;
+
         function displaySessionResults(sessionData) {
             document.getElementById('total-time').textContent = sessionData.totalTime || '--:--';
             document.getElementById('total-distance').textContent = (sessionData.distance || 0).toFixed(2) + ' km';
-            // 安定度の項目を削除
+            currentSessionId = sessionData.session_id;
+            selectedFocusPoint = sessionData.focus_point;
         }
 
-        document.addEventListener('DOMContentLoaded', function() {
+        async function generateAndDisplayAIEvaluation(sessionId, focusPoint) {
+            try {
+                console.log('Generating AI evaluation for session:', sessionId, 'focus:', focusPoint);
+                
+                // まず既存の評価を確認
+                const getResponse = await fetch(`/get_ai_evaluation/${sessionId}`);
+                
+                // レスポンスがJSONでない場合（例：認証エラー）のチェック
+                const getContentType = getResponse.headers.get('content-type');
+                if (!getContentType || !getContentType.includes('application/json')) {
+                    console.error('Non-JSON response received:', getResponse.status, getResponse.statusText);
+                    if (getResponse.status === 401 || getResponse.status === 302) {
+                        showErrorMessage('ログインが必要です。ページを更新してログインしてください。');
+                        window.location.href = '/login';
+                        return;
+                    }
+                    // 404の場合は評価が存在しないということなので、新規生成に進む
+                    if (getResponse.status === 404) {
+                        console.log('AI evaluation not found, generating new one...');
+                    } else {
+                        showErrorMessage(`サーバーエラーが発生しました (${getResponse.status})`);
+                        return;
+                    }
+                } else {
+                    const getResult = await getResponse.json();
+                    
+                    if (getResult.status === 'ok') {
+                        // 既に評価が存在する場合は表示
+                        displayAIEvaluation(getResult.evaluation);
+                        return;
+                    }
+                }
+                
+                // 評価が存在しない場合は生成
+                const response = await fetch(`/generate_ai_evaluation/${sessionId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        focus_point: focusPoint || ''
+                    })
+                });
+                
+                // レスポンスがJSONでない場合（例：認証エラー）の処理
+                const postContentType = response.headers.get('content-type');
+                if (!postContentType || !postContentType.includes('application/json')) {
+                    console.error('Non-JSON response received:', response.status, response.statusText);
+                    if (response.status === 401 || response.status === 302) {
+                        showErrorMessage('ログインが必要です。ページを更新してログインしてください。');
+                        window.location.href = '/login';
+                        return;
+                    }
+                    showErrorMessage(`サーバーエラーが発生しました (${response.status})`);
+                    return;
+                }
+                
+                const result = await response.json();
+                
+                if (result.status === 'ok') {
+                    displayAIEvaluation(result.evaluation);
+                } else {
+                    console.error('Failed to generate AI evaluation:', result.message);
+                    showErrorMessage('評価の生成に失敗しました: ' + (result.message || ''));
+                }
+                
+            } catch (error) {
+                console.error('Error generating AI evaluation:', error);
+                showErrorMessage('評価の生成中にエラーが発生しました');
+            }
+        }
+
+        function displayAIEvaluation(evaluation) {
+            const scores = evaluation.scores;
+            const comments = evaluation.comments;
+            
+            // ローディングセクションを非表示
+            const loadingSection = document.getElementById('loading-section');
+            if (loadingSection) {
+                loadingSection.style.display = 'none';
+            }
+            
+            // 評価セクションを表示
+            const evaluationSections = document.querySelectorAll('.evaluation-section');
+            evaluationSections.forEach(section => {
+                section.style.display = 'block';
+            });
+            
+            // スコアと評価内容を更新
+            updateSection('brake', scores.brake, comments.brake);
+            updateSection('accel', scores.accel, comments.accel);
+            updateSection('turn', scores.turn, comments.turn);
+            updateSection('straight', scores.straight, comments.straight);
+            
+            // 総評を更新
+            updateOverallSection(scores.overall, evaluation.overall_comment);
+            
+            // 重点ポイントセクションを更新
+            updateFocusPointSection(evaluation.focus_point, evaluation);
+        }
+
+        function updateSection(sectionType, score, comment) {
+            const sections = document.querySelectorAll('.section h2');
+            for (let section of sections) {
+                const sectionName = section.textContent;
+                let matches = false;
+                
+                if (sectionType === 'brake' && sectionName.includes('減速')) matches = true;
+                else if (sectionType === 'accel' && sectionName.includes('加速')) matches = true;
+                else if (sectionType === 'turn' && sectionName.includes('旋回')) matches = true;
+                else if (sectionType === 'straight' && sectionName.includes('直進')) matches = true;
+                
+                if (matches) {
+                    const parentDiv = section.closest('.section');
+                    
+                    // 内容を更新（スコア表示は削除）
+                    const paragraphs = parentDiv.querySelectorAll('p');
+                    if (paragraphs[0]) paragraphs[0].textContent = `結果：${comment.result}`;
+                    if (paragraphs[1]) paragraphs[1].textContent = `詳細：${comment.detail}`;
+                    if (paragraphs[2]) {
+                        paragraphs[2].className = 'comment';
+                        paragraphs[2].textContent = `コメント：${comment.comment}`;
+                    }
+                    break;
+                }
+            }
+        }
+
+        function updateOverallSection(overallScore, overallComment) {
+            const sections = document.querySelectorAll('.section h2');
+            for (let section of sections) {
+                if (section.textContent.includes('総評')) {
+                    const parentDiv = section.closest('.section');
+                    
+                    const paragraph = parentDiv.querySelector('p');
+                    if (paragraph) {
+                        paragraph.textContent = overallComment;
+                    }
+                    break;
+                }
+            }
+        }
+
+        function updateFocusPointSection(focusPoint, evaluation) {
+            const sections = document.querySelectorAll('.section h2');
+            for (let section of sections) {
+                if (section.textContent.includes('重点ポイント')) {
+                    const parentDiv = section.closest('.section');
+                    const paragraph = parentDiv.querySelector('p');
+                    
+                    if (paragraph && focusPoint) {
+                        // OpenAI評価に重点ポイント評価が含まれている場合はそれを使用
+                        if (evaluation.focus_point_comment) {
+                            paragraph.innerHTML = evaluation.focus_point_comment;
+                        } else {
+                            // フォールバック：シンプルなメッセージ
+                            paragraph.innerHTML = `今回の重点ポイントは <b>${focusPoint}</b> でした！<br>
+                            継続して意識することで、より安全で快適な運転が身につきます🚗�`;
+                        }
+                    } else {
+                        paragraph.innerHTML = '次回は重点ポイントを選んで挑戦してみよう！🚗';
+                    }
+                    break;
+                }
+            }
+        }
+
+        function showErrorMessage(message) {
+            // ローディングセクションを非表示
+            const loadingSection = document.getElementById('loading-section');
+            if (loadingSection) {
+                loadingSection.style.display = 'none';
+            }
+            
+            // エラーメッセージを表示する簡単な方法
+            const mainElement = document.querySelector('.main');
+            const errorDiv = document.createElement('div');
+            errorDiv.style.cssText = 'background-color: #ffebee; color: #c62828; padding: 10px; margin: 20px; border-radius: 5px; text-align: center;';
+            errorDiv.textContent = message;
+            mainElement.appendChild(errorDiv);
+        }
+
+        document.addEventListener('DOMContentLoaded', async function() {
             const savedSessionData = localStorage.getItem('lastSessionData');
             if (savedSessionData) {
                 try {
                     const sessionData = JSON.parse(savedSessionData);
                     displaySessionResults(sessionData);
-                    // 必要に応じてフィードバック内容を動的に変更することもできます
-                    // const feedbackElement = document.getElementById('feedback-text');
-                    // if(sessionData.sudden_brakes > 5) {
-                    //    feedbackElement.textContent = "急ブレーキが非常に多いです！もっと注意しましょう。";
-                    // }
+                    
+                    // AI評価を生成・表示
+                    if (currentSessionId) {
+                        await generateAndDisplayAIEvaluation(currentSessionId, selectedFocusPoint);
+                    }
+                    
                     localStorage.removeItem('lastSessionData');
                 } catch (e) {
                     console.error('Failed to parse saved session data:', e);
+                    showErrorMessage('セッションデータの読み込みに失敗しました');
                 }
+            } else {
+                console.warn('No session data found in localStorage');
+                showErrorMessage('セッションデータが見つかりません');
             }
         });
     </script>
