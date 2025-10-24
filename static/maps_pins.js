@@ -35,7 +35,7 @@ async function initMap() {
   window.currentInfoWindows = {};
 
   try {
-    const res = await fetch(`/api/get_pins`);
+    const res = await fetch(`/api/get_pins_all`);
     const data = await res.json();
 
     if (data.status === "success" && data.pins) {
@@ -53,28 +53,42 @@ async function initMap() {
         marker.id = pin.id;
         window.currentMarkers.push(marker);
 
-        // ✅ ここでチェックボックスを追加
-        const infoContent = `
+        const isOwner = pin.user_id === CURRENT_USER_ID; // ← 現在ログイン中ユーザーID（下で定義）
+
+        let infoContent = `
           <div style="min-width:220px;">
             <label>メモ:</label><br>
             <input type="text" id="memo_${pin.id}" 
                   value="${pin.label || ''}" 
                   placeholder="内容を入力" 
-                  style="width:150px; margin-bottom:4px;"><br>
+                  style="width:150px; margin-bottom:4px;" 
+                  ${isOwner ? "" : "disabled"}><br>
 
             <label style="font-size:13px;">
               <input type="checkbox" id="speak_${pin.id}" 
-                ${pin.speak_enabled ? "checked" : ""}>
+                ${pin.speak_enabled ? "checked" : ""} 
+                ${isOwner ? "" : "disabled"}>
               読み上げる
             </label><br>
+        `;
 
+        if (isOwner) {
+          infoContent += `
             <button onclick="updatePinLabel('${pin.id}')">💾 保存</button>
             <button onclick="deletePin('${pin.id}')"
                     style="margin-left:5px; background-color:#f55; color:#fff; border:none; padding:3px 8px; border-radius:4px;">
                     🗑 削除
             </button>
+          `;
+        }
+
+        infoContent += `
+            <div style="font-size:12px; color:#666; margin-top:6px;">
+              作成者: ${pin.user_name || "不明"}
+            </div>
           </div>
         `;
+
 
         const info = new google.maps.InfoWindow({ content: infoContent });
 
@@ -92,7 +106,7 @@ async function initMap() {
       console.log("📍 Firestoreピン読込完了:", data.pins.length);
     }
   } catch (err) {
-    console.error("❌ /api/get_pins error:", err);
+    console.error("❌ /api/get_pins_all error:", err);
   }
 
   // === 🖱️ マップクリックで新しいピンを追加 ===
@@ -124,6 +138,7 @@ async function initMap() {
         const pinId = result.pin_id; // ← views.py 側で pin_id を返すようにしておくこと
         const infoContent = `
           <div style="min-width:220px;">
+            <div style="font-size:12px; color:#666;">作成者: ${pin.user_id}</div>
             <label>メモ:</label><br>
             <input type="text" id="memo_${pinId}" 
                   value="" 

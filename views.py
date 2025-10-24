@@ -384,7 +384,37 @@ def get_pins():
             d = doc.to_dict()
             d["id"] = doc.id
             pins.append(d)
-        return jsonify({"status": "success", "pins": pins})  # ✅ status追加！
+        return jsonify({"status": "success", "pins": pins})
+    except Exception as e:
+        return jsonify({"status": "error", "error": str(e)}), 500
+    
+@views_bp.route('/api/get_pins_all')
+@login_required
+def get_pins_all():
+    try:
+        pins = []
+        user_cache = {}
+
+        # 🔹 pins を全件取得
+        docs = db.collection("pins").stream()
+
+        for doc in docs:
+            d = doc.to_dict()
+            d["id"] = doc.id
+            uid = d.get("user_id", None)
+
+            # 🔹 user_id → user_name をキャッシュ経由で取得
+            if uid:
+                if uid not in user_cache:
+                    user_doc = db.collection("users").document(uid).get()
+                    user_cache[uid] = user_doc.to_dict().get("username") if user_doc.exists else "不明なユーザー"
+                d["user_name"] = user_cache[uid]
+            else:
+                d["user_name"] = "匿名ユーザー"
+
+            pins.append(d)
+
+        return jsonify({"status": "success", "pins": pins})
     except Exception as e:
         return jsonify({"status": "error", "error": str(e)}), 500
     
