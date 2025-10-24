@@ -188,3 +188,40 @@ export function calculateDistance(path) {
     }
     return dist;
 }
+
+// === 音声コマンドでピンを追加する関数 ===
+async function addVoicePin(lat, lng) {
+  console.log("🔥 Firestoreへ送信開始");
+  try {
+    console.log("🎯 音声ピンを追加:", lat, lng);
+    const marker = new google.maps.Marker({
+      position: { lat, lng },
+      map,
+      icon: "http://maps.google.com/mapfiles/ms/icons/blue-dot.png",
+      title: "仮ピン（未確定）"
+    });
+
+    // Firestoreへ仮保存
+    const res = await fetch("/api/add_voice_pin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        lat,
+        lng,
+        session_id: window.sessionId || "unknown_session"
+      })
+    });
+
+    const result = await res.json();
+    if (result.status === "success") {
+      console.log("✅ Firestoreに仮ピン追加:", result.pin_id);
+    } else {
+      console.warn("⚠️ Firestore追加失敗:", result.error);
+    }
+  } catch (err) {
+    console.error("❌ 音声ピン追加エラー:", err);
+  }
+}
+
+// グローバル登録（record_voice_unified.js から呼べるように）
+window.addVoicePin = addVoicePin;

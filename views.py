@@ -327,4 +327,109 @@ def replay_active(session_id):
         session_start=session_start
     )
 
+# === ピン管理ページ ===
+@views_bp.route('/map_editor')
+@login_required
+def map_editor():
+    return render_template('map_editor.html')
 
+
+# === Firestore API: ピン保存 ===
+from flask import jsonify
+
+@views_bp.route('/api/save_pin', methods=['POST'])
+@login_required
+def save_pin():
+    data = request.json
+    if not data:
+        return jsonify({"error": "Invalid data"}), 400
+
+    try:
+        new_pin = {
+            "user_id": current_user.id,
+            "lat": data.get("lat"),
+            "lng": data.get("lng"),
+            "label": data.get("label", ""),
+            "speak_enabled": True,   # 🔊 デフォルトON
+            "created_at": datetime.now(JST)
+        }
+        db.collection("pins").add(new_pin)
+        return jsonify({"status": "success"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# === Firestore API: ピン一覧取得 ===
+@views_bp.route('/api/get_pins')
+@login_required
+def get_pins():
+    try:
+        pins = []
+        docs = db.collection("pins").where("user_id", "==", current_user.id).stream()
+        for doc in docs:
+            d = doc.to_dict()
+            d["id"] = doc.id
+            pins.append(d)
+        return jsonify({"pins": pins})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    
+# === Firestore API: ピン削除 ===
+@views_bp.route('/api/delete_pin', methods=['POST'])
+@login_required
+def delete_pin():
+    data = request.json
+    pin_id = data.get("id")
+    if not pin_id:
+        return jsonify({"error": "Missing pin ID"}), 400
+
+    try:
+        db.collection("pins").document(pin_id).delete()
+        return jsonify({"status": "success"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# === Firestore API: ピン編集 ===
+@views_bp.route('/api/update_pin', methods=['POST'])
+@login_required
+def update_pin():
+    data = request.json
+    pin_id = data.get("id")
+    if not pin_id:
+        return jsonify({"error": "Missing pin ID"}), 400
+
+    try:
+        update_data = {}
+        if "label" in data:
+            update_data["label"] = data["label"]
+        if "speak_enabled" in data:
+            update_data["speak_enabled"] = bool(data["speak_enabled"])
+
+        db.collection("pins").document(pin_id).update(update_data)
+        return jsonify({"status": "success"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# === 音声ピン追加API ===
+@views_bp.route('/api/add_voice_pin', methods=['POST'])
+@login_required
+def add_voice_pin():
+    data = request.json
+    try:
+        lat = data.get("lat")
+        lng = data.get("lng")
+        session_id = data.get("session_id", "unknown_session")
+
+        new_pin = {
+            "lat": lat,
+            "lng": lng,
+            "created_at": datetime.now(JST),
+            "confirmed": False,
+            "label": "",
+            "user_id": current_user.id,
+        }
+
+        doc_ref = db.collection("sessions").document(session_id).collection("voice_pins").add(new_pin)
+        return jsonify({"status": "success", "pin_id": doc_ref[1].id})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500

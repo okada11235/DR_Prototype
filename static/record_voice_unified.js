@@ -148,6 +148,24 @@ if (isIOS) {
         console.log("✅ キーワード「録音」を検出 → 録音開始");
         iosRecordOnce();
       }
+
+      // ✅ 追加：「ピン」で現在地に仮ピンを立てる
+      if (transcript.includes("ピン") || transcript.includes("ぴん")) {
+        console.log("📍 音声コマンド「ピン」検出 → 現在地取得中...");
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition((pos) => {
+            const { latitude, longitude } = pos.coords;
+            console.log("📍 現在地:", latitude, longitude);
+            if (window.addVoicePin) {
+              window.addVoicePin(latitude, longitude);
+            } else {
+              console.warn("⚠️ addVoicePin 関数が未定義です");
+            }
+          });
+        } else {
+          console.warn("❌ 現在地取得に未対応の環境");
+        }
+      }
     };
 
     recognition.onend = () => {
@@ -172,10 +190,56 @@ else if (window.SpeechRecognition || window.webkitSpeechRecognition) {
   recognition.onresult = async (event) => {
     const text = event.results[event.results.length - 1][0].transcript.trim();
     console.log("🎤 認識結果:", text);
+
+    // === 録音トリガー ===
     if (text.includes("録音") || text.includes("ろくおん")) {
       await startRecordingAndUpload();
     }
+
+    // === ピントリガー ===
+    if (text.includes("ピン") || text.includes("ぴん")) {
+      console.log("📍 音声コマンド「ピン」検出 → 現在地取得開始...");
+
+      if (navigator.geolocation) {
+        const geoOptions = {
+          enableHighAccuracy: false,
+          timeout: 20000,
+          maximumAge: 0
+        };
+
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const { latitude, longitude } = pos.coords;
+            console.log("✅ 現在地取得成功:", latitude, longitude);
+
+            // 🔊 効果音を鳴らす
+            try {
+              const audio = new Audio("/static/audio/pin_set.wav");
+              audio.volume = 0.8;
+              audio.play().then(() => console.log("🔈 ピン設置音を再生しました"));
+            } catch (e) {
+              console.error("❌ 効果音エラー:", e);
+            }
+
+            // 🔹 ピン追加
+            if (window.addVoicePin) {
+              console.log("📍 addVoicePin 呼び出し");
+              window.addVoicePin(latitude, longitude);
+            } else {
+              console.warn("⚠️ addVoicePin 関数が未定義です");
+            }
+          },
+          (err) => {
+            console.error("❌ 現在地取得エラー:", err);
+          },
+          geoOptions
+        );
+      } else {
+        console.warn("❌ navigator.geolocation 未対応");
+      }
+    }
   };
+
   recognition.onend = () => recognition.start();
   recognition.start();
   console.log("✅ Android 音声認識起動");
@@ -232,3 +296,5 @@ async function startRecordingAndUpload() {
 
 window.playStartBeep = playStartBeep;
 window.playEndBeep = playEndBeep;
+
+
