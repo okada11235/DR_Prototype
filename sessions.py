@@ -5,6 +5,7 @@ from firebase_admin import firestore
 from datetime import datetime
 from config import JST
 from models import db
+from ai_evaluation import analyze_session_data, save_evaluation_to_session
 
 # Blueprintの作成
 sessions_bp = Blueprint('sessions', __name__)
@@ -97,7 +98,8 @@ def end():
                 'sudden_brakes': int(data.get('sudden_brakes', 0)),
                 'sharp_turns': int(data.get('sharp_turns', 0)),
                 'stability': float(data.get('stability', 0.0)),
-                'speed_violations': int(data.get('speed_violations', 0))
+                'speed_violations': int(data.get('speed_violations', 0)),
+                'focus_point': data.get('focus_point', '')  # 重点ポイントを保存
             })
             
             print(f"Session {session_id} ended successfully")
@@ -573,6 +575,75 @@ def detail_result_page(session_id):
                            detail_scores=detail_scores,
                            comment_text=comment_text,
                            display_error=None)
+
+# AI評価生成エンドポイント
+@sessions_bp.route('/generate_ai_evaluation/<session_id>', methods=['POST'])
+@login_required
+def generate_ai_evaluation(session_id):
+    """
+    セッションデータを元に生成AIで運転評価を作成
+    """
+    try:
+        # セッションの権限確認
+        session_ref = db.collection('sessions').document(session_id)
+        session_doc = session_ref.get()
+        
+        if not session_doc.exists:
+            return jsonify({'status': 'error', 'message': 'Session not found'}), 404
+            
+        session_data = session_doc.to_dict()
+        if session_data.get('user_id') != current_user.id:
+            return jsonify({'status': 'error', 'message': 'Permission denied'}), 403
+            
+        # 重点ポイントを取得
+        request_data = request.get_json() or {}
+        focus_point = request_data.get('focus_point', '')
+        
+        print(f"Generating AI evaluation for session {session_id}, focus: {focus_point}")
+        
+        # AI評価を生成（重点ポイントを渡す）
+        evaluation = analyze_session_data(session_id, current_user.id, focus_point)
+        
+        if evaluation is None:
+            return jsonify({'status': 'error', 'message': 'Failed to generate evaluation'}), 500
+        
+        # Firestoreに保存
+        if save_evaluation_to_session(session_id, current_user.id, evaluation):
+            return jsonify({'status': 'ok', 'evaluation': evaluation})
+        else:
+            return jsonify({'status': 'error', 'message': 'Failed to save evaluation'}), 500
+            
+    except Exception as e:
+        print(f"Error generating AI evaluation: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+# AI評価取得エンドポイント
+@sessions_bp.route('/get_ai_evaluation/<session_id>')
+@login_required
+def get_ai_evaluation(session_id):
+    """
+    保存済みのAI評価を取得
+    """
+    try:
+        session_ref = db.collection('sessions').document(session_id)
+        session_doc = session_ref.get()
+        
+        if not session_doc.exists:
+            return jsonify({'status': 'error', 'message': 'Session not found'}), 404
+            
+        session_data = session_doc.to_dict()
+        if session_data.get('user_id') != current_user.id:
+            return jsonify({'status': 'error', 'message': 'Permission denied'}), 403
+        
+        ai_evaluation = session_data.get('ai_evaluation')
+        if ai_evaluation:
+            return jsonify({'status': 'ok', 'evaluation': ai_evaluation})
+        else:
+            return jsonify({'status': 'not_found', 'message': 'AI evaluation not found'})
+            
+    except Exception as e:
+        print(f"Error getting AI evaluation: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 def get_audio_records(session_id):
     """セッションに紐づく録音音声一覧を取得"""
