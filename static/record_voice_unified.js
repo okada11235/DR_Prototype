@@ -134,12 +134,17 @@ if (isIOS) {
           
           // 現在時刻を取得してフォーマット
           const now = new Date();
+          const dateString = now.toLocaleDateString('ja-JP', {
+            year: 'numeric',
+            month: '2-digit', 
+            day: '2-digit'
+          });
           const timeString = now.toLocaleTimeString('ja-JP', { 
             hour: '2-digit', 
             minute: '2-digit', 
             second: '2-digit' 
           });
-          const label = `録音開始 ${timeString}`;
+          const label = `録音ピン ${dateString} ${timeString}`;
           
           if (window.addVoicePinWithOptions) {
             // 読み上げ無効でピンを作成
@@ -189,10 +194,27 @@ if (isIOS) {
           navigator.geolocation.getCurrentPosition((pos) => {
             const { latitude, longitude } = pos.coords;
             console.log("📍 現在地:", latitude, longitude);
-            if (window.addVoicePin) {
-              window.addVoicePin(latitude, longitude);
+            
+            // 現在日時を取得してフォーマット
+            const now = new Date();
+            const dateString = now.toLocaleDateString('ja-JP', {
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit'
+            });
+            const timeString = now.toLocaleTimeString('ja-JP', { 
+              hour: '2-digit', 
+              minute: '2-digit', 
+              second: '2-digit' 
+            });
+            const label = `音声ピン ${dateString} ${timeString}`;
+            
+            if (window.addVoicePinWithOptions) {
+              // 読み上げ無効でピンを作成
+              window.addVoicePinWithOptions(latitude, longitude, label, false, "voice_command");
+              console.log("✅ 音声ピンを作成しました:", label);
             } else {
-              console.warn("⚠️ addVoicePin 関数が未定義です");
+              console.warn("⚠️ addVoicePinWithOptions 関数が未定義です");
             }
           });
         } else {
@@ -254,12 +276,28 @@ else if (window.SpeechRecognition || window.webkitSpeechRecognition) {
               console.error("❌ 効果音エラー:", e);
             }
 
+            // 現在日時を取得してフォーマット
+            const now = new Date();
+            const dateString = now.toLocaleDateString('ja-JP', {
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit'
+            });
+            const timeString = now.toLocaleTimeString('ja-JP', { 
+              hour: '2-digit', 
+              minute: '2-digit', 
+              second: '2-digit' 
+            });
+            const label = `音声ピン ${dateString} ${timeString}`;
+
             // 🔹 ピン追加
-            if (window.addVoicePin) {
-              console.log("📍 addVoicePin 呼び出し");
-              window.addVoicePin(latitude, longitude);
+            if (window.addVoicePinWithOptions) {
+              console.log("📍 addVoicePinWithOptions 呼び出し");
+              // 読み上げ無効でピンを作成
+              window.addVoicePinWithOptions(latitude, longitude, label, false, "voice_command");
+              console.log("✅ 音声ピンを作成しました:", label);
             } else {
-              console.warn("⚠️ addVoicePin 関数が未定義です");
+              console.warn("⚠️ addVoicePinWithOptions 関数が未定義です");
             }
           },
           (err) => {
@@ -326,14 +364,19 @@ async function startRecordingAndUpload() {
         const { latitude, longitude } = pos.coords;
         console.log("📍 録音開始時の現在地:", latitude, longitude);
         
-        // 現在時刻を取得してフォーマット
+        // 現在日時を取得してフォーマット
         const now = new Date();
+        const dateString = now.toLocaleDateString('ja-JP', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        });
         const timeString = now.toLocaleTimeString('ja-JP', { 
           hour: '2-digit', 
           minute: '2-digit', 
           second: '2-digit' 
         });
-        const label = `録音開始 ${timeString}`;
+        const label = `録音ピン ${dateString} ${timeString}`;
         
         if (window.addVoicePinWithOptions) {
           // 読み上げ無効でピンを作成

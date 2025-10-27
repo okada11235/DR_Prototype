@@ -42,6 +42,7 @@ async function initMap() {
       data.pins.forEach((pin) => {
         const isTemporary = !pin.label || pin.label.trim() === "";
         const isVoiceRecording = pin.source === "voice_recording";
+        const isVoiceCommand = pin.source === "voice_command";
         const isEdited = pin.edited || false; // 編集済みフラグ
 
         let iconUrl;
@@ -49,6 +50,8 @@ async function initMap() {
           iconUrl = "http://maps.google.com/mapfiles/ms/icons/blue-dot.png"; // 青：未入力
         } else if (isVoiceRecording && !isEdited) {
           iconUrl = "http://maps.google.com/mapfiles/ms/icons/green-dot.png"; // 緑：録音作成・未編集
+        } else if (isVoiceCommand && !isEdited) {
+          iconUrl = "http://maps.google.com/mapfiles/ms/icons/yellow-dot.png"; // 黄：音声ピン・未編集
         } else {
           iconUrl = "http://maps.google.com/mapfiles/ms/icons/red-dot.png"; // 赤：編集済み
         }

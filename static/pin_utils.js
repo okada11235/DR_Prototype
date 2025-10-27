@@ -46,10 +46,15 @@ window.addVoicePinWithOptions = async function(lat, lng, label = "", speakEnable
       console.log("✅ Firestoreにピン追加:", result.pin_id);
       // 🔵 マップがある場合のみ表示
       if (window.map && google?.maps) {
-        // 録音ピンの場合は緑色、それ以外は青色
-        const iconUrl = source === "voice_recording" 
-          ? "http://maps.google.com/mapfiles/ms/icons/green-dot.png"
-          : "http://maps.google.com/mapfiles/ms/icons/blue-dot.png";
+        // ピンのソースに応じて色を決定
+        let iconUrl;
+        if (source === "voice_recording") {
+          iconUrl = "http://maps.google.com/mapfiles/ms/icons/green-dot.png"; // 緑：録音ピン
+        } else if (source === "voice_command") {
+          iconUrl = "http://maps.google.com/mapfiles/ms/icons/yellow-dot.png"; // 黄：音声ピン
+        } else {
+          iconUrl = "http://maps.google.com/mapfiles/ms/icons/blue-dot.png"; // 青：その他
+        }
           
         new google.maps.Marker({
           position: { lat, lng },
