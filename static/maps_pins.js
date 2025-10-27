@@ -41,13 +41,22 @@ async function initMap() {
     if (data.status === "success" && data.pins) {
       data.pins.forEach((pin) => {
         const isTemporary = !pin.label || pin.label.trim() === "";
+        const isVoiceRecording = pin.source === "voice_recording";
+        const isEdited = pin.edited || false; // 編集済みフラグ
+
+        let iconUrl;
+        if (isTemporary) {
+          iconUrl = "http://maps.google.com/mapfiles/ms/icons/blue-dot.png"; // 青：未入力
+        } else if (isVoiceRecording && !isEdited) {
+          iconUrl = "http://maps.google.com/mapfiles/ms/icons/green-dot.png"; // 緑：録音作成・未編集
+        } else {
+          iconUrl = "http://maps.google.com/mapfiles/ms/icons/red-dot.png"; // 赤：編集済み
+        }
 
         const marker = new google.maps.Marker({
           position: { lat: pin.lat, lng: pin.lng },
           map,
-          icon: isTemporary
-            ? "http://maps.google.com/mapfiles/ms/icons/blue-dot.png"
-            : "http://maps.google.com/mapfiles/ms/icons/red-dot.png",
+          icon: iconUrl,
           title: pin.label || "(未入力ピン)",
         });
         marker.id = pin.id;

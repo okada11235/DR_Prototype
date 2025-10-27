@@ -124,6 +124,39 @@ if (isIOS) {
       playStartBeep();
       recorder.start();
       console.log("🎙 録音開始");
+      
+      // 🔹 録音開始時に現在地にピンを作成
+      console.log("📍 録音開始検知 → 現在地ピン作成");
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition((pos) => {
+          const { latitude, longitude } = pos.coords;
+          console.log("📍 録音開始時の現在地:", latitude, longitude);
+          
+          // 現在時刻を取得してフォーマット
+          const now = new Date();
+          const timeString = now.toLocaleTimeString('ja-JP', { 
+            hour: '2-digit', 
+            minute: '2-digit', 
+            second: '2-digit' 
+          });
+          const label = `録音開始 ${timeString}`;
+          
+          if (window.addVoicePinWithOptions) {
+            // 読み上げ無効でピンを作成
+            window.addVoicePinWithOptions(latitude, longitude, label, false, "voice_recording");
+            console.log("✅ 録音開始ピンを作成しました:", label);
+          } else {
+            console.warn("⚠️ addVoicePinWithOptions 関数が未定義です");
+          }
+        }, (err) => {
+          console.error("❌ 録音開始時の現在地取得エラー:", err);
+        }, {
+          enableHighAccuracy: false,
+          timeout: 10000,
+          maximumAge: 30000
+        });
+      }
+      
       setTimeout(() => recorder.stop(), 5000);
 
     } catch (err) {
@@ -285,6 +318,39 @@ async function startRecordingAndUpload() {
     playStartBeep();
     recorder.start();
     console.log("🎙 録音開始");
+    
+    // 🔹 録音開始時に現在地にピンを作成
+    console.log("📍 録音開始検知 → 現在地ピン作成");
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition((pos) => {
+        const { latitude, longitude } = pos.coords;
+        console.log("📍 録音開始時の現在地:", latitude, longitude);
+        
+        // 現在時刻を取得してフォーマット
+        const now = new Date();
+        const timeString = now.toLocaleTimeString('ja-JP', { 
+          hour: '2-digit', 
+          minute: '2-digit', 
+          second: '2-digit' 
+        });
+        const label = `録音開始 ${timeString}`;
+        
+        if (window.addVoicePinWithOptions) {
+          // 読み上げ無効でピンを作成
+          window.addVoicePinWithOptions(latitude, longitude, label, false, "voice_recording");
+          console.log("✅ 録音開始ピンを作成しました:", label);
+        } else {
+          console.warn("⚠️ addVoicePinWithOptions 関数が未定義です");
+        }
+      }, (err) => {
+        console.error("❌ 録音開始時の現在地取得エラー:", err);
+      }, {
+        enableHighAccuracy: false,
+        timeout: 10000,
+        maximumAge: 30000
+      });
+    }
+    
     setTimeout(() => {
       recorder.stop();
       playEndBeep();   // ← 終了音
