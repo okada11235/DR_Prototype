@@ -285,7 +285,7 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now) {
   const isBraking = gz >= 0.2;
   const isAccelerating = gz <= -0.2;
   const isTurning = absSide >= 0.18;
-  const isStable = speed >= 30 && absFwd < 0.15 && absSide < 0.15 && Math.abs(rotZ) < 0.05;
+  const isStable = speed >= 30 && absFwd < 0.15 && absSide < 0.15 && Math.abs(rotZ) < 2;
 
   // 1. 条件判定とステート更新
   if (isTurning && absFwd < 0.2 && speed >= 15) {
