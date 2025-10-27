@@ -313,18 +313,16 @@
     });
   </script>
   <script type="module" src="{{ url_for('static', filename='main.js') }}"></script>
-  <script type="module">
-    import { initPriorityMap } from "{{ url_for('static', filename='priority_map.js') }}";
+  <!-- ✅ priority_map.js を普通のスクリプトとして読み込む -->
+  <script src="{{ url_for('static', filename='priority_map.js') }}"></script>
 
-    // Flaskから渡されたユーザーIDをJS側で利用可能にする
+  <script>
+    // Flaskから渡されたユーザーIDをグローバル変数に設定
     window.FLASK_USER_ID = "{{ user_id }}";
     console.log("👤 Flask user_id:", window.FLASK_USER_ID);
-
-    // ✅ Maps API読み込みが終わってから初期化する
-    window.initPriorityMap = initPriorityMap;
   </script>
 
-  <!-- ✅ Google Maps APIに callback=initPriorityMap を付ける -->
+  <!-- ✅ Google Maps APIをcallbackで実行 -->
   <script
     src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDU9txYivjPCIe66l6bPYsPifQKcQxjnrA&callback=initPriorityMap"
     async
