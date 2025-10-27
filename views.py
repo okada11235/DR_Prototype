@@ -448,6 +448,9 @@ def update_pin():
             update_data["label"] = data["label"]
         if "speak_enabled" in data:
             update_data["speak_enabled"] = bool(data["speak_enabled"])
+        
+        # ピンが編集されたことを記録
+        update_data["edited"] = True
 
         db.collection("pins").document(pin_id).update(update_data)
         return jsonify({"status": "success"})
@@ -485,6 +488,42 @@ def add_voice_pin():
         return jsonify({"status": "success", "pin_id": pin_id})
     except Exception as e:
         print("Error in add_voice_pin:", e)
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+# === 🎙 音声録音時のピン設置API ===
+@views_bp.route('/api/add_voice_pin', methods=['POST'])
+@login_required
+def add_voice_recording_pin():
+    """
+    音声録音時にピンを設置するAPI。
+    speak_enabledパラメータに対応。
+    """
+    data = request.json
+    try:
+        lat = data.get("lat")
+        lng = data.get("lng")
+        label = data.get("label", "")
+        speak_enabled = data.get("speak_enabled", True)  # デフォルトはTrue
+        source = data.get("source", "voice")  # デフォルトは"voice"
+
+        pin_data = {
+            "user_id": current_user.id,
+            "lat": lat,
+            "lng": lng,
+            "label": label,
+            "speak_enabled": speak_enabled,
+            "created_at": datetime.now(JST),
+            "source": source,
+            "edited": False,  # 初期状態は未編集
+        }
+
+        # ✅ pinsコレクション直下に保存
+        doc_ref, _ = db.collection("pins").add(pin_data)
+        pin_id = doc_ref.id
+
+        return jsonify({"status": "success", "pin_id": pin_id})
+    except Exception as e:
+        print("Error in add_voice_recording_pin:", e)
         return jsonify({"status": "error", "error": str(e)}), 500
 
 # === 🗺️ マップ画面ピン追加API ===
