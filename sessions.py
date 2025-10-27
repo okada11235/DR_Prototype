@@ -1,10 +1,11 @@
 # sessions.py
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, render_template
 from flask_login import login_required, current_user
 from firebase_admin import firestore
 from datetime import datetime
 from config import JST
 from models import db
+from ai_evaluation import analyze_session_data, save_evaluation_to_session
 
 # Blueprintの作成
 sessions_bp = Blueprint('sessions', __name__)
@@ -97,7 +98,8 @@ def end():
                 'sudden_brakes': int(data.get('sudden_brakes', 0)),
                 'sharp_turns': int(data.get('sharp_turns', 0)),
                 'stability': float(data.get('stability', 0.0)),
-                'speed_violations': int(data.get('speed_violations', 0))
+                'speed_violations': int(data.get('speed_violations', 0)),
+                'focus_point': data.get('focus_point', '')  # 重点ポイントを保存
             })
             
             print(f"Session {session_id} ended successfully")
@@ -210,9 +212,6 @@ def log_gps_bulk():
                 'latitude': float(latitude),
                 'longitude': float(longitude),
                 'speed': float(log.get('speed', 0.0)),
-                'g_x': float(log.get('g_x', 0.0)),
-                'g_y': float(log.get('g_y', 0.0)),
-                'g_z': float(log.get('g_z', 0.0)),
                 'event': log.get('event', 'normal'),
                 'timestamp': ts_dt,       # Firestore標準のTimestamp型
                 'timestamp_ms': ts_ms     # スマホ内部のミリ秒値をそのまま保存
@@ -271,6 +270,8 @@ def log_g_only():
                 'g_x': float(log.get('g_x', 0.0)),
                 'g_y': float(log.get('g_y', 0.0)),
                 'g_z': float(log.get('g_z', 0.0)),
+                'speed': float(log.get('speed', 0.0)),
+                'event': log.get('event', 'normal'),
                 'timestamp': ts_dt,       # Firestore標準のTimestamp型
                 'timestamp_ms': ts_ms     # スマホ内部のミリ秒値をそのまま保存
             })
@@ -281,6 +282,59 @@ def log_g_only():
         return jsonify({'status': 'ok', 'saved_count': saved_count})
     except Exception as e:
         print(f"Error saving G logs: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+    
+# 平滑化Gログ一括保存（avg_g_logs）
+@sessions_bp.route('/log_avg_g_bulk', methods=['POST'])
+@login_required
+def log_avg_g_bulk():
+    data = request.get_json()
+    session_id = data.get('session_id')
+    avg_g_logs = data.get('avg_g_logs', [])
+    
+    print(f"Received AVG-G bulk save request for session {session_id}")
+    print(f"Avg G logs count: {len(avg_g_logs)}")
+    if avg_g_logs:
+        print(f"First avg G log sample: {avg_g_logs[0]}")
+
+    if not session_id:
+        return jsonify({'status': 'error', 'message': 'Missing session_id'}), 400
+
+    # セッション確認
+    session_ref = db.collection('sessions').document(session_id)
+    session_doc = session_ref.get()
+    if not session_doc.exists or session_doc.to_dict().get('user_id') != current_user.id:
+        return jsonify({'status': 'error', 'message': 'Permission denied or session not found'}), 403
+
+    try:
+        batch = db.batch()
+        avg_collection = session_ref.collection('avg_g_logs')
+        saved_count = 0
+        
+        for log in avg_g_logs:
+            ts_ms = log.get('timestamp')
+            if ts_ms:
+                ts_dt = datetime.fromtimestamp(ts_ms / 1000.0, JST)
+            else:
+                ts_dt = datetime.now(JST)
+
+            doc_ref = avg_collection.document()
+            batch.set(doc_ref, {
+                'g_x': float(log.get('g_x', 0.0)),
+                'g_y': float(log.get('g_y', 0.0)),
+                'g_z': float(log.get('g_z', 0.0)),
+                'speed': float(log.get('speed', 0.0)),
+                'event': log.get('event', 'normal'),
+                'timestamp': ts_dt,
+                'timestamp_ms': ts_ms
+            })
+            saved_count += 1
+        
+        batch.commit()
+        print(f"✅ Successfully saved {saved_count} avg G logs to session {session_id}")
+        return jsonify({'status': 'ok', 'saved_count': saved_count})
+    except Exception as e:
+        print(f"Error saving avg G logs: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 # 反省文保存
@@ -389,3 +443,246 @@ def test_gps_save(session_id):
     except Exception as e:
         print(f"Error in test_gps_save: {e}")
         return jsonify({'error': str(e)}), 500
+    
+# 既存importに追加
+from flask import render_template
+import random
+
+# ==== 一覧（全体スコア＆セッション一覧） ====
+from datetime import timezone, timedelta
+JST = timezone(timedelta(hours=9))
+
+@sessions_bp.route('/results')
+@login_required
+def results_page():
+    # Firestoreなどからセッション一覧を取得
+    sessions_ref = firestore.client().collection('sessions').where('user_id', '==', current_user.id)
+    docs = sessions_ref.order_by('start_time', direction=firestore.Query.DESCENDING).stream()
+
+    sessions = []
+    for doc in docs:
+        data = doc.to_dict()
+        data['id'] = doc.id
+
+        # 🔸 Firestore Timestamp → Python datetime（JST変換）
+        if data.get('start_time'):
+            data['start_time'] = data['start_time'].astimezone(JST)
+        if data.get('end_time'):
+            data['end_time'] = data['end_time'].astimezone(JST)
+
+        sessions.append(type('SessionObj', (object,), data))
+
+    # 🔸 平均スコアなどを計算 or ダミー生成
+    overall_scores = {
+        "減速": 80,
+        "加速": 78,
+        "旋回": 83,
+        "直進": 85,
+        "総評": 82
+    }
+
+    return render_template(
+        'result.html',
+        sessions=sessions,
+        overall_scores=overall_scores
+    )
+
+# ==== 詳細（個別セッション：実データでグラフ＆地図を描画） ====
+@sessions_bp.route('/results/<session_id>')
+@login_required
+def detail_result_page(session_id):
+    """
+    個別セッションのGPS/avg_g_logsを取得して、detail_result.html へ。
+    グラフ・地図・イベントマーカー・同期ズームを完全動作させる。
+    """
+    session_ref = db.collection('sessions').document(session_id)
+    session_doc = session_ref.get()
+    if not session_doc.exists:
+        return render_template('detail_result.html',
+                               session=None,
+                               gps_logs=[],
+                               avg_g_logs=[],
+                               display_error="このセッションは存在しません。")
+
+    s = session_doc.to_dict()
+    if s.get('user_id') != current_user.id:
+        return render_template('detail_result.html',
+                               session=None,
+                               gps_logs=[],
+                               avg_g_logs=[],
+                               display_error="権限がありません。")
+    
+    # 🔹 ここで JST 変換を追加！
+    if s.get('start_time'):
+        s['start_time'] = s['start_time'].astimezone(JST)
+    if s.get('end_time'):
+        s['end_time'] = s['end_time'].astimezone(JST)
+
+    # GPSログ
+    gps_logs = []
+    for gdoc in session_ref.collection('gps_logs').order_by('timestamp').stream():
+        gd = gdoc.to_dict()
+        gps_logs.append({
+            "latitude": float(gd.get("latitude", 0.0)),
+            "longitude": float(gd.get("longitude", 0.0)),
+            "speed": float(gd.get("speed", 0.0)),
+            "event": gd.get("event", "normal"),
+            # Firestore Timestamp と 端末msを両方運ぶ（描画側は timestamp_ms を優先）
+            "timestamp": int(gd.get("timestamp").timestamp()*1000) if gd.get("timestamp") else None,
+            "timestamp_ms": gd.get("timestamp_ms"),
+        })
+
+    # 平滑化Gログ（avg_g_logs）
+    avg_g_logs = []
+    for adoc in session_ref.collection('avg_g_logs').order_by('timestamp').stream():
+        ad = adoc.to_dict()
+        avg_g_logs.append({
+            "g_x": float(ad.get("g_x", 0.0)),
+            "g_y": float(ad.get("g_y", 0.0)),
+            "g_z": float(ad.get("g_z", 0.0)),
+            "speed": float(ad.get("speed", 0.0)),
+            "event": ad.get("event", "normal"),
+            "timestamp": int(ad.get("timestamp").timestamp()*1000) if ad.get("timestamp") else None,
+            "timestamp_ms": ad.get("timestamp_ms"),
+        })
+
+    # 画面ヘッダ表示用（未保存値はN/Aに）
+    session_view = {
+        "id": session_id,
+        "start_time": s.get("start_time"),
+        "end_time": s.get("end_time"),
+        "distance": s.get("distance"),
+        "status": s.get("status", "unknown"),
+        "sudden_brakes": s.get("sudden_brakes"),
+        "sudden_accels": s.get("sudden_accels"),
+        "sharp_turns": s.get("sharp_turns"),
+    }
+
+    # コメント（擬似）
+    comment_text = "全体的に安定した運転でした！特に直進の安定感が素晴らしいです👏 旋回時のG変化をもう少し抑えれば、さらに上級者レベルです🔥"
+
+    # スコア（擬似）
+    detail_scores = {"減速": 80, "加速": 75, "旋回": 70, "直進": 90, "総評": 79}
+
+    # 🔹 録音音声を取得
+    audio_records = get_audio_records(session_id)
+
+    return render_template('detail_result.html',
+                           session=session_view,
+                           gps_logs=gps_logs,
+                           avg_g_logs=avg_g_logs,
+                           audio_records=audio_records,
+                           detail_scores=detail_scores,
+                           comment_text=comment_text,
+                           display_error=None)
+
+# AI評価生成エンドポイント
+@sessions_bp.route('/generate_ai_evaluation/<session_id>', methods=['POST'])
+@login_required
+def generate_ai_evaluation(session_id):
+    """
+    セッションデータを元に生成AIで運転評価を作成
+    """
+    try:
+        # セッションの権限確認
+        session_ref = db.collection('sessions').document(session_id)
+        session_doc = session_ref.get()
+        
+        if not session_doc.exists:
+            return jsonify({'status': 'error', 'message': 'Session not found'}), 404
+            
+        session_data = session_doc.to_dict()
+        if session_data.get('user_id') != current_user.id:
+            return jsonify({'status': 'error', 'message': 'Permission denied'}), 403
+            
+        # 重点ポイントを取得
+        request_data = request.get_json() or {}
+        focus_point = request_data.get('focus_point', '')
+        
+        print(f"Generating AI evaluation for session {session_id}, focus: {focus_point}")
+        
+        # AI評価を生成（重点ポイントを渡す）
+        evaluation = analyze_session_data(session_id, current_user.id, focus_point)
+        
+        if evaluation is None:
+            return jsonify({'status': 'error', 'message': 'Failed to generate evaluation'}), 500
+        
+        # Firestoreに保存
+        if save_evaluation_to_session(session_id, current_user.id, evaluation):
+            return jsonify({'status': 'ok', 'evaluation': evaluation})
+        else:
+            return jsonify({'status': 'error', 'message': 'Failed to save evaluation'}), 500
+            
+    except Exception as e:
+        print(f"Error generating AI evaluation: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+# AI評価取得エンドポイント
+@sessions_bp.route('/get_ai_evaluation/<session_id>')
+@login_required
+def get_ai_evaluation(session_id):
+    """
+    保存済みのAI評価を取得
+    """
+    try:
+        session_ref = db.collection('sessions').document(session_id)
+        session_doc = session_ref.get()
+        
+        if not session_doc.exists:
+            return jsonify({'status': 'error', 'message': 'Session not found'}), 404
+            
+        session_data = session_doc.to_dict()
+        if session_data.get('user_id') != current_user.id:
+            return jsonify({'status': 'error', 'message': 'Permission denied'}), 403
+        
+        ai_evaluation = session_data.get('ai_evaluation')
+        if ai_evaluation:
+            return jsonify({'status': 'ok', 'evaluation': ai_evaluation})
+        else:
+            return jsonify({'status': 'not_found', 'message': 'AI evaluation not found'})
+            
+    except Exception as e:
+        print(f"Error getting AI evaluation: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+def get_audio_records(session_id):
+    """セッションに紐づく録音音声一覧を取得"""
+    audio_records_ref = db.collection("sessions").document(session_id).collection("audio_records")
+    audio_records = []
+    for doc in audio_records_ref.stream():
+        data = doc.to_dict()
+        if data.get("url"):
+            # JST補正
+            if "created_at" in data:
+                ts = data["created_at"]
+                if not isinstance(ts, datetime):
+                    try:
+                        data["created_at"] = datetime.fromtimestamp(ts / 1000, JST)
+                    except Exception:
+                        data["created_at"] = datetime.now(JST)
+                else:
+                    data["created_at"] = ts.astimezone(JST)
+            audio_records.append(data)
+    # 時刻降順
+    audio_records.sort(key=lambda a: a.get("created_at", datetime.min), reverse=True)
+    return audio_records
+
+from firebase_admin import firestore
+
+db = firestore.client()
+
+def get_avg_g_logs_for_session(session_id):
+    """
+    Firestoreから指定セッションのavg_g_logsを取得する
+    """
+    collection_ref = db.collection("sessions").document(session_id).collection("avg_g_logs")
+    docs = collection_ref.stream()
+
+    logs = []
+    for doc in docs:
+        data = doc.to_dict()
+        data["id"] = doc.id
+        logs.append(data)
+    logs.sort(key=lambda x: x.get("timestamp_ms", 0))
+    return logs
+

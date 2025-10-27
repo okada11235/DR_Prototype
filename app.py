@@ -4,6 +4,7 @@ from models import User
 from auth import auth_bp, init_auth
 from sessions import sessions_bp
 from views import views_bp
+# from transcribe import transcribe_bp  # OpenAI APIキーの問題で一時的に無効化
 
 # Flaskアプリとサービスの初期化
 app = create_app()
@@ -18,6 +19,7 @@ init_auth(bcrypt)
 app.register_blueprint(auth_bp)
 app.register_blueprint(sessions_bp)
 app.register_blueprint(views_bp)
+# app.register_blueprint(transcribe_bp)  # OpenAI APIキーの問題で一時的に無効化
 
 # Flask-Loginのユーザーローダー
 @login_manager.user_loader

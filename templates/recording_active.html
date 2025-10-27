@@ -2,154 +2,116 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title id="app-title-tag">ドライブバディ - 記録中</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<title>ドライブバディ - 記録中</title>
+
+<!-- Tailwind -->
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
-
-        tailwind.config = {
-
-            theme: {
-
-                extend: {
-
-                    colors: {
-
-                        // メインの色を明るい水色に変更
-
-                        'primary-green': '#00bcd4', // シアン (水色系)
-
-                        'danger-red': '#f44336', // 危険色は目立つ赤を維持しつつ、明るめに
-
-                        // 背景色とカードの背景色を明るい色に変更
-
-                        'bg-dark': '#ffffff', // 非常に明るい背景 (白)
-
-                        'card-dark': '#e0f7fa', // カードの背景色 (薄い水色)
-
-                    },
-
-                    fontFamily: {
-
-                        sans: ['Inter', 'sans-serif'],
-
-                    },
-
-                }
-
-            }
-
-        }
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        'primary-green': '#00bcd4',
+        'danger-red': '#f44336',
+        'bg-light': '#d8f5e3',
+        'card-light': '#aafaff'
+      },
+      fontFamily: {
+        sans: ['"Hiragino Maru Gothic ProN"', 'sans-serif']
+      }
+    }
+  }
+}
 </script>
-<style>
-
-        body {
-
-            /* 非常に明るい背景に変更 */
-
-            background-color: #f0f8ff; /* 非常に薄い水色 */
-
-            /* 文字色を濃い色に変更して、明るい背景で見えるようにする */
-
-            color: #1e3a8a; /* 濃い青 (水色に合う文字色) */
-
-            min-height: 100vh;
-
-        }
- 
-        /* 元々文字色指定がなく暗い背景に依存していた要素の文字色を調整 */
-
-        .text-gray-300 { color: #00bcd4; /* 水色 */ }
-
-        .text-gray-400 { color: #00838f; /* やや濃い水色 */ }
-
-        .border-gray-600 { border-color: #b2ebf2; /* 薄い水色の線 */ }
-
-        /* text-whiteが指定されているが、背景が明るいため濃い色に変更 */
-
-        .text-white { color: #1e3a8a; /* 濃い文字色 */ }
-
-        /* ボタンのテキストは白のままにする */
-
-        button.text-white { color: #ffffff; }
-</style>
 </head>
-<body class="font-sans">
-<div class="container mx-auto p-4 max-w-lg">
-<div class="flex flex-col items-center p-8 bg-bg-dark rounded-xl shadow-2xl min-h-[80vh] justify-between">
-<div class="flex flex-col items-center">
-<h1 class="text-5xl font-extrabold text-danger-red mt-4 mb-10 tracking-wider">運転中</h1>
-<!-- ▼▼▼ 修正箇所 ▼▼▼ -->
-<div id="character-icon" class="relative">
-<!-- 青い円形のコンテナ -->
-<div class="w-40 h-40 text-primary-green border-8 border-primary-green rounded-full p-1 bg-card-dark shadow-2xl animate-pulse flex items-center justify-center">
-<!-- キャラクター画像 -->
-<img src="https://i.imgur.com/H5Fh9nO.png" alt="キャラクター" class="w-full h-full rounded-full object-cover object-top" />
-</div>
-<div class="absolute top-0 right-0 h-10 w-10 bg-green-500 rounded-full border-4 border-bg-dark transform translate-x-1/4 -translate-y-1/4"></div>
-</div>
-<!-- ▲▲▲ 修正箇所 ▲▲▲ -->
- 
-                <p class="text-2xl font-light text-gray-300 mt-8 mb-4">安全運転をお願いします！</p>
-<div class="text-center bg-card-dark p-4 rounded-lg w-full mt-4 shadow-xl border border-gray-600">
-<p class="text-sm text-gray-400">経過時間</p>
-<p id="timer" class="text-6xl font-mono text-yellow-400">00:00</p>
-<p class="text-sm text-gray-400 mt-4">現在の速度</p>
-<p class="text-4xl font-bold"><span id="speed">0</span> km/h</p>
-</div>
-</div>
- 
-            <button id="end-button" onclick="endSession()" 
+<body class="bg-bg-light text-gray-800 font-sans flex flex-col items-center justify-center min-h-screen p-4" data-page="recording_active">
 
-                    class="w-full py-5 text-2xl bg-danger-red hover:bg-red-600 text-white rounded-xl shadow-2xl transition duration-300 transform hover:scale-105 mt-10">
+  <h1 class="text-3xl font-bold text-primary-green mb-6">記録中</h1>
 
-                記録を終了する
-</button>
-</div>
- 
-        <div id="metrics-log-area" class="hidden">
-<p>急ブレーキ🔴： <span id="brake-count">0</span></p>
-<p>急発進🟢： <span id="accel-count">0</span></p>
-<p>急カーブ🟡： <span id="turn-count">0</span></p>
-<p>横G (X)：<span id="g-x">0.00</span></p>
-<p>上下G (Y)：<span id="g-y">0.00</span></p>
-<p>前後G (Z)：<span id="g-z">0.00</span></p>
-<p>セッションID：<span id="session_id">未開始</span></p>
-</div>
-</div>
- 
-    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
- 
-    <script>
+  <!-- キャラアイコン -->
+  <div class="w-36 h-36 rounded-full bg-white shadow-md flex items-center justify-center overflow-hidden mb-6">
+    <img src="{{ url_for('static', filename='img/robot_active.png') }}" alt="ロボット" class="object-cover w-full h-full">
+  </div>
 
-        // Firebase Config (変更なし)
+  <!-- 情報ボックス -->
+  <div class="flex justify-center gap-6 mb-6">
+    <div class="bg-card-light rounded-lg px-6 py-3 shadow">
+      <p class="text-sm text-gray-700">速度</p>
+      <p class="text-2xl font-bold"><span id="speed">0</span> km/h</p>
+    </div>
+    <div class="bg-card-light rounded-lg px-6 py-3 shadow">
+      <p class="text-sm text-gray-700">記録時間</p>
+      <p class="text-2xl font-bold" id="timer">00:00</p>
+    </div>
+  </div>
 
-        const firebaseConfig = {
+  <!-- G値 -->
+  <div class="bg-card-light rounded-lg p-4 text-gray-800 shadow mb-8 w-72 text-center">
+    横G：<span id="g-x">0.00</span>
+    前後G：<span id="g-z">0.00</span>
+    上下G：<span id="g-y">0.00</span>
+  </div>
 
-            apiKey: "AIzaSyCEuouICKd32x3-4y5QzA_2ovq8pydvez4",
+  <!-- 録音ボタンを「終了ボタン」の上に追加
+  <button id="recordBtn"
+          class="bg-danger-red text-white text-xl font-bold py-3 px-10 rounded-xl shadow-lg hover:bg-red-500 transition mb-6">
+    🎙 録音開始（5秒）
+  </button> -->
 
-            authDomain: "drive-prototype-32ef0.firebaseapp.com",
+  <!-- 📍 ピン設置ボタン -->
+  <button id="addPinBtn" 
+          style="position: fixed; bottom: 120px; right: 20px; 
+                background-color: #00bcd4; color: white;
+                border: none; border-radius: 50%; 
+                width: 60px; height: 60px; 
+                font-size: 28px; font-weight: bold; 
+                box-shadow: 0 2px 6px rgba(0,0,0,0.3);">
+    📍
+  </button>
 
-            projectId: "drive-prototype-32ef0",
+  <!-- 終了ボタン -->
+  <button id="end-button"
+          class="bg-primary-green text-white text-xl font-bold py-3 px-10 rounded-xl shadow-lg hover:bg-cyan-400 transition">
+    記録を終了する
+  </button>
 
-            storageBucket: "drive-prototype-32ef0.firebasestorage.app",
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyCEuouICKd32x3-4y5QzA_2ovq8pydvez4",
+      authDomain: "drive-prototype-32ef0.firebaseapp.com",
+      projectId: "drive-prototype-32ef0",
+      storageBucket: "drive-prototype-32ef0.firebasestorage.app",
+      messagingSenderId: "500916744769",
+      appId: "1:500916744769:web:d5a529ef05d15bb2934cc0",
+      measurementId: "G-9CH5CGYCFM"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+  </script>
 
-            messagingSenderId: "500916744769",
-
-            appId: "1:500916744769:web:d5a529ef05d15bb2934cc0",
-
-            measurementId: "G-9CH5CGYCFM"
-
-        };
-
-        firebase.initializeApp(firebaseConfig);
-
-        const db = firebase.firestore();
-</script>
- 
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
+  <script type="module" src="{{ url_for('static', filename='main.js') }}"></script>
+  <!--録音内容-->
+  <script>
+    // 例：FlaskからJinja2経由でsession_idを埋め込む
+    window.sessionId = "{{ session_id }}";
+  </script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+  <!--<script src="{{ url_for('static', filename='record.js') }}"></script>-->
+  <!--<script src="{{ url_for('static', filename='record_voice.js') }}"></script>-->
+  <script src="{{ url_for('static', filename='maps.js') }}"></script>
+  <script src="{{ url_for('static', filename='session.js') }}"></script>
+  <script src="{{ url_for('static', filename='record_voice_unified.js') }}"></script>
+  <!-- AudioContextのアンロック処理（これは残す） -->
+  <script type="module">
+    import { autoUnlockAudio } from "./audio.js";
+    autoUnlockAudio();
+  </script>
 </body>
 </html>
- 
- 

@@ -1,94 +1,305 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title id="app-title-tag">ドライブバディ - 記録開始</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        // メインの色を明るい水色に変更
-                        'primary-green': '#00bcd4', // シアン (水色系)
-                        'danger-red': '#f44336', // 危険色は目立つ赤を維持しつつ、明るめに
-                        // 背景色とカードの背景色を明るい色に変更
-                        'bg-dark': '#ffffff', // 非常に明るい背景 (白)
-                        'card-dark': '#e0f7fa', // カードの背景色 (薄い水色)
-                    },
-                    fontFamily: {
-                        sans: ['Inter', 'sans-serif'],
-                    },
-                }
-            }
-        }
-    </script>
-    <style>
-        body {
-            /* 非常に明るい背景に変更 */
-            background-color: #f0f8ff; /* 非常に薄い水色 */
-            /* 文字色を濃い色に変更して、明るい背景で見えるようにする */
-            color: #1e3a8a; /* 濃い青 (水色に合う文字色) */
-            min-height: 100vh;
-        }
-        #map { width: 100%; height: 300px; }
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>ドライブバディ - 運転</title>
 
-        /* 元々文字色指定がなく暗い背景に依存していた要素の文字色を調整 */
-        .text-gray-300 { color: #00bcd4; /* 水色 */ }
-        .text-gray-400 { color: #00838f; /* やや濃い水色 */ }
-        .border-gray-600 { border-color: #b2ebf2; /* 薄い水色の線 */ }
-        .text-white { color: #1e3a8a; /* 濃い文字色 */ }
-        /* ホバー時の緑（emerald-600）も水色系の濃い色に変更 */
-        .hover\:bg-emerald-600:hover { background-color: #0097a7; }
-        /* インディゴ（記録確認ボタン）を水色系の濃い色に変更 */
-        .bg-indigo-600 { background-color: #03a9f4; } /* スカイブルー */
-        .hover\:bg-indigo-700:hover { background-color: #0288d1; }
-    </style>
+  <!-- ✅ Bootstrapを追加 -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+
+  <style>
+    body {
+      font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #cdeae0;
+      color: #333;
+      padding-bottom: 55px; /* ナビ分の余白 */
+    }
+
+    .main {
+      text-align: center;
+      padding-top: 40px;
+      min-height: calc(100vh - 70px);
+    }
+
+    .start-button {
+      background-color: #00bcd4;
+      border: 2px solid #333;
+      border-radius: 8px;
+      padding: 15px 40px;
+      font-size: 1.5em;
+      font-weight: bold;
+      color: #000;
+      box-shadow: 2px 4px 6px rgba(0, 0, 0, 0.2);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .start-button:hover { transform: translateY(-2px); background-color: #00acc1; }
+
+    .message-container {
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      gap: 10px;
+      margin-top: 40px;
+    }
+
+    .robot {
+      width: 70px;
+      height: auto;
+      border-radius: 50%;
+      object-fit: cover;
+      background-color: #fff;
+    }
+
+    .message-box {
+      background-color: #fff;
+      border-radius: 8px;
+      padding: 12px;
+      width: 60%;
+      text-align: left;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+      font-size: 0.95em;
+      line-height: 1.5em;
+    }
+
+    .focus-section {
+      margin-top: 30px;
+      text-align: left;
+      width: 60%;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .focus-section h3 {
+      color: #7a2222;
+      font-size: 1em;
+      margin-bottom: 10px;
+    }
+
+    .checkbox-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 1em;
+      margin-bottom: 6px;
+    }
+
+    input[type="checkbox"] {
+      transform: scale(1.2);
+      accent-color: #4a90e2;
+      cursor: pointer;
+    }
+
+    .hidden { display: none !important; }
+
+    /* === ナビバー統一スタイル（result.htmlと完全一致） === */
+    .custom-nav-bar {
+      background: #378da0;
+      border-top: 2px solid #5a7d8d;
+      box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.2);
+      height: 45px;
+    }
+
+    /* 各項目 */
+    .custom-nav-item {
+      flex: 1;
+    }
+
+    .custom-nav-bar{background:#378da0;border-top:2px solid #5a7d8d;box-shadow:inset 0 0 5px rgba(0,0,0,.2);height:45px}
+    .custom-nav-link{color:#fff;font-weight:bold;font-size:1rem;padding:0 1rem;line-height:41px;height:100%;display:block}
+    .custom-nav-item:not(:last-child){border-right:1px solid #5a7d8d}
+    .active-glow .custom-nav-link.active{color:rgb(0, 0, 0);background:rgba(255,255,255,.05)}
+
+    /* === iOS 音声アンロックバナー === */
+    #ios-audio-banner {
+      background-color: #fff8e1;
+      border: 2px solid #ffcc80;
+      border-radius: 10px;
+      padding: 12px;
+      width: 85%;
+      margin: 0 auto 20px auto;
+      text-align: center;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+      color: #6d4c41;
+      font-size: 0.95em;
+      line-height: 1.6em;
+    }
+
+    #ios-audio-banner p {
+      margin-bottom: 10px;
+    }
+
+    #ios-audio-unlock-btn {
+      background-color: #00bcd4;
+      color: #fff;
+      font-weight: bold;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 25px;
+      font-size: 1em;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      box-shadow: 2px 4px 6px rgba(0, 0, 0, 0.15);
+    }
+
+    #ios-audio-unlock-btn:hover {
+      background-color: #0097a7;
+      transform: translateY(-2px);
+    }
+  </style>
 </head>
-<body class="font-sans">
-    <div class="container mx-auto p-4 max-w-lg">
-        
-        <div class="flex flex-col items-center p-6 bg-bg-dark rounded-xl shadow-2xl transition duration-500">
-            <h1 class="text-4xl font-extrabold text-primary-green mb-6 animate-pulse">ドライブバディ</h1>
-            
-            <button id="start-button" onclick="startSession()" 
-                    class="w-full py-4 text-xl bg-primary-green hover:bg-emerald-600 text-white rounded-xl shadow-lg transition duration-300 transform hover:scale-[1.02] mb-4">
-                記録開始
-            </button>
-            
-            <a href="{{ url_for('views.sessions') }}" 
-               class="w-full py-3 text-lg bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md transition duration-300 flex items-center justify-center font-medium mb-8">
-                記録を確認する
-            </a>
-            
-            <h2 class="text-2xl font-semibold text-gray-300 mb-4 border-b border-gray-600 w-full pb-2">現在地マップ</h2>
-            <div id="map" class="rounded-lg border-2 border-card-dark shadow-inner"></div>
-            
-            <p id="position" class="mt-4 text-sm text-gray-400">現在地座標：---</p>
-        </div>
+<body>
+
+  <main class="main">
+  <!-- ✅ iOS専用バナー -->
+  <div id="ios-audio-banner" style="
+    display:none;
+    position:fixed;
+    bottom:80px;
+    left:0;
+    width:100%;
+    background:#007aff;
+    color:#fff;
+    text-align:center;
+    padding:12px;
+    font-size:1rem;
+    z-index:9999;
+    transition:opacity 0.4s ease;
+  ">
+    🔈 音声機能を有効にするにはタップしてください
+    <button id="ios-audio-enable" style="
+      background:#fff;
+      color:#007aff;
+      border:none;
+      border-radius:6px;
+      padding:6px 12px;
+      margin-left:10px;
+      font-weight:bold;
+      cursor:pointer;
+    ">
+      有効にする
+    </button>
+  </div>
+
+    <button id="start-button" class="start-button">運転開始</button>
+
+    <div class="message-container">
+      <img src="{{ url_for('static', filename='img/robot_side.png') }}" alt="ドライポ" class="robot">
+      <div class="message-box">
+        <p><strong>今のあなたの課題</strong></p>
+        <p>今日はリラックスして安全運転！焦らず行こう！</p>
+      </div>
     </div>
 
-    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBUyc6mj-SEOP8lopM2laEywMILL8qknvo&callback=initMap" async defer></script>
+    <div class="focus-section">
+      <h3>▼今回の重点ポイント</h3>
+      <label class="checkbox-item"><input type="checkbox" name="focus" value="減速">減速</label>
+      <label class="checkbox-item"><input type="checkbox" name="focus" value="加速">加速</label>
+      <label class="checkbox-item"><input type="checkbox" name="focus" value="旋回">旋回</label>
+      <label class="checkbox-item"><input type="checkbox" name="focus" value="直進">直進</label>
+    </div>
+  </main>
 
-    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <!-- ✅ result.html と同じナビ -->
+  <nav class="navbar navbar-expand custom-nav-bar fixed-bottom">
+    <div class="container-fluid justify-content-center">
+      <ul class="navbar-nav w-100 text-center">
+        <li class="nav-item flex-fill custom-nav-item active-glow">
+          <a href="{{ url_for('views.home') }}" class="nav-link custom-nav-link">ホーム</a>
+        </li>
+        <li class="nav-item flex-fill custom-nav-item active-glow">
+          <a class="nav-link custom-nav-link active" href="{{ url_for('views.recording_start') }}">運転</a>
+        </li>
+        <!-- ✅ ここに active-glow を付ける（このページが“リザルト”なら） -->
+        <li class="nav-item flex-fill custom-nav-item">
+          <a href="{{ url_for('sessions.results_page') }}" class="nav-link custom-nav-link">リザルト</a>
+        </li>
+        <li class="nav-item flex-fill custom-nav-item">
+          <a class="nav-link custom-nav-link" href="{{ url_for('views.map_editor') }}">マップ</a>
+        </li>
+        <li class="nav-item flex-fill custom-nav-item border-end-0">
+          <a class="nav-link custom-nav-link" href="#">説明</a>
+        </li>
+      </ul>
+    </div>
+  </nav>
 
-    <script>
-        // Firebase Config (変更なし)
-        const firebaseConfig = {
-          apiKey: "AIzaSyCEuouICKd32x3-4y5QzA_2ovq8pydvez4",
-          authDomain: "drive-prototype-32ef0.firebaseapp.com",
-          projectId: "drive-prototype-32ef0",
-          storageBucket: "drive-prototype-32ef0.firebasestorage.app",
-          messagingSenderId: "500916744769",
-          appId: "1:500916744769:web:d5a529ef05d15bb2934cc0",
-          measurementId: "G-9CH5CGYCFM"
-        };
-        firebase.initializeApp(firebaseConfig);
-        const db = firebase.firestore();
-    </script>
+  <!-- ✅ Firebase & 音声アンロックスクリプト -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyCEuouICKd32x3-4y5QzA_2ovq8pydvez4",
+      authDomain: "drive-prototype-32ef0.firebaseapp.com",
+      projectId: "drive-prototype-32ef0",
+      storageBucket: "drive-prototype-32ef0.firebasestorage.app",
+      messagingSenderId: "500916744769",
+      appId: "1:500916744769:web:d5a529ef05d15bb2934cc0",
+      measurementId: "G-9CH5CGYCFM"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
 
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+      const banner = document.getElementById('ios-audio-banner');
+      const enableBtn = document.getElementById('ios-audio-enable');
+
+      if (isIOS && banner && enableBtn) {
+        banner.style.display = 'block';
+
+        enableBtn.addEventListener('click', async () => {
+          try {
+            // AudioContextを作成して即時解放
+            if (!window.audioContext) {
+              window.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            const ctx = window.audioContext;
+            if (ctx.state === 'suspended') await ctx.resume();
+
+            // 無音バッファで再生
+            const buffer = ctx.createBuffer(1, 1, 22050);
+            const source = ctx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(ctx.destination);
+            source.start(0);
+
+            // 保存して今後も自動アンロック
+            localStorage.setItem('audioUnlocked', 'true');
+            window.audioUnlocked = true;
+
+            // ✅ 成功アニメーション
+            banner.innerHTML = '✅ 音声機能が有効になりました';
+            banner.style.background = '#34c759';
+            setTimeout(() => { banner.style.opacity = '0'; }, 800);
+            setTimeout(() => { banner.style.display = 'none'; }, 1600);
+
+            console.log('🔓 Audio unlocked successfully on iOS');
+          } catch (err) {
+            console.error('❌ Audio unlock failed:', err);
+            alert('音声の有効化に失敗しました。もう一度お試しください。');
+          }
+        });
+      }
+    });
+
+    // ✅ チェックボックス排他処理
+    document.querySelectorAll('input[name="focus"]').forEach(checkbox => {
+      checkbox.addEventListener('change', function() {
+        if (this.checked) {
+          document.querySelectorAll('input[name="focus"]').forEach(other => {
+            if (other !== this) other.checked = false;
+          });
+        }
+      });
+    });
+  </script>
+  <script type="module" src="{{ url_for('static', filename='main.js') }}"></script>
 </body>
 </html>

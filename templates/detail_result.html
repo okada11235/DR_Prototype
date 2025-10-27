@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>走行レポート</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+
+  <style>
+    body{font-family:"Hiragino Sans","Meiryo",sans-serif;background:#cdeae0;margin:0;color:#333;padding:15px;padding-bottom:55px}
+    .container{max-width:950px;margin:0 auto}
+    .date-info{font-size:.95em;margin-bottom:15px;line-height:1.6}
+    h2{color:#007e99;font-size:1.2em;margin:15px 0 10px 0}
+    .score-section{margin-bottom:14px}
+    .score-item{display:flex;align-items:center;margin:6px 0}
+    .bar{height:10px;background:#d0d9ff;border-radius:5px;margin-left:10px;flex-grow:1;position:relative}
+    .bar::after{content:"";position:absolute;top:0;left:0;height:100%;background:#5579ff;border-radius:5px}
+    .score{color:red;font-weight:bold;margin-left:10px}
+    .comment-box{background:#fff;border-radius:10px;padding:14px;margin:14px 0;display:flex;align-items:flex-start;box-shadow:0 2px 5px rgba(0,0,0,.1)}
+    .comment-box img{width:46px;height:46px;margin-right:10px}
+    .map-section{margin-top:16px;margin-bottom:10px;background:#f8fdf9;border-radius:10px;padding:10px;box-shadow:0 0 4px rgba(0,0,0,.1)}
+    .map-section h3{margin:0 0 10px 5px;font-size:1.1em}
+    #map{width:100%;height:380px;border-radius:10px}
+    /* === グラフの高さ安定化＋スマホ対応 === */
+    .chart-wrap {
+      background: #fff;
+      border-radius: 10px;
+      padding: 10px;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08);
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      width: 100%;
+      max-width: 100%;
+      overflow-x: hidden;
+      box-sizing: border-box;
+    }
+
+    .chart-wrap canvas {
+      width: 100% !important;
+      height: 380px !important;
+      max-width: 100%;
+      display: block;
+    }
+
+    .chart-toolbar {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      margin: 14px auto 8px;
+      max-width: 360px;
+    }
+
+    /* 各段 */
+    .chart-toolbar .toolbar-row {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      width: 100%;
+    }
+
+    /* Resetだけ特別に広く中央に */
+    .chart-toolbar .toolbar-row.reset button {
+      flex: 1;
+      min-width: 220px;
+      max-width: 260px;
+    }
+
+    /* ボタン共通 */
+    .chart-toolbar button {
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      background: #f6f8fa;
+      padding: 8px 14px;
+      cursor: pointer;
+      font-size: 0.95em;
+      color: #333;
+      transition: all 0.2s ease;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+      flex: 1;
+      min-width: 120px;
+      /* ✅ 長押し対策 */
+      user-select: none;       /* テキスト選択を禁止 */
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      outline: none;           /* フォーカス枠を削除 */
+      -webkit-tap-highlight-color: transparent; /* モバイル青ハイライト除去 */
+    }
+
+    .chart-toolbar button:hover {
+      background: #e9ecef;
+    }
+    .chart-toolbar button:active {
+      transform: scale(0.97);
+      background: #dfe6eb;
+      box-shadow: inset 0 2px 3px rgba(0,0,0,0.15);
+    }
+
+    /* スマホ用 */
+    @media (max-width: 600px) {
+      .chart-toolbar {
+        gap: 8px;
+        max-width: 320px;
+      }
+      .chart-toolbar .toolbar-row {
+        gap: 8px;
+      }
+      .chart-toolbar .toolbar-row.reset button {
+        min-width: 200px;
+      }
+    }
+
+    .legend{display:flex;flex-wrap:wrap;gap:6px;padding:8px 10px;background:#ffffffcc;border-radius:8px;margin-top:8px;font-size:.85rem;backdrop-filter:blur(4px);justify-content:flex-start}
+    .legend-item{display:flex;align-items:center;margin-right:10px;margin-bottom:4px}
+    .legend-color{width:14px;height:14px;border-radius:50%;margin-right:6px;border:1px solid #333}
+    .warn{background:#fff3cd;color:#856404;border-radius:8px;padding:10px;text-align:center}
+    .custom-nav-bar{background:#378da0;border-top:2px solid #5a7d8d;box-shadow:inset 0 0 5px rgba(0,0,0,.2);height:45px}
+    .custom-nav-link{color:#fff;font-weight:bold;font-size:1rem;padding:0 1rem;line-height:41px;height:100%;display:block}
+    .custom-nav-item:not(:last-child){border-right:1px solid #5a7d8d}
+    .active-glow .custom-nav-link.active{color:#ccf;text-shadow:0 0 5px #7a8cff,0 0 10px #7a8cff;background:rgba(255,255,255,.05)}
+    .audio-section {
+      background: #f8fdf9;
+      border-radius: 10px;
+      padding: 15px;
+      box-shadow: 0 0 4px rgba(0,0,0,0.1);
+    }
+    .audio-section h2 {
+      font-size: 1.2em;
+      color: #007e99;
+      margin-bottom: 10px;
+    }
+    .audio-item {
+      background: #fff;
+      border-radius: 8px;
+      padding: 10px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  {% if display_error %}
+    <div class="warn">{{ display_error }}</div>
+  {% else %}
+    <div class="date-info">
+      <strong>{{ session.start_time.strftime('%Y/%m/%d') if session.start_time else '' }}</strong><br>
+      {{ session.start_time.strftime('%H:%M') if session.start_time else '??:??' }}
+       〜
+      {{ session.end_time.strftime('%H:%M') if session.end_time else '記録中' }}<br>
+      走行距離：{{ "%.2f"|format(session.distance) if session.distance is not none else "N/A" }} km
+    </div>
+
+    <div class="score-section">
+      <h2>スコア</h2>
+      <div style="color:#007e99;font-size:.9em;margin-bottom:5px;">重点（減速、直進）</div>
+
+      {% for label,val in detail_scores.items() %}
+        <div class="score-item">{{ label }}
+          <div class="bar"><style>.score-item:nth-of-type({{ loop.index }}) .bar::after{width:{{ val }}%;}</style></div>
+          <span class="score">{{ val }}点</span>
+        </div>
+      {% endfor %}
+    </div>
+
+    <div class="comment-box">
+      <img src="{{ url_for('static', filename='img/robot_side.png') }}" alt="bot">
+      <div>{{ comment_text }}</div>
+    </div>
+
+    <!-- ====== 音声ログ ====== -->
+    <div class="audio-section mt-4">
+      <h2>音声ログ</h2>
+      {% if audio_records and audio_records|length > 0 %}
+        <div class="audio-list">
+          {% for audio in audio_records %}
+            <div class="audio-item mb-3">
+              <audio controls preload="none" style="width:100%;">
+                <source src="{{ audio.url }}" type="audio/webm">
+                このブラウザでは音声再生がサポートされていません。
+              </audio>
+              <small class="text-muted">
+                {{ audio.created_at.strftime('%Y/%m/%d %H:%M:%S') if audio.created_at else '' }}
+              </small>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="warn mt-2">録音データがありません</div>
+      {% endif %}
+    </div>
+
+    <!-- ====== グラフ ====== -->
+    <h2>G加速度＆速度グラフ</h2>
+    <div class="chart-wrap">
+      <canvas id="gForceChart-{{ session.id }}" style="width:100%;height:380px"></canvas>
+      <div class="chart-toolbar">
+        <div class="toolbar-row">
+          <button onmousedown="startZoom('gForceChart-{{ session.id }}','in')" 
+                  onmouseup="stopZoom()" onmouseleave="stopZoom()" 
+                  ontouchstart="startZoom('gForceChart-{{ session.id }}','in')" 
+                  ontouchend="stopZoom()">＋ Zoom In</button>
+
+          <button onmousedown="startZoom('gForceChart-{{ session.id }}','out')" 
+                  onmouseup="stopZoom()" onmouseleave="stopZoom()" 
+                  ontouchstart="startZoom('gForceChart-{{ session.id }}','out')" 
+                  ontouchend="stopZoom()">－ Zoom Out</button>
+        </div>
+
+        <div class="row reset">
+          <button onclick="resetChartZoom('gForceChart-{{ session.id }}')">Reset</button>
+        </div>
+
+        <div class="row">
+          <button onmousedown="startPan('gForceChart-{{ session.id }}','right')" 
+                  onmouseup="stopPan()" onmouseleave="stopPan()" 
+                  ontouchstart="startPan('gForceChart-{{ session.id }}','right')" 
+                  ontouchend="stopPan()">◀ 左へ</button>
+
+          <button onmousedown="startPan('gForceChart-{{ session.id }}','left')" 
+                  onmouseup="stopPan()" onmouseleave="stopPan()" 
+                  ontouchstart="startPan('gForceChart-{{ session.id }}','left')" 
+                  ontouchend="stopPan()">右へ ▶</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====== 地図 ====== -->
+    <div class="map-section">
+      <h3>走行ルートとイベント</h3>
+      <div id="map"></div>
+      <div class="legend" id="legend"></div>
+    </div>
+  {% endif %}
+
+  <div class="text-center mt-3">
+    <a class="btn btn-primary btn-lg"
+      href="{{ url_for('views.detail_result_play', session_id=session.id) }}">
+      🚗 この走行を“イベント音声つき”で再生
+    </a>
+  </div>
+</div>
+
+    <nav class="navbar navbar-expand custom-nav-bar fixed-bottom">
+    <div class="container-fluid justify-content-center">
+        <ul class="navbar-nav w-100 text-center">
+        <li class="nav-item flex-fill custom-nav-item">
+            <a href="{{ url_for('views.home') }}" class="nav-link custom-nav-link">ホーム</a>
+        </li>
+        <li class="nav-item flex-fill custom-nav-item">
+            <a href="{{ url_for('views.recording_start') }}" class="nav-link custom-nav-link">運転</a>
+        </li>
+        <li class="nav-item flex-fill custom-nav-item">
+            <a class="nav-link custom-nav-link active" href="{{ url_for('sessions.results_page') }}">リザルト</a>
+        </li>
+        <li class="nav-item flex-fill custom-nav-item">
+          <a class="nav-link custom-nav-link" href="{{ url_for('views.map_editor') }}">マップ</a>
+        </li>
+        <li class="nav-item flex-fill custom-nav-item border-end-0">
+            <a class="nav-link custom-nav-link" href="#">説明</a>
+        </li>
+        </ul>
+    </div>
+    </nav>
+
+<!-- ===== ライブラリ ===== -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+
+
+<script>
+/** ========= データ ========= */
+const gpsLogs = {{ gps_logs|tojson }};
+const gLogs   = {{ avg_g_logs|tojson }};
+
+/** ========= カラー＆イベント軸 ========= */
+const colorMap = {
+  sudden_brake:'#ff3b30',  // 赤
+  sudden_accel:'#34c759',  // 緑
+  sharp_turn  :'#ff9500',  // オレンジ
+  unstable_drive:'#ffcc00',// 黄
+  smooth_turn :'#007aff',  // 青
+  smooth_accel:'#5ac8fa',  // 水色
+  smooth_brake:'#4cd964',  // 明るい緑
+  stable_drive:'#5856d6',  // 紫
+};
+const eventAxisMap = { sudden_brake:'gz', sudden_accel:'gz', sharp_turn:'gx', speed_violation:'speed' };
+
+/** ========= Chart.js 初期化 ========= */
+let isChartReady = false;
+const chartInstances = {};          // ← グローバルに1回だけ定義
+const chartOriginalRanges = {};     // ← 初期範囲を保存
+let zoomInterval = null;
+let panInterval = null;
+
+function initializeChart(){
+  if(typeof Chart!=='undefined' && !isChartReady){
+    try{
+      if(Chart.registerables){
+        if(Array.isArray(Chart.registerables)) Chart.register(...Chart.registerables);
+        else if (typeof Chart.registerables[Symbol.iterator] === 'function') Chart.register(...Chart.registerables);
+      }
+      if(typeof zoomPlugin!=='undefined') Chart.register(zoomPlugin);
+      else if (window.ChartZoom) Chart.register(window.ChartZoom.default||window.ChartZoom);
+      isChartReady=true;
+    }catch(e){ console.error('Chart.js init error:',e); }
+  }
+}
+document.addEventListener('DOMContentLoaded', initializeChart);
+
+/** ========= ユーティリティ ========= */
+function findLogByTimestamp(logs, ts, maxDiffMs=500){
+  let closest=null, min=Infinity;
+  for(const log of logs){
+    const t=Number(log.timestamp_ms ?? log.timestamp);
+    if(Number.isNaN(t)) continue;
+    const diff=Math.abs(t-ts);
+    if(diff<min){ min=diff; closest=log; }
+  }
+  return (min<=maxDiffMs)? closest : null;
+}
+function makeEventPoints(allTs, gpsLogs, axisKey){
+  return {
+    radius: allTs.map(ts=>{
+      const log=findLogByTimestamp(gpsLogs,ts,500);
+      if(!log || !log.event || log.event==='normal') return 0;
+      if(axisKey==='speed') return 6;
+      if(eventAxisMap[log.event]===axisKey) return 6;
+      return 0;
+    }),
+    background: allTs.map(ts=>{
+      const log=findLogByTimestamp(gpsLogs,ts,500);
+      if(!log || !log.event || log.event==='normal') return 'transparent';
+      if(axisKey==='speed') return colorMap[log.event]||'gray';
+      if(eventAxisMap[log.event]===axisKey) return colorMap[log.event]||'gray';
+      return 'transparent';
+    }),
+    border: allTs.map(ts=>{
+      const log=findLogByTimestamp(gpsLogs,ts,500);
+      if(!log || !log.event || log.event==='normal') return 'transparent';
+      if(axisKey==='speed' || eventAxisMap[log.event]===axisKey) return '#000';
+      return 'transparent';
+    })
+  }
+}
+
+/** ========= グラフ描画 ========= */
+function renderGForceChart(canvasId, gpsLogs, gLogs){
+  if(!gLogs || gLogs.length===0){
+    const wrap=document.getElementById(canvasId)?.closest('.chart-wrap');
+    if(wrap){ wrap.insertAdjacentHTML('beforeend', `<div class="warn mt-2">Gセンサーデータがありません</div>`); }
+    return;
+  }
+
+  const allTimestamps=[...new Set([
+    ...gLogs.map(l=>Number(l.timestamp_ms ?? l.timestamp)).filter(n=>!Number.isNaN(n)),
+    ...gpsLogs.map(l=>Number(l.timestamp_ms ?? l.timestamp)).filter(n=>!Number.isNaN(n)),
+  ])].sort((a,b)=>a-b);
+  const labels = allTimestamps.map(ts => new Date(ts));
+
+  function align(logs,key){
+    const map=new Map(logs.map(l=>[Number(l.timestamp_ms ?? l.timestamp), l[key]]));
+    return allTimestamps.map(ts=>{
+      const v=map.get(ts);
+      return (v!==undefined && v!==null) ? Number(v) : null;
+    });
+  }
+
+  const gxData=align(gLogs,"g_x");
+  const gyData=align(gLogs,"g_y");
+  const gzData=align(gLogs,"g_z");
+  const speedData=align(gpsLogs,"speed");
+
+  const gxPts=makeEventPoints(allTimestamps,gpsLogs,'gx');
+  const gyPts=makeEventPoints(allTimestamps,gpsLogs,'gy');
+  const gzPts=makeEventPoints(allTimestamps,gpsLogs,'gz');
+  const spPts=makeEventPoints(allTimestamps,gpsLogs,'speed');
+
+  const ctx=document.getElementById(canvasId).getContext('2d');
+  const chart = new Chart(ctx,{
+    type:'line',
+    data:{
+      labels,
+      datasets:[
+        { label:'前後G', data:gzData, borderColor:'#00bcd4', backgroundColor:'rgba(0,188,212,0.2)', borderWidth:2, yAxisID:'y', tension:0.4, spanGaps:true, pointRadius:gzPts.radius, pointBackgroundColor:gzPts.background, pointBorderColor:gzPts.border, pointRadius:0 },
+        { label:'上下G', data:gyData, borderColor:'#666', backgroundColor:'rgba(102,102,102,0.2)', borderWidth:2, yAxisID:'y', tension:0.4, spanGaps:true, pointRadius:gyPts.radius, pointBackgroundColor:gyPts.background, pointBorderColor:gyPts.border, pointRadius:0 },
+        { label:'左右G', data:gxData, borderColor:'#9c27b0', backgroundColor:'rgba(156,39,176,0.2)', borderWidth:2, yAxisID:'y', tension:0.4, spanGaps:true, pointRadius:gxPts.radius, pointBackgroundColor:gxPts.background, pointBorderColor:gxPts.border, pointRadius:0 },
+        { label:'速度 (km/h)', data:speedData, borderColor:'rgba(255,99,132,0.7)', backgroundColor:'rgba(255,99,132,0.1)', borderWidth:1, yAxisID:'y1', tension:0, spanGaps:true,
+          pointStyle: ctx => (spPts.radius[ctx.dataIndex] > 0 ? 'circle' : false),
+          pointRadius: ctx => spPts.radius[ctx.dataIndex],
+          pointBackgroundColor: ctx => spPts.background[ctx.dataIndex],
+          pointBorderColor: ctx => spPts.border[ctx.dataIndex] }
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      elements:{ line:{ cubicInterpolationMode:'monotone' } },
+      scales:{
+        x: {
+          type: 'time',
+          time: { unit: false },
+          title: { display: true, text: '時間' },
+          min: labels[0],
+          max: labels[labels.length - 1], // ← ✅ 初期範囲を確定
+        },
+        y:{ position:'left', title:{display:true,text:'G (重力加速度)'} },
+        y1:{ position:'right', title:{display:true,text:'速度 (km/h)'}, grid:{drawOnChartArea:false}, min:0, max:120 }
+      },
+      plugins:{
+        decimation:{ enabled:true, algorithm:'lttb', samples:1000 },
+        zoom:{
+          pan:{enabled:true,mode:'x'},
+          zoom:{
+            wheel:{enabled:true},
+            pinch:{enabled:true},
+            mode:'x',
+            limits:{  // ← ✅ ズームアウト制限を追加
+              x:{min: labels[0].getTime(), max: labels[labels.length - 1].getTime()}
+            }
+          }
+        },
+        tooltip:{
+          callbacks:{
+            label:(ctx)=>{
+              const idx=ctx.dataIndex;
+              const raw=Number(ctx.raw);
+              const val=Number.isFinite(raw)? raw.toFixed(2) : '—';
+              let unit= ctx.dataset.label.includes('速度') ? ' km/h' : ' G';
+              let label=`${ctx.dataset.label}: ${val}${unit}`;
+              const ts=allTimestamps[idx];
+              const log=gpsLogs.find(l => Number(l.timestamp_ms ?? l.timestamp)===ts);
+              if(log && log.event && log.event!=='normal'){
+                label += `  (イベント: ${String(log.event).replace(/_/g,' ')})`;
+              }
+              return label;
+            }
+          }
+        }
+      }
+    }
+  });
+
+  chartInstances[canvasId] = chart;
+
+  // ✅ 初期範囲を保存（Date型のまま）
+  chartOriginalRanges[canvasId] = {
+    min: labels[0],
+    max: labels[labels.length - 1]
+  };
+}
+
+/** ========= グラフ←→地図 連動 ========= */
+function highlightOnChart(canvasId, log) {
+  const chart = chartInstances[canvasId];
+  if (!chart) return;
+
+  const ts = Number(log.timestamp_ms ?? log.timestamp);
+  if (isNaN(ts)) return;
+
+  const focusStart = ts - 3000;
+  const focusEnd   = ts + 3000;
+
+  chart.options.scales.x.min = new Date(focusStart);
+  chart.options.scales.x.max = new Date(focusEnd);
+  chart.update('none');
+
+  // ラベルがDate型であればこれでOK
+  const idx = chart.data.labels.findIndex(
+    label => Math.abs(label.getTime() - ts) < 500
+  );
+  if (idx >= 0) {
+    chart.setActiveElements([{ datasetIndex: 0, index: idx }]);
+    chart.tooltip.setActiveElements([{ datasetIndex: 0, index: idx }]);
+    chart.update();
+  }
+}
+
+/** ========= ズーム/パン ボタン ========= */
+// 既存の startZoom 関数を以下のように修正:
+function startZoom(canvasId, dir) {
+  const chart = chartInstances[canvasId];
+  if (!chart) return;
+  const factor = 1.05;
+  const original = chartOriginalRanges[canvasId];
+
+  zoomInterval = setInterval(() => {
+    chart.zoom({ x: dir === 'in' ? factor : 1 / factor, y: 1 });
+
+    // 👇 ズームアウト制限（データ全体の範囲外に行かないようにする）
+    if (original) {
+      // **修正: 比較を数値に統一**
+      if (chart.scales.x.min < original.min.getTime()) chart.options.scales.x.min = original.min;
+      if (chart.scales.x.max > original.max.getTime()) chart.options.scales.x.max = original.max;
+    }
+
+    chart.update('none');
+  }, 150);
+}
+function stopZoom() {
+  if (zoomInterval) {
+    clearInterval(zoomInterval);
+    zoomInterval = null;
+  }
+}
+function startPan(canvasId, dir) {
+  const chart = chartInstances[canvasId];
+  if (!chart) return;
+  const distance = dir === 'left' ? -50 : 50;
+  panInterval = setInterval(() => {
+    chart.pan({ x: distance, y: 0 });
+  }, 100);
+}
+function stopPan() {
+  if (panInterval) {
+    clearInterval(panInterval);
+    panInterval = null;
+  }
+}
+
+/** ✅ 修正版：Resetボタンでズーム前範囲に戻し、ハイライトをクリア */
+function resetChartZoom(canvasId) {
+  const chart = chartInstances[canvasId];
+  if (!chart) return;
+  const original = chartOriginalRanges[canvasId];
+
+  // 1. Zoomプラグインのズーム・パン状態をリセット
+  chart.resetZoom(); 
+  
+  if (original) {
+    // 2. イベント指定で上書きされた min/max オプションを初期値に戻す
+    chart.options.scales.x.min = original.min; 
+    chart.options.scales.x.max = original.max;
+  }
+  
+  // 3. 【**新規追加**】ハイライト（アクティブエレメント）とツールチップをクリア
+  // これにより、イベント選択後の「重なり」表示を解消します。
+  chart.setActiveElements([]);
+  if (chart.tooltip) {
+    chart.tooltip.setActiveElements([]);
+  }
+
+  // 4. グラフを更新
+  chart.update('none'); // アニメーションなしで即時更新
+}
+
+/** ========= 地図 ========= */
+let mapInstance=null;
+function initMap(){
+  const mapEl=document.getElementById('map');
+  if(!gpsLogs || gpsLogs.length===0){
+    mapEl.insertAdjacentHTML('beforebegin', `<div class="warn">GPSデータがありません</div>`);
+    return;
+  }
+  const path=gpsLogs.map(l=>({lat:l.latitude,lng:l.longitude}));
+  mapInstance = new google.maps.Map(mapEl,{ zoom:15, center:path[0] });
+  const poly=new google.maps.Polyline({ path, geodesic:true, strokeColor:'#007bff', strokeOpacity:1.0, strokeWeight:4 });
+  poly.setMap(mapInstance);
+
+  // 凡例
+  const legend=document.getElementById('legend');
+  legend.innerHTML = Object.entries(colorMap).map(([k,c])=>(
+    `<div class="legend-item"><span class="legend-color" style="background:${c}"></span><span>${k.replace(/_/g,' ')}</span></div>`
+  )).join('');
+
+  // イベントマーカー
+  gpsLogs.forEach(log=>{
+    if(log.event && log.event!=='normal'){
+      const color=colorMap[log.event]||'gray';
+      const marker=new google.maps.Marker({
+        position:{lat:log.latitude,lng:log.longitude},
+        map: mapInstance,
+        icon:{
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 6,
+          fillColor: color, fillOpacity: .9,
+          strokeWeight: 1.5, strokeColor:'#000'
+        },
+        title: String(log.event).replace(/_/g,' ')
+      });
+      marker.addListener('click', ()=> {
+        mapInstance.setZoom(17);
+        mapInstance.panTo({lat:log.latitude,lng:log.longitude});
+        // グラフ同期（ハイライト＆フォーカス）
+        highlightOnChart('gForceChart-{{ session.id }}', log);
+      });
+    }
+  });
+}
+
+/** ========= 起動 ========= */
+document.addEventListener('DOMContentLoaded', ()=>{
+  initializeChart();
+  renderGForceChart('gForceChart-{{ session.id }}', gpsLogs, gLogs);
+});
+</script>
+
+<!-- Google Maps（コールバックで initMap を呼ぶ） -->
+<script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDU9txYivjPCIe66l6bPYsPifQKcQxjnrA&callback=initMap&loading=async"></script>
+</body>
+</html>

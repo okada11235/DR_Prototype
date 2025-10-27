@@ -51,23 +51,24 @@
                 <p><strong>急発進🟢回数：</strong> {{ session.sudden_accels if session.sudden_accels is not none else 'N/A' }} 回</p>
                 <p><strong>急カーブ🟡回数：</strong> {{ session.sharp_turns if session.sharp_turns is not none else 'N/A' }} 回</p>
                 
-                <!-- デバッグ情報 -->
+                <!-- デバッグ情報
                 <div style="background-color: #f8f9fa; padding: 10px; margin: 10px 0; border-radius: 5px; font-size: 0.9em;">
                     <strong>デバッグ情報:</strong><br>
                     GPS logs: {{ session.gps_logs|length if session.gps_logs else 0 }} 件<br>
-                    G logs: {{ session.g_logs|length if session.g_logs else 0 }} 件<br>
+                    avg_G logs: {{ session.avg_g_logs|length if session.avg_g_logs else 0 }} 件<br>
                     Status: {{ session.status }}<br>
                     {% if session.gps_logs and session.gps_logs|length > 0 %}
                     First GPS: lat={{ session.gps_logs[0].latitude }}, lng={{ session.gps_logs[0].longitude }}<br>
                     {% endif %}
-                    {% if session.g_logs and session.g_logs|length > 0 %}
-                    First G: x={{ session.g_logs[0].g_x }}, y={{ session.g_logs[0].g_y }}, z={{ session.g_logs[0].g_z }}<br>
+                    {% if session.avg_g_logs and session.avg_g_logs|length > 0 %}
+                    First avg_G: x={{ session.avg_g_logs[0].g_x }}, y={{ session.avg_g_logs[0].g_y }}, z={{ session.avg_g_logs[0].g_z }}<br>
                     {% endif %}
                 </div>
+                -->
                 
                 {% if session.gps_logs|length > 0 or session.g_logs|length > 0 %}
                 
-                {% if session.g_logs|length > 0 %}
+                {% if session.avg_g_logs|length > 0 %}
                 <h4>G加速度＆速度グラフ</h4>
                 <div class="chart-container">
                     <canvas id="gForceChart-{{ session.id }}"></canvas>
@@ -134,6 +135,23 @@
                     <p style="color: #6c757d; margin: 0;">このセッションにはグラフやマップを表示するためのデータがありません。</p>
                     <small style="color: #868e96;">記録中またはデータ収集中のセッションの可能性があります。</small>
                 </div>
+                {% endif %}
+
+                {% if session.audio_records and session.audio_records|length > 0 %}
+                <h4>音声記録 🎧</h4>
+                <ul>
+                {% for audio in session.audio_records %}
+                {% if audio.url %}
+                <li>
+                <audio controls style="width:100%;">
+                    <source src="{{ audio.url }}" type="{{ audio.mime_type or 'audio/webm' }}">
+                    ブラウザが audio タグをサポートしていません。
+                </audio>
+                <small>記録日時: {{ audio.created_at.strftime('%Y/%m/%d %H:%M:%S') if audio.created_at else 'N/A' }}</small>
+                </li>
+                {% endif %}
+                {% endfor %}
+                </ul>
                 {% endif %}
 
                 <div class="reflection-section">
@@ -281,13 +299,13 @@
                 
                 // チャート初期化
                 {% for session in sessions %}
-                {% if session.g_logs %}
+                {% if session.avg_g_logs %}
                 try {
                     const gpsLogs = {{ session.gps_logs | tojson }};
-                    const gLogs = {{ session.g_logs | tojson }};
+                    const gLogs = {{ session.avg_g_logs | tojson }};
                     console.log('Session {{ session.id }} data check:');
                     console.log('- GPS logs:', gpsLogs ? gpsLogs.length : 0, 'items');
-                    console.log('- G logs:', gLogs ? gLogs.length : 0, 'items');
+                    console.log('- avg_G logs:', gLogs ? gLogs.length : 0, 'items');
                     console.log('- Distance:', {{ session.distance if session.distance else 'null' }});
                     console.log('- Status:', '{{ session.status }}');
                     
@@ -295,7 +313,7 @@
                         console.log('Rendering chart for session {{ session.id }}');
                         renderGForceChart('gForceChart-{{ session.id }}', gpsLogs || [], gLogs);
                     } else {
-                        console.warn('No G logs available for chart {{ session.id }}');
+                        console.warn('No avg_G logs available for chart {{ session.id }}');
                     }
                 } catch (error) {
                     console.error('Error rendering chart for session {{ session.id }}:', error);
@@ -357,205 +375,210 @@
         });
 
         // グラフ描画関数
-        function renderGForceChart(canvasId, gpsLogs, gLogs) {
-            console.log('Rendering chart:', canvasId);
-            console.log('GPS logs available:', gpsLogs ? gpsLogs.length : 0);
-            console.log('G logs available:', gLogs ? gLogs.length : 0);
-            
-            if (!gLogs || gLogs.length === 0) {
-                console.error('No G logs available for chart:', canvasId);
-                return;
-            }
-            
-            // GPSログがない場合は空配列を設定
-            if (!gpsLogs) {
-                gpsLogs = [];
-            }
-            
-            if (typeof Chart === 'undefined') {
-                console.error('Chart.js not loaded');
-                return;
-            }
-            
-            const ctx = document.getElementById(canvasId);
-            if (!ctx) {
-                console.error('Canvas not found:', canvasId);
-                return;
-            }
-            
-            // canvas要素とコンテナの詳細な診断
-            const container = ctx.closest('.chart-container');
-            const rect = ctx.getBoundingClientRect();
-            const containerRect = container ? container.getBoundingClientRect() : null;
-            
-            console.log(`Canvas ${canvasId} - Canvas dimensions:`, rect.width, 'x', rect.height);
-            console.log(`Canvas ${canvasId} - Container dimensions:`, containerRect ? `${containerRect.width} x ${containerRect.height}` : 'No container');
-            console.log(`Canvas ${canvasId} - Canvas style:`, window.getComputedStyle(ctx).display, window.getComputedStyle(ctx).visibility);
-            
-            // コンテナとcanvasのサイズを強制的に設定
-            if (container) {
-                container.style.display = 'block';
-                container.style.height = '300px';
-                container.style.width = '100%';
-                container.style.position = 'relative';
-            }
-            
-            ctx.style.display = 'block';
-            ctx.width = container ? container.offsetWidth : 800;
-            ctx.height = 300;
-            
-            // 再度寸法をチェック
-            const newRect = ctx.getBoundingClientRect();
-            console.log(`Canvas ${canvasId} - After resize:`, newRect.width, 'x', newRect.height);
-            
-            if (newRect.width === 0 || newRect.height === 0) {
-                console.error(`Canvas ${canvasId} still has zero dimensions after resize attempt`);
-                // 再試行
-                setTimeout(() => renderGForceChart(canvasId, gpsLogs, gLogs), 200);
-                return;
-            }
-            
-            try {
-                const allTimestamps = Array.from(new Set([
-                    ...gLogs.map(log => Number(log.timestamp_ms ?? log.timestamp)).filter(ts => !isNaN(ts)),
-                    ...gpsLogs.map(log => Number(log.timestamp_ms ?? log.timestamp)).filter(ts => !isNaN(ts))
-                ])).sort((a, b) => a - b);
+        // イベントマーカーの色定義
+        // === イベントマーカーの色定義（8分類対応） ===
+        const colorMap = {
+            // ⚠️ 指摘系
+            sudden_brake: '#ff3b30',     // 赤
+            sudden_accel: '#34c759',     // 緑
+            sharp_turn: '#ff9500',       // オレンジ
+            unstable_drive: '#ffcc00',   // 黄
 
-                const timestamps = allTimestamps.map(ts => new Date(ts).toLocaleTimeString('ja-JP'));
+            // 💙 褒め系
+            smooth_turn: '#007aff',      // 青
+            smooth_accel: '#5ac8fa',     // 水色
+            smooth_brake: '#4cd964',     // 明るい緑
+            stable_drive: '#5856d6',     // 紫
+        };
 
-                function alignData(logs, key) {
-                    const map = new Map(logs.map(log => [Number(log.timestamp_ms ?? log.timestamp), log[key]]));
-                    return allTimestamps.map(ts => {
-                        const value = map.get(ts);
-                        // 値が存在する場合（0を含む）はその値を返し、存在しない場合のみnullを返す
-                        if (value !== undefined && value !== null) {
-                            return Number(value); // 数値に変換して返す
-                        }
-                        return null;
-                    });
+        // イベントを表示する対象の軸
+        const eventAxisMap = {
+            sudden_brake: 'gz',
+            sudden_accel: 'gz',
+            sharp_turn: 'gx',
+            speed_violation: 'speed'
+        };
+
+        // ts に最も近いログを探す（最大許容差: 500ms）
+        function findLogByTimestamp(logs, ts, maxDiffMs = 500) {
+            let closest = null;
+            let minDiff = Infinity;
+            logs.forEach(log => {
+                const t = Number(log.timestamp_ms ?? log.timestamp);
+                if (isNaN(t)) return;
+                const diff = Math.abs(t - ts);
+                if (diff < minDiff) {
+                    closest = log;
+                    minDiff = diff;
                 }
+            });
+            return (minDiff <= maxDiffMs) ? closest : null;
+        }
 
-                // 速度データのデバッグ
-                const speedData = alignData(gpsLogs, "speed");
-                console.log(`Speed data for ${canvasId}:`, speedData);
-                console.log(`Speed data sample (first 10):`, speedData.slice(0, 10));
-                const zeroSpeeds = speedData.filter(speed => speed === 0).length;
-                const nullSpeeds = speedData.filter(speed => speed === null).length;
-                console.log(`Zero speeds: ${zeroSpeeds}, Null speeds: ${nullSpeeds}, Total speeds: ${speedData.length}`);
+        // イベントポイント生成
+        function makeEventPoints(allTimestamps, gpsLogs, axisKey) {
+            return {
+                radius: allTimestamps.map(ts => {
+                    const log = findLogByTimestamp(gpsLogs, ts, 500);
+                    if (!log || !log.event || log.event === 'normal') return 0;
+                    if (axisKey === 'speed') return 6;
+                    if (eventAxisMap[log.event] === axisKey) return 6;
+                    return 0;
+                }),
+                background: allTimestamps.map(ts => {
+                    const log = findLogByTimestamp(gpsLogs, ts, 500);
+                    if (!log || !log.event || log.event === 'normal') return 'transparent';
+                    if (axisKey === 'speed') return colorMap[log.event] || 'gray';
+                    if (eventAxisMap[log.event] === axisKey) return colorMap[log.event] || 'gray';
+                    return 'transparent';
+                }),
+                border: allTimestamps.map(ts => {
+                    const log = findLogByTimestamp(gpsLogs, ts, 500);
+                    if (!log || !log.event || log.event === 'normal') return 'transparent';
+                    if (axisKey === 'speed' || eventAxisMap[log.event] === axisKey) return '#000';
+                    return 'transparent';
+                })
+            };
+        }
 
-            const chart = new Chart(ctx.getContext('2d'), {
+        // 修正版グラフ描画関数
+        function renderGForceChart(canvasId, gpsLogs, gLogs) {
+            if (!gLogs || gLogs.length === 0) return;
+
+            const allTimestamps = Array.from(new Set([
+                ...gLogs.map(log => Number(log.timestamp_ms ?? log.timestamp)).filter(ts => !isNaN(ts)),
+                ...gpsLogs.map(log => Number(log.timestamp_ms ?? log.timestamp)).filter(ts => !isNaN(ts))
+            ])).sort((a, b) => a - b);
+
+            const timestamps = allTimestamps.map(ts => new Date(ts).toLocaleTimeString('ja-JP'));
+
+            // nullを保持してalignする（補完しない）
+            function alignData(logs, key) {
+                const map = new Map(logs.map(log => [Number(log.timestamp_ms ?? log.timestamp), log[key]]));
+                return allTimestamps.map(ts => {
+                    const value = map.get(ts);
+                    return (value !== undefined && value !== null) ? Number(value) : null;
+                });
+            }
+
+            const gxData = alignData(gLogs, "g_x");
+            const gyData = alignData(gLogs, "g_y");
+            const gzData = alignData(gLogs, "g_z");
+            const speedData = alignData(gpsLogs, "speed");  // ← ここも alignData に変更
+
+            const gxPoints = makeEventPoints(allTimestamps, gpsLogs, 'gx');
+            const gyPoints = makeEventPoints(allTimestamps, gpsLogs, 'gy');
+            const gzPoints = makeEventPoints(allTimestamps, gpsLogs, 'gz');
+            const speedPoints = makeEventPoints(allTimestamps, gpsLogs, 'speed');
+
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            const chart = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: timestamps,
                     datasets: [
                         {
                             label: '前後G',
-                            data: alignData(gLogs, "g_z"),
+                            data: gzData,
                             borderColor: '#00bcd4',
                             backgroundColor: 'rgba(0,188,212,0.2)',
                             borderWidth: 2,
                             yAxisID: 'y',
-                            fill: false,
-                            tension: 0.1,  // 少し滑らかに
-                            spanGaps: true
+                            tension: 0.4,
+                            spanGaps: true,
+                            pointRadius: gzPoints.radius,
+                            pointBackgroundColor: gzPoints.background,
+                            pointBorderColor: gzPoints.border
                         },
                         {
                             label: '上下G',
-                            data: alignData(gLogs, "g_y"),
+                            data: gyData,
                             borderColor: '#666',
                             backgroundColor: 'rgba(102,102,102,0.2)',
                             borderWidth: 2,
                             yAxisID: 'y',
-                            fill: false,
-                            tension: 0.1,  // 少し滑らかに
-                            spanGaps: true
+                            tension: 0.4,
+                            spanGaps: true,
+                            pointRadius: gyPoints.radius,
+                            pointBackgroundColor: gyPoints.background,
+                            pointBorderColor: gyPoints.border
                         },
                         {
                             label: '左右G',
-                            data: alignData(gLogs, "g_x"),
+                            data: gxData,
                             borderColor: '#9c27b0',
                             backgroundColor: 'rgba(156,39,176,0.2)',
                             borderWidth: 2,
                             yAxisID: 'y',
-                            fill: false,
-                            tension: 0.1,  // 少し滑らかに
-                            spanGaps: true
+                            tension: 0.4,
+                            spanGaps: true,
+                            pointRadius: gxPoints.radius,
+                            pointBackgroundColor: gxPoints.background,
+                            pointBorderColor: gxPoints.border
                         },
                         {
                             label: '速度 (km/h)',
-                            data: alignData(gpsLogs, "speed"),
+                            data: speedData,
                             borderColor: 'rgba(255,99,132,0.7)',
                             backgroundColor: 'rgba(255,99,132,0.1)',
-                            borderWidth: 2,  // 線の太さを統一
+                            borderWidth: 1,
                             yAxisID: 'y1',
-                            fill: false,
-                            tension: 0.1,  // 少し滑らかに
-                            spanGaps: true
+                            tension: 0,
+                            spanGaps: true,
+                            pointStyle: ctx => speedPoints.radius[ctx.dataIndex] > 0 ? 'circle' : false,
+                            pointRadius: ctx => speedPoints.radius[ctx.dataIndex],
+                            pointBackgroundColor: ctx => speedPoints.background[ctx.dataIndex],
+                            pointBorderColor: ctx => speedPoints.border[ctx.dataIndex]
                         }
                     ]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    devicePixelRatio: window.devicePixelRatio || 1,
-                    layout: {
-                        padding: {
-                            left: 10,
-                            right: 10,
-                            top: 10,
-                            bottom: 10
-                        }
+                    elements: {
+                        line: { cubicInterpolationMode: 'monotone' }
                     },
                     scales: {
-                        y: {
-                            position: 'left',
-                            title: { display: true, text: 'G (重力加速度)' }
-                        },
+                        y: { position: 'left', title: { display: true, text: 'G (重力加速度)' } },
                         y1: {
                             position: 'right',
                             title: { display: true, text: '速度 (km/h)' },
                             grid: { drawOnChartArea: false },
                             min: 0,
-                            max: 120,
-                            beginAtZero: true,  // 0から開始することを明示
-                            ticks: {
-                                stepSize: 10,  // 10km/h刻みで表示
-                                callback: function(value) {
-                                    return value + ' km/h';
-                                }
-                            }
+                            max: 120
                         }
                     },
                     plugins: {
+                        decimation: { enabled: true, algorithm: 'lttb', samples: 1000 },
                         zoom: {
                             pan: { enabled: true, mode: 'x' },
                             zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' }
-                        }
-                    },
-                    onResize: function(chart, size) {
-                        console.log(`Chart ${canvasId} resized to:`, size.width, 'x', size.height);
-                    },
-                    animation: {
-                        onComplete: function() {
-                            console.log(`Chart ${canvasId} animation completed`);
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const ts = allTimestamps[context.dataIndex];
+                                    const date = new Date(ts);
+                                    const timeStr = date.toLocaleTimeString('ja-JP', { hour12: false }) +
+                                        "." + String(date.getMilliseconds()).padStart(3, "0");
+                                    let label = `${timeStr} | ${context.dataset.label}: ${context.raw?.toFixed(2)}`;
+                                    if (context.dataset.label.includes('速度')) label += ' km/h';
+                                    else label += ' G';
+                                    const log = gpsLogs.find(l => Number(l.timestamp_ms ?? l.timestamp) === ts);
+                                    if (log && log.event && log.event !== 'normal') {
+                                        label += ` (イベント: ${log.event.replace(/_/g, ' ')})`;
+                                    }
+                                    return label;
+                                }
+                            }
                         }
                     }
                 }
             });
-            
+
             chartInstances[canvasId] = chart;
-            console.log('Chart created successfully:', canvasId);
-            
-            // チャート作成後に強制リサイズ
-            setTimeout(() => {
-                chart.resize();
-                console.log(`Chart ${canvasId} manually resized`);
-            }, 100);
-            
-            } catch (error) {
-                console.error('Error creating chart:', canvasId, error);
-            }
         }
+
 
         // 地図初期化関数
         function initSessionMap(mapId, gpsLogs) {
@@ -611,6 +634,7 @@
                 return;
             }
 
+            let map = null;
             try {
                 const path = gpsLogs.map(log => ({ lat: log.latitude, lng: log.longitude }));
                 const map = new google.maps.Map(mapElement, {
@@ -636,36 +660,166 @@
                 // イベントマーカー
                 gpsLogs.forEach(log => {
                     if (log.event && log.event !== 'normal') {
-                        const colors = {
-                            'sudden_brake': 'red',
-                            'sudden_accel': 'green',
-                            'sharp_turn': 'orange',
-                            'speed_violation': 'purple'
-                        };
-                        
-                        new google.maps.Marker({
+                        const color = colorMap[log.event] || 'gray';
+
+                        const marker = new google.maps.Marker({
                             position: { lat: log.latitude, lng: log.longitude },
                             map: map,
                             icon: {
                                 path: google.maps.SymbolPath.CIRCLE,
-                                scale: 6,
-                                fillColor: colors[log.event] || 'gray',
-                                fillOpacity: 1,
-                                strokeWeight: 1,
-                                strokeColor: '#000'
+                                scale: 6,              // マーカーの大きさ
+                                fillColor: color,      // colorMap から取得
+                                fillOpacity: 0.9,      // 少し透明感
+                                strokeWeight: 1.5,     // 枠線の太さ
+                                strokeColor: '#000000' // 黒の枠線
                             },
-                            title: log.event.replace('_', ' ')
+                            title: log.event.replace(/_/g, ' ')
+                        });
+
+                        // 🔸クリック時にグラフへ同期（ハイライト）
+                        marker.addListener('click', () => {
+                            highlightOnChart(mapId.replace('map-', 'gForceChart-'), log);
                         });
                     }
                 });
-                
                 console.log('Map initialized successfully:', mapId);
             } catch (error) {
                 console.error('Error creating map:', mapId, error);
                 mapElement.innerHTML = '<p style="text-align: center; margin-top: 20px; color: red;">地図の初期化でエラーが発生しました。</p>';
             }
+            if (map) {
+                mapElement._google_map_instance = map;
+            }
+
+            // === 地図描画後に凡例を追加 ===
+            const legendId = `legend-${mapId}`;
+            if (!document.getElementById(legendId)) {
+                const legendDiv = document.createElement('div');
+                legendDiv.id = legendId;
+                legendDiv.classList.add('map-legend');
+                legendDiv.innerHTML = Object.entries(colorMap).map(([key, color]) => `
+                    <div style="display:flex;align-items:center;margin-right:10px;margin-bottom:4px;">
+                        <span style="display:inline-block;width:14px;height:14px;border-radius:50%;
+                                    background:${color};border:1px solid #333;margin-right:6px;"></span>
+                        <span>${key.replace(/_/g, ' ')}</span>
+                    </div>
+                `).join('');
+
+                // 見た目の改善
+                Object.assign(legendDiv.style, {
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: '6px',
+                    padding: '8px 10px',
+                    background: '#ffffffcc',
+                    borderRadius: '8px',
+                    marginTop: '8px',
+                    fontSize: '0.85rem',
+                    backdropFilter: 'blur(4px)',
+                    justifyContent: 'flex-start'
+                });
+
+                const container = mapElement.closest('.map-container');
+                if (container) container.appendChild(legendDiv);
+            }
         }
 
+        // === グラフ⇄地図 相互リンク ===
+        function highlightOnChart(canvasId, log) {
+            const chart = chartInstances[canvasId];
+            if (!chart) return;
+
+            const ts = Number(log.timestamp_ms ?? log.timestamp);
+            const idx = chart.data.labels.findIndex(label => {
+                const d = new Date(label);
+                return Math.abs(d.getTime() - ts) < 500;
+            });
+            if (idx >= 0) {
+                chart.setActiveElements([{ datasetIndex: 0, index: idx }]);
+                chart.tooltip.setActiveElements([{ datasetIndex: 0, index: idx }]);
+                chart.update();
+            }
+        }
+
+        function highlightOnMap(mapId, log) {
+            const mapEl = document.getElementById(mapId);
+            if (!mapEl) return;
+            const map = mapEl._google_map_instance;
+            if (!map) return;
+
+            const { latitude: lat, longitude: lng } = log;
+
+            // 一時的なハイライトマーカー
+            const marker = new google.maps.Marker({
+                position: { lat, lng },
+                map,
+                icon: {
+                    path: google.maps.SymbolPath.CIRCLE,
+                    scale: 10,
+                    fillColor: '#FFD700', // 黄色ゴールドで一瞬光る
+                    fillOpacity: 0.9,
+                    strokeColor: '#000',
+                    strokeWeight: 2
+                }
+            });
+
+            map.panTo({ lat, lng });
+            setTimeout(() => marker.setMap(null), 2000);
+        }
+
+        function highlightOnChart(canvasId, log) {
+            const chart = chartInstances[canvasId];
+            if (!chart) return;
+
+            const ts = Number(log.timestamp_ms ?? log.timestamp);
+            const idx = chart.data.labels.findIndex(label => {
+                const d = new Date(label);
+                return Math.abs(d.getTime() - ts) < 500;
+            });
+            if (idx >= 0) {
+                // 該当点をハイライト
+                chart.setActiveElements([{ datasetIndex: 0, index: idx }]);
+                chart.tooltip.setActiveElements([{ datasetIndex: 0, index: idx }]);
+                chart.update();
+
+                // 💡 X軸のズーム範囲を変更（前後5秒にズーム）
+                const centerTime = new Date(ts).getTime();
+                const range = 500; // ミリ秒（前後0.5秒）
+                chart.options.scales.x.min = centerTime - range;
+                chart.options.scales.x.max = centerTime + range;
+                chart.update();
+            }
+        }
+
+        function highlightOnMap(mapId, log) {
+            const mapEl = document.getElementById(mapId);
+            if (!mapEl) return;
+            const map = mapEl._google_map_instance;
+            if (!map) return;
+
+            const { latitude: lat, longitude: lng } = log;
+
+            map.setZoom(17); // 💡 ズームイン
+            map.panTo({ lat, lng });
+
+            // 一時的なハイライトマーカーを出す
+            const marker = new google.maps.Marker({
+                position: { lat, lng },
+                map,
+                icon: {
+                    path: google.maps.SymbolPath.CIRCLE,
+                    scale: 10,
+                    fillColor: '#FFD700',
+                    fillOpacity: 0.9,
+                    strokeColor: '#000',
+                    strokeWeight: 2
+                }
+            });
+
+            // 2秒後に削除
+            setTimeout(() => marker.setMap(null), 2000);
+        }
+    
         // ズーム・パン関数
         function startZoom(canvasId, direction) {
             const chart = chartInstances[canvasId];
@@ -714,6 +868,6 @@
 
     </script>
     
-    <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBUyc6mj-SEOP8lopM2laEywMILL8qknvo&callback=initAllSessionMaps&loading=async"></script>
+    <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDU9txYivjPCIe66l6bPYsPifQKcQxjnrA&callback=initAllSessionMaps&loading=async"></script>
 </body>
 </html>

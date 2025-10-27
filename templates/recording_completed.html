@@ -1,135 +1,236 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title id="app-title-tag">ドライブバディ - 記録終了</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        'primary-green': '#00bcd4', 
-                        'danger-red': '#f44336',
-                        'bg-dark': '#ffffff',
-                        'card-dark': '#e0f7fa',
-                    },
-                    fontFamily: {
-                        sans: ['Inter', 'sans-serif'],
-                    },
-                }
-            }
-        }
-    </script>
-    <style>
-        body {
-            background-color: #f0f8ff;
-            color: #ffffff; 
-            min-height: 100vh;
-        }
-        .text-gray-300 { color: #00bcd4; }
-        .text-gray-400 { color: #00838f; }
-        .border-gray-600 { border-color: #b2ebf2; }
-        /* text-whiteクラスを持つ特定の要素の色を上書き */
-        div .text-white, p .text-white { color: #1e3a8a; }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ドライブバディ - 記録完了</title>
 
-        .bg-indigo-600 { background-color: #03a9f4; }
-        .hover\:bg-indigo-700:hover { background-color: #0288d1; }
-        .bg-green-600 { background-color: #00bcd4; }
-        .hover\:bg-green-700:hover { background-color: #0097a7; }
+  <!-- ✅ Bootstrapを追加 -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
 
-        /* 吹き出しのしっぽ */
-        .speech-bubble:after {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: -10px;
-            margin-top: -10px;
-            border-style: solid;
-            border-width: 10px 10px 10px 0;
-            border-color: transparent #e0f7fa transparent transparent;
-        }
-    </style>
+  <style>
+    body {
+      font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #cdeae0;
+      color: #333;
+      padding-bottom: 55px; /* ナビ分の余白 */
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 15px;
+    }
+
+    .logo-area {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logo-area img {
+      width: 50px;
+      height: 50px;
+    }
+
+    .title {
+      font-size: 1.5em;
+      font-weight: bold;
+      color: #2090c2;
+    }
+
+    .main {
+      text-align: center;
+      padding: 20px;
+    }
+
+    .robot {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      object-fit: cover;
+      background-color: #fff;
+      border: 2px solid #2b8ca6;
+      margin-bottom: 5px;
+    }
+
+    .main-title {
+      color: #4db6ac;
+      font-size: 1.8em;
+      font-weight: bold;
+      margin-bottom: 10px;
+    }
+
+    .drive-info {
+      display: flex;
+      justify-content: center;
+      gap: 40px;
+      font-weight: bold;
+      margin-bottom: 20px;
+    }
+
+    .section {
+      background-color: #fff;
+      border-radius: 6px;
+      margin: 15px auto;
+      padding: 15px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      width: 90%;
+      text-align: left;
+    }
+
+    .section h2 {
+      font-size: 1.3em;
+      color: #2090c2;
+      margin-bottom: 8px;
+      border-bottom: 2px solid #a5dbe0;
+      padding-bottom: 4px;
+    }
+
+    .score {
+      font-size: 1.6em;
+      font-weight: bold;
+      color: #d32f2f;
+      margin-left: 5px;
+    }
+
+    .comment {
+      font-size: 0.95em;
+      color: #444;
+      margin-top: 5px;
+    }
+
+    .highlight {
+      color: #e44d8f;
+      font-weight: bold;
+    }
+
+    /* ローディングアニメーション */
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    /* === ナビバー統一スタイル（result.htmlと完全一致） === */
+    .custom-nav-bar {
+      background: #378da0;
+      border-top: 2px solid #5a7d8d;
+      box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.2);
+      height: 45px;
+    }
+
+    /* 各項目 */
+    .custom-nav-item {
+      flex: 1;
+    }
+
+    .custom-nav-bar{background:#378da0;border-top:2px solid #5a7d8d;box-shadow:inset 0 0 5px rgba(0,0,0,.2);height:45px}
+    .custom-nav-link{color:#fff;font-weight:bold;font-size:1rem;padding:0 1rem;line-height:41px;height:100%;display:block}
+    .custom-nav-item:not(:last-child){border-right:1px solid #5a7d8d}
+    .active-glow .custom-nav-link.active{color:rgb(0, 0, 0);background:rgba(255,255,255,.05)}
+
+  </style>
 </head>
-<body class="font-sans">
-    <div class="container mx-auto p-4 max-w-lg">
-        
-        <div class="flex flex-col items-center p-6 bg-bg-dark rounded-xl shadow-2xl transition duration-500">
-            <h1 class="text-4xl font-extrabold text-primary-green mb-4">お疲れ様でした！</h1>
-            
-            <!-- ▼▼▼ キャラクターフィードバックセクション ▼▼▼ -->
-            <div class="w-full flex items-center mb-6 p-4 bg-card-dark/50 rounded-lg">
-                <div class="flex-shrink-0">
-                    <img src="https://i.imgur.com/H5Fh9nO.png" alt="キャラクター" class="w-24 h-24 rounded-full border-4 border-primary-green bg-card-dark object-cover object-top shadow-md"/>
-                </div>
-                <div class="relative ml-4 flex-1">
-                    <div class="relative bg-card-dark p-4 rounded-lg shadow-inner speech-bubble">
-                        <!-- ★★★ この中の文章を自由に変更してください ★★★ -->
-                        <p id="feedback-text" class="text-base font-medium" style="color: #1e3a8a;">
-                            今回の運転、お疲れ様でした！詳細な記録を確認して、次の運転に活かしましょう！
-                        </p>
-                         <!-- ★★★ ここまで ★★★ -->
-                    </div>
-                </div>
-            </div>
-            <!-- ▲▲▲ キャラクターフィードバックセクション ▲▲▲ -->
+<body>
 
-            <div class="w-full text-center mb-6">
-                <div class="bg-card-dark p-4 rounded-lg shadow-inner border border-gray-600">
-                    <h2 class="text-xl font-semibold text-primary-green mb-4">今回の運転データ</h2>
-                    
-                    <!-- ▼▼▼ 運転データレイアウト変更 ▼▼▼ -->
-                    <div class="flex flex-col gap-4 text-sm">
-                        <!-- 上段 -->
-                        <div class="flex gap-4">
-                            <div class="bg-bg-dark p-3 rounded-lg w-1/2">
-                                <p class="text-gray-400">走行時間</p>
-                                <p id="total-time" class="text-2xl font-bold text-gray-300">--:--</p>
-                            </div>
-                            <div class="bg-bg-dark p-3 rounded-lg w-1/2">
-                                <p class="text-gray-400">走行距離</p>
-                                <p id="total-distance" class="text-2xl font-bold text-gray-300">-- km</p>
-                            </div>
-                        </div>
-                        <!-- 下段 -->
-                        <div class="flex gap-4">
-                            <div class="bg-bg-dark p-3 rounded-lg w-1/3">
-                                <p class="text-gray-400">急ブレーキ🔴</p>
-                                <p id="final-brake-count" class="text-2xl font-bold text-gray-300">-- 回</p>
-                            </div>
-                            <div class="bg-bg-dark p-3 rounded-lg w-1/3">
-                                <p class="text-gray-400">急加速🟢</p>
-                                <p id="final-accel-count" class="text-2xl font-bold text-gray-300">-- 回</p>
-                            </div>
-                            <div class="bg-bg-dark p-3 rounded-lg w-1/3">
-                                <p class="text-gray-400">急カーブ🟡</p>
-                                <p id="final-turn-count" class="text-2xl font-bold text-gray-300">-- 回</p>
-                            </div>
-                        </div>
-                    </div>
-                    <!-- ▲▲▲ 運転データレイアウト変更 ▲▲▲ -->
-                </div>
-            </div>
-            
-            <div class="w-full space-y-3">
-                <button onclick="startNewSession()" 
-                        class="w-full py-4 text-xl bg-green-600 hover:bg-green-700 rounded-xl shadow-lg transition duration-300 transform hover:scale-[1.02]">
-                    新しい記録を開始
-                </button>
-                
-                <a href="#" 
-                   class="w-full py-3 text-lg bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md transition duration-300 flex items-center justify-center font-medium">
-                    詳細な記録を確認する
-                </a>
-                
-                <button onclick="goToHome()" 
-                        class="w-full py-3 text-lg bg-gray-500 hover:bg-gray-600 rounded-xl shadow-md transition duration-300">
-                    ホームに戻る
-                </button>
-            </div>
-        </div>
+  <header>
+    <div class="logo-area">
+      <img src="{{ url_for('static', filename='img/icon.png') }}" alt="ドライブバディロゴ">
+      <div class="title">ドライブバディ</div>
     </div>
+  </header>
+
+  <main class="main">
+    <img src="{{ url_for('static', filename='img/robot.png') }}" alt="ドライボ" class="robot">
+    <div class="main-title">お疲れさまでした！</div>
+
+    <div class="drive-info">
+      <div>走行時間<br><span id="total-time">--:--</span></div>
+      <div>走行距離<br><span id="total-distance">-- km</span></div>
+    </div>
+
+    <!-- AI評価生成中ローディング -->
+    <div id="loading-section" class="section">
+      <h2>🤖 AI評価生成中...</h2>
+      <p style="text-align: center;">
+        <div style="display: inline-block; width: 20px; height: 20px; border: 3px solid #f3f3f3; border-top: 3px solid #2090c2; border-radius: 50%; animation: spin 1s linear infinite; margin-right: 10px;"></div>
+        運転データを分析しています...
+      </p>
+    </div>
+
+    <!-- 減速 -->
+    <div class="section evaluation-section" style="display: none;">
+      <h2>減速</h2>
+      <p>結果：分析中...</p>
+      <p>詳細：データを処理中...</p>
+      <p class="comment">コメント：評価を生成中...</p>
+    </div>
+
+    <!-- 加速 -->
+    <div class="section evaluation-section" style="display: none;">
+      <h2>加速</h2>
+      <p>結果：分析中...</p>
+      <p>詳細：データを処理中...</p>
+      <p class="comment">コメント：評価を生成中...</p>
+    </div>
+
+    <!-- 旋回 -->
+    <div class="section evaluation-section" style="display: none;">
+      <h2>旋回</h2>
+      <p>結果：分析中...</p>
+      <p>詳細：データを処理中...</p>
+      <p class="comment">コメント：評価を生成中...</p>
+    </div>
+
+    <!-- 直進 -->
+    <div class="section evaluation-section" style="display: none;">
+      <h2>直進</h2>
+      <p>結果：分析中...</p>
+      <p>詳細：データを処理中...</p>
+      <p class="comment">コメント：評価を生成中...</p>
+    </div>
+
+    <!-- 総評 -->
+    <div class="section evaluation-section" style="display: none;">
+      <h2>総評</h2>
+      <p>AI評価を生成中です...</p>
+    </div>
+
+    <!-- 今回の重点ポイント -->
+    <div class="section evaluation-section" style="display: none;">
+      <h2 style="color:#e44d8f;">今回の重点ポイント</h2>
+      <p>重点ポイントの評価を生成中...</p>
+    </div>
+  </main>
+
+  <!-- ✅ 共通ナビバー -->
+  <nav class="navbar navbar-expand custom-nav-bar fixed-bottom">
+    <div class="container-fluid justify-content-center">
+      <ul class="navbar-nav w-100 text-center">
+        <li class="nav-item flex-fill custom-nav-item">
+          <a href="{{ url_for('views.home') }}" class="nav-link custom-nav-link">ホーム</a>
+        </li>
+        <li class="nav-item flex-fill custom-nav-item active-glow">
+          <a class="nav-link custom-nav-link active" href="{{ url_for('views.recording_start') }}">運転</a>
+        </li>
+
+        <!-- ✅ ここに active-glow を付ける（このページが“リザルト”なら） -->
+        <li class="nav-item flex-fill custom-nav-item">
+          <a href="{{ url_for('sessions.results_page') }}" class="nav-link custom-nav-link">リザルト</a>
+        </li>
+
+        <li class="nav-item flex-fill custom-nav-item">
+          <a class="nav-link custom-nav-link" href="{{ url_for('views.map_editor') }}">マップ</a>
+        </li>
+        <li class="nav-item flex-fill custom-nav-item border-end-0">
+          <a class="nav-link custom-nav-link" href="#">説明</a>
+        </li>
+      </ul>
+    </div>
+  </nav>
 
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
@@ -147,43 +248,231 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
 
+        let currentSessionId = null;
+        let selectedFocusPoint = null;
+
         function displaySessionResults(sessionData) {
             document.getElementById('total-time').textContent = sessionData.totalTime || '--:--';
             document.getElementById('total-distance').textContent = (sessionData.distance || 0).toFixed(2) + ' km';
-            document.getElementById('final-brake-count').textContent = (sessionData.sudden_brakes || 0) + ' 回';
-            document.getElementById('final-accel-count').textContent = (sessionData.sudden_accels || 0) + ' 回';
-            document.getElementById('final-turn-count').textContent = (sessionData.sharp_turns || 0) + ' 回';
-            // 安定度の項目を削除
+            currentSessionId = sessionData.session_id;
+            selectedFocusPoint = sessionData.focus_point;
         }
 
-        function startNewSession() {
-            // 仮のリンク先
-            window.location.href = "/";
+        async function generateAndDisplayAIEvaluation(sessionId, focusPoint) {
+            try {
+                console.log('Generating AI evaluation for session:', sessionId, 'focus:', focusPoint);
+                
+                // まず既存の評価を確認
+                const getResponse = await fetch(`/get_ai_evaluation/${sessionId}`);
+                
+                // レスポンスがJSONでない場合（例：認証エラー）のチェック
+                const getContentType = getResponse.headers.get('content-type');
+                if (!getContentType || !getContentType.includes('application/json')) {
+                    console.error('Non-JSON response received:', getResponse.status, getResponse.statusText);
+                    if (getResponse.status === 401 || getResponse.status === 302) {
+                        showErrorMessage('ログインが必要です。ページを更新してログインしてください。');
+                        window.location.href = '/login';
+                        return;
+                    }
+                    // 404の場合は評価が存在しないということなので、新規生成に進む
+                    if (getResponse.status === 404) {
+                        console.log('AI evaluation not found, generating new one...');
+                    } else {
+                        showErrorMessage(`サーバーエラーが発生しました (${getResponse.status})`);
+                        return;
+                    }
+                } else {
+                    const getResult = await getResponse.json();
+                    
+                    if (getResult.status === 'ok') {
+                        // 既に評価が存在する場合は表示
+                        displayAIEvaluation(getResult.evaluation);
+                        return;
+                    }
+                }
+                
+                // 評価が存在しない場合は生成
+                const response = await fetch(`/generate_ai_evaluation/${sessionId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        focus_point: focusPoint || ''
+                    })
+                });
+                
+                // レスポンスがJSONでない場合（例：認証エラー）の処理
+                const postContentType = response.headers.get('content-type');
+                if (!postContentType || !postContentType.includes('application/json')) {
+                    console.error('Non-JSON response received:', response.status, response.statusText);
+                    if (response.status === 401 || response.status === 302) {
+                        showErrorMessage('ログインが必要です。ページを更新してログインしてください。');
+                        window.location.href = '/login';
+                        return;
+                    }
+                    showErrorMessage(`サーバーエラーが発生しました (${response.status})`);
+                    return;
+                }
+                
+                const result = await response.json();
+                
+                if (result.status === 'ok') {
+                    displayAIEvaluation(result.evaluation);
+                } else {
+                    console.error('Failed to generate AI evaluation:', result.message);
+                    showErrorMessage('評価の生成に失敗しました: ' + (result.message || ''));
+                }
+                
+            } catch (error) {
+                console.error('Error generating AI evaluation:', error);
+                showErrorMessage('評価の生成中にエラーが発生しました');
+            }
         }
 
-        function goToHome() {
-            // 仮のリンク先
-            window.location.href = "/";
+        function displayAIEvaluation(evaluation) {
+            const scores = evaluation.scores;
+            const comments = evaluation.comments;
+            
+            // ローディングセクションを非表示
+            const loadingSection = document.getElementById('loading-section');
+            if (loadingSection) {
+                loadingSection.style.display = 'none';
+            }
+            
+            // 評価セクションを表示
+            const evaluationSections = document.querySelectorAll('.evaluation-section');
+            evaluationSections.forEach(section => {
+                section.style.display = 'block';
+            });
+            
+            // 生成方法を表示（デバッグ用）
+            if (evaluation.generation_method) {
+                console.log(`🔍 Feedback generated using: ${evaluation.generation_method}`);
+                // 開発者向けに画面にも表示
+                if (evaluation.generation_method === 'openai') {
+                    console.log('✨ This feedback was generated by OpenAI GPT-3.5-turbo!');
+                } else {
+                    console.log('🔧 This feedback was generated by rule-based system.');
+                }
+            }
+            
+            // スコアと評価内容を更新
+            updateSection('brake', scores.brake, comments.brake);
+            updateSection('accel', scores.accel, comments.accel);
+            updateSection('turn', scores.turn, comments.turn);
+            updateSection('straight', scores.straight, comments.straight);
+            
+            // 総評を更新
+            updateOverallSection(scores.overall, evaluation.overall_comment);
+            
+            // 重点ポイントセクションを更新
+            updateFocusPointSection(evaluation.focus_point, evaluation);
         }
 
-        document.addEventListener('DOMContentLoaded', function() {
+        function updateSection(sectionType, score, comment) {
+            const sections = document.querySelectorAll('.section h2');
+            for (let section of sections) {
+                const sectionName = section.textContent;
+                let matches = false;
+                
+                if (sectionType === 'brake' && sectionName.includes('減速')) matches = true;
+                else if (sectionType === 'accel' && sectionName.includes('加速')) matches = true;
+                else if (sectionType === 'turn' && sectionName.includes('旋回')) matches = true;
+                else if (sectionType === 'straight' && sectionName.includes('直進')) matches = true;
+                
+                if (matches) {
+                    const parentDiv = section.closest('.section');
+                    
+                    // 内容を更新（スコア表示は削除）
+                    const paragraphs = parentDiv.querySelectorAll('p');
+                    if (paragraphs[0]) paragraphs[0].textContent = `結果：${comment.result}`;
+                    if (paragraphs[1]) paragraphs[1].textContent = `詳細：${comment.detail}`;
+                    if (paragraphs[2]) {
+                        paragraphs[2].className = 'comment';
+                        paragraphs[2].textContent = `コメント：${comment.comment}`;
+                    }
+                    break;
+                }
+            }
+        }
+
+        function updateOverallSection(overallScore, overallComment) {
+            const sections = document.querySelectorAll('.section h2');
+            for (let section of sections) {
+                if (section.textContent.includes('総評')) {
+                    const parentDiv = section.closest('.section');
+                    
+                    const paragraph = parentDiv.querySelector('p');
+                    if (paragraph) {
+                        paragraph.textContent = overallComment;
+                    }
+                    break;
+                }
+            }
+        }
+
+        function updateFocusPointSection(focusPoint, evaluation) {
+            const sections = document.querySelectorAll('.section h2');
+            for (let section of sections) {
+                if (section.textContent.includes('重点ポイント')) {
+                    const parentDiv = section.closest('.section');
+                    const paragraph = parentDiv.querySelector('p');
+                    
+                    if (paragraph && focusPoint) {
+                        // OpenAI評価に重点ポイント評価が含まれている場合はそれを使用
+                        if (evaluation.focus_point_comment) {
+                            paragraph.innerHTML = evaluation.focus_point_comment;
+                        } else {
+                            // フォールバック：シンプルなメッセージ
+                            paragraph.innerHTML = `今回の重点ポイントは <b>${focusPoint}</b> でした！<br>
+                            継続して意識することで、より安全で快適な運転が身につきます🚗�`;
+                        }
+                    } else {
+                        paragraph.innerHTML = '次回は重点ポイントを選んで挑戦してみよう！🚗';
+                    }
+                    break;
+                }
+            }
+        }
+
+        function showErrorMessage(message) {
+            // ローディングセクションを非表示
+            const loadingSection = document.getElementById('loading-section');
+            if (loadingSection) {
+                loadingSection.style.display = 'none';
+            }
+            
+            // エラーメッセージを表示する簡単な方法
+            const mainElement = document.querySelector('.main');
+            const errorDiv = document.createElement('div');
+            errorDiv.style.cssText = 'background-color: #ffebee; color: #c62828; padding: 10px; margin: 20px; border-radius: 5px; text-align: center;';
+            errorDiv.textContent = message;
+            mainElement.appendChild(errorDiv);
+        }
+
+        document.addEventListener('DOMContentLoaded', async function() {
             const savedSessionData = localStorage.getItem('lastSessionData');
             if (savedSessionData) {
                 try {
                     const sessionData = JSON.parse(savedSessionData);
                     displaySessionResults(sessionData);
-                    // 必要に応じてフィードバック内容を動的に変更することもできます
-                    // const feedbackElement = document.getElementById('feedback-text');
-                    // if(sessionData.sudden_brakes > 5) {
-                    //    feedbackElement.textContent = "急ブレーキが非常に多いです！もっと注意しましょう。";
-                    // }
+                    
+                    // AI評価を生成・表示
+                    if (currentSessionId) {
+                        await generateAndDisplayAIEvaluation(currentSessionId, selectedFocusPoint);
+                    }
+                    
                     localStorage.removeItem('lastSessionData');
                 } catch (e) {
                     console.error('Failed to parse saved session data:', e);
+                    showErrorMessage('セッションデータの読み込みに失敗しました');
                 }
+            } else {
+                console.warn('No session data found in localStorage');
+                showErrorMessage('セッションデータが見つかりません');
             }
         });
     </script>
 </body>
 </html>
-
