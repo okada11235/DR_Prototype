@@ -152,6 +152,13 @@
       background-color: #0097a7;
       transform: translateY(-2px);
     }
+
+    #priority-map {
+      width: 100%;
+      height: 400px !important;
+      background: #ddd;
+      border: 2px solid #ffa726;
+    }
   </style>
 </head>
 <body>
@@ -197,12 +204,26 @@
       </div>
     </div>
 
-    <div class="focus-section">
-      <h3>▼今回の重点ポイント</h3>
-      <label class="checkbox-item"><input type="checkbox" name="focus" value="減速">減速</label>
-      <label class="checkbox-item"><input type="checkbox" name="focus" value="加速">加速</label>
-      <label class="checkbox-item"><input type="checkbox" name="focus" value="旋回">旋回</label>
-      <label class="checkbox-item"><input type="checkbox" name="focus" value="直進">直進</label>
+    <p id="priority_map_text"
+      style="
+        text-align: center;
+        font-size: 1.2rem;
+        font-weight: 600;
+        color: #333;
+        background: #ffffff;
+        border-bottom: 3px solid #ffd54f;
+        width: 85%;
+        margin: 20px auto 10px;
+        border-radius: 8px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        padding: 8px 0;
+        letter-spacing: 1px;
+      ">
+      🗺️ 重点ポイントマップ
+    </p>
+    <div id="priority-map" 
+        style="width: 90%; height: 300px; min-height: 250px; margin: 0 auto;
+                border-radius: 10px; border: 2px solid #ffa726; display:block;">
     </div>
   </main>
 
@@ -233,6 +254,8 @@
   <!-- ✅ Firebase & 音声アンロックスクリプト -->
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <!-- ✅ Firebase Authenticationも追加 -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
   <script>
     const firebaseConfig = {
       apiKey: "AIzaSyCEuouICKd32x3-4y5QzA_2ovq8pydvez4",
@@ -288,18 +311,24 @@
         });
       }
     });
-
-    // ✅ チェックボックス排他処理
-    document.querySelectorAll('input[name="focus"]').forEach(checkbox => {
-      checkbox.addEventListener('change', function() {
-        if (this.checked) {
-          document.querySelectorAll('input[name="focus"]').forEach(other => {
-            if (other !== this) other.checked = false;
-          });
-        }
-      });
-    });
   </script>
   <script type="module" src="{{ url_for('static', filename='main.js') }}"></script>
+  <script type="module">
+    import { initPriorityMap } from "{{ url_for('static', filename='priority_map.js') }}";
+
+    // Flaskから渡されたユーザーIDをJS側で利用可能にする
+    window.FLASK_USER_ID = "{{ user_id }}";
+    console.log("👤 Flask user_id:", window.FLASK_USER_ID);
+
+    // ✅ Maps API読み込みが終わってから初期化する
+    window.initPriorityMap = initPriorityMap;
+  </script>
+
+  <!-- ✅ Google Maps APIに callback=initPriorityMap を付ける -->
+  <script
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDU9txYivjPCIe66l6bPYsPifQKcQxjnrA&callback=initPriorityMap"
+    async
+    defer
+  ></script>
 </body>
 </html>
