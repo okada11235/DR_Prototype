@@ -352,8 +352,8 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now) {
           drivingState.accelStart = 0;
       }
   }
-
-  // 減速判定
+/*
+  // 継続時間からの減速判定
   if (currentCondition !== 'brake') drivingState.brakeStart = 0;
   if (drivingState.brakeStart > 0) {
       duration = now - drivingState.brakeStart;
@@ -368,6 +368,45 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now) {
           drivingState.brakeStart = 0;
       }
   }
+*/
+  // ===============================
+  // 🚗 停止直前ブレーキ評価ロジック
+  // ===============================
+  if (speed <= 10 && !drivingState.brakeEvaluated) {
+    const windowMs = 3000; // 直前3秒を分析
+    const recentSpeeds = speedHistory.filter(s => now - s.t <= windowMs);
+    const recentGs = window.gLogBuffer.filter(g => now - g.timestamp <= windowMs);
+
+    if (recentSpeeds.length > 2) {
+      const firstSpeed = recentSpeeds[0].speed;
+      const lastSpeed = recentSpeeds[recentSpeeds.length - 1].speed;
+      const deltaSpeed = firstSpeed - lastSpeed;
+      const durationSec = (recentSpeeds[recentSpeeds.length - 1].t - recentSpeeds[0].t) / 1000;
+      const decelRate = deltaSpeed / durationSec; // km/h/s
+
+      const avgG = recentGs.reduce((sum, g) => sum + g.g_z, 0) / recentGs.length;
+      const maxAbsG = Math.max(...recentGs.map(g => Math.abs(g.g_z)));
+
+      let type = null;
+
+      if (decelRate > 6 || maxAbsG >= 0.3) {
+        type = 'sudden_brake'; // 急ブレーキ
+      } else if (decelRate > 2 || Math.abs(avgG) >= 0.15) {
+        type = 'smooth_brake'; // 良いブレーキ
+      }
+
+      if (type) {
+        console.log(`🚗 停止直前ブレーキ判定 → ${type} (Δv/s=${decelRate.toFixed(2)} km/h/s, avgG=${avgG.toFixed(2)})`);
+        playRandomAudio(type);
+        drivingState.brakeEvaluated = true; // 一度だけ判定
+        lastEventTime = now; // クールダウンも兼ねる
+      }
+    }
+  }
+
+  // 再発動を許可（走り出したらリセット）
+  if (speed > 15) drivingState.brakeEvaluated = false;
+
   
   // 直進判定
   if (currentCondition !== 'straight') drivingState.straightStart = 0;

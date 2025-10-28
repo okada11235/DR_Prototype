@@ -80,7 +80,10 @@ async function initPriorityMap() {
 async function loadPins(map) {
   console.log("📥 ピンを読み込み中...");
   try {
-    const snapshot = await firebase.firestore().collection("priority_pins").get();
+    const snapshot = await firebase.firestore()
+      .collection("priority_pins")
+      .where("user_id", "==", userId)
+      .get();
     snapshot.forEach((doc) => {
       const data = doc.data();
       addMarker(map, {
