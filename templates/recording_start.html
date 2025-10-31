@@ -194,7 +194,11 @@
     </button>
   </div>
 
-    <button id="start-button" class="start-button">運転開始</button>
+    <div style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap;">
+      <button id="start-button" class="start-button">運転開始</button>
+      <button id="route-setup-button" class="start-button" style="background-color:#ffd54f;">ルート設定</button>
+  <button id="route-delete-button" class="start-button" style="background-color:#ef5350; color:#fff; font-size:1.1em; padding:10px 28px;">ルート削除</button>
+    </div>
 
     <div class="message-container">
       <img src="{{ url_for('static', filename='img/robot_side.png') }}" alt="ドライポ" class="robot">
@@ -266,7 +270,9 @@
       appId: "1:500916744769:web:d5a529ef05d15bb2934cc0",
       measurementId: "G-9CH5CGYCFM"
     };
-    firebase.initializeApp(firebaseConfig);
+  firebase.initializeApp(firebaseConfig);
+  // 他ページでも使えるように保存
+  try { localStorage.setItem('FIREBASE_CONFIG_JSON', JSON.stringify(firebaseConfig)); } catch(e) {}
     const db = firebase.firestore();
 
     document.addEventListener('DOMContentLoaded', () => {
@@ -312,6 +318,8 @@
       }
     });
   </script>
+  <!-- ✅ ルート記録（優先ルート用、助言なし） -->
+  <script src="{{ url_for('static', filename='route_recorder.js') }}"></script>
   <script type="module" src="{{ url_for('static', filename='main.js') }}"></script>
   <!-- ✅ priority_map.js を普通のスクリプトとして読み込む -->
   <script src="{{ url_for('static', filename='priority_map.js') }}"></script>
@@ -320,6 +328,75 @@
     // Flaskから渡されたユーザーIDをグローバル変数に設定
     window.FLASK_USER_ID = "{{ user_id }}";
     console.log("👤 Flask user_id:", window.FLASK_USER_ID);
+    try { localStorage.setItem('CURRENT_USER_ID', window.FLASK_USER_ID || ''); } catch(e) {}
+
+    // ルート設定ボタン：開始 → ホームへ戻る（助言/指摘なし）
+    document.addEventListener('DOMContentLoaded', () => {
+      const setupBtn = document.getElementById('route-setup-button');
+      const delBtn = document.getElementById('route-delete-button');
+      async function updateRouteSetupButtonState() {
+        try {
+          if (!window.priorityRouteAPI) return;
+          const latestId = await window.priorityRouteAPI.getLatestRouteId();
+          const activeId = await window.priorityRouteAPI.getActiveRouteId();
+          const isActive = window.priorityRouteAPI.isActive && window.priorityRouteAPI.isActive();
+          const hasActive = !!activeId || !!isActive;
+          const hasAny = !!latestId || hasActive;
+          if (setupBtn) {
+            setupBtn.disabled = hasAny;
+            setupBtn.style.opacity = hasAny ? '0.6' : '1';
+            if (hasActive) {
+              setupBtn.textContent = 'ルート記録中です';
+              setupBtn.title = '現在のルート記録を終了（または削除）してから再設定してください';
+            } else if (latestId) {
+              setupBtn.textContent = 'ルートが設定済みです';
+              setupBtn.title = '既存のルートを削除してから再設定してください';
+            } else {
+              setupBtn.textContent = 'ルート設定';
+              setupBtn.title = '';
+            }
+          }
+        } catch (e) { console.warn('updateRouteSetupButtonState failed', e); }
+      }
+      updateRouteSetupButtonState();
+      if (setupBtn) {
+        setupBtn.addEventListener('click', async () => {
+          try {
+            // 既に設定済み or アクティブなルートがある場合は開始できない
+            const latestId = await window.priorityRouteAPI.getLatestRouteId();
+            const activeId = await window.priorityRouteAPI.getActiveRouteId();
+            const isActive = window.priorityRouteAPI.isActive && window.priorityRouteAPI.isActive();
+            if (activeId || isActive) {
+              alert('現在ルート記録中です。終了または削除してから、再度「ルート設定」を実行してください。');
+              return;
+            }
+            if (latestId) {
+              alert('既にルートが設定されています。ルート削除を行ってから、再度「ルート設定」を実行してください。');
+              return;
+            }
+            await window.priorityRouteAPI.start().catch(err => { throw err; });
+            // 記録中画面へ（運転開始と同じ画面に遷移）
+            window.location.assign('/recording/active');
+          } catch (e) {
+            console.error('ルート設定開始に失敗:', e);
+            alert('ルート設定の開始に失敗しました。ネットワークや位置情報の許可をご確認ください。');
+          }
+        });
+      }
+      if (delBtn) {
+        delBtn.addEventListener('click', async () => {
+          const ok = confirm('現在のルートを削除しますか？');
+          if (!ok) return;
+          await window.priorityRouteAPI.deleteActiveRoute();
+          // 画面のルート表示を必要なら更新（単純に再読込）
+          if (typeof window.initPriorityMap === 'function') {
+            try { window.initPriorityMap(); } catch(e) {}
+          }
+          // ルート削除後はボタンを再び有効化
+          try { await updateRouteSetupButtonState(); } catch(e) {}
+        });
+      }
+    });
   </script>
 
   <!-- ✅ Google Maps APIをcallbackで実行 -->

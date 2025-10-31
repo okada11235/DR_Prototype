@@ -65,7 +65,35 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log('End button found:', !!endButton);
     if (startButton && !startButton.hasEventListener) {
         console.log('Adding click listener to start button');
-        startButton.addEventListener('click', () => {
+        startButton.addEventListener('click', async () => {
+            // ルートの存在チェック（アクティブ・保存済みの両方を考慮）
+            const routeIdLS = localStorage.getItem('priorityRouteId');
+            let latestRouteExists = false;
+            try {
+                if (window.priorityRouteAPI && window.priorityRouteAPI.getLatestRouteId) {
+                    const latestId = await window.priorityRouteAPI.getLatestRouteId();
+                    latestRouteExists = !!latestId;
+                }
+            } catch (e) { console.warn('Failed to check latest route id:', e); }
+
+            if (!routeIdLS && !latestRouteExists) {
+                const doSetup = confirm('ルートが設定されていません。ルート設定を開始しますか？');
+                if (doSetup) {
+                    if (window.priorityRouteAPI && window.priorityRouteAPI.start) {
+                        try {
+                            await window.priorityRouteAPI.start();
+                            window.location.assign('/recording/active');
+                        } catch (e) {
+                            console.error('ルート設定開始に失敗:', e);
+                            alert('ルート設定の開始に失敗しました。ネットワークや位置情報の許可をご確認ください。');
+                        }
+                    } else {
+                        alert('ルート設定機能が読み込まれていません');
+                    }
+                }
+                return; // ルート未設定時は通常の運転開始をしない
+            }
+
             const confirmStart = confirm('記録を開始してよろしいですか？');
             if (confirmStart) {
                 startSession();
@@ -78,20 +106,65 @@ document.addEventListener('DOMContentLoaded', function() {
     if (endButton && !endButton.hasEventListener) {
         console.log('Adding click listener to end button');
         endButton.addEventListener('click', () => {
-            const confirmEnd = confirm('記録を終了してよろしいですか？');
-            if (confirmEnd) {
-                relockAudio(); // 🔒 終了時にロック
-                endSession(true);  // 正規の終了処理（Firestore保存含む）
-            } else {
-                console.log('Recording end canceled by user.');
+            const isRouteMode = localStorage.getItem('priorityRouteRecordingActive') === 'true';
+            const confirmEnd = confirm(isRouteMode ? 'ルート記録を終了しますか？' : '記録を終了してよろしいですか？');
+            if (!confirmEnd) {
+                console.log('End canceled by user.');
+                return;
             }
+            if (isRouteMode && window.priorityRouteAPI) {
+                // ルート記録の終了
+                window.priorityRouteAPI.stop(true).then(() => {
+                    // センサー類は使用していない前提
+                    window.location.href = '/recording/start';
+                }).catch(() => {
+                    window.location.href = '/recording/start';
+                });
+                return;
+            }
+            // 通常の運転セッション終了
+            relockAudio(); // 🔒 終了時にロック
+            endSession(true);  // 正規の終了処理（Firestore保存含む）
         });
         endButton.hasEventListener = true;
     }
     console.log('Initializing based on current path...');
     if (currentPath === '/recording/active') {
         console.log('Initializing active recording screen');
-        initActiveRecording();
+        const isRouteMode = localStorage.getItem('priorityRouteRecordingActive') === 'true';
+        if (isRouteMode) {
+            // ルートモード: セッションは使わない
+            console.log('Route recording mode detected. Initializing minimal map UI.');
+            // セッション関連を明示的に無効化
+            try {
+                window.sessionId = null;
+                localStorage.removeItem('activeSessionId');
+                localStorage.removeItem('sessionStartTime');
+            } catch (e) {}
+            if (typeof initMap === 'function') {
+                initMap();
+            }
+            // UI更新用にGPSは使う（maps.js 側で sessionId が無ければ保存しない）
+            try { watchPosition(); } catch (e) {}
+            // タイマー表示（ルート開始時刻を使用）
+            try {
+                const routeStart = (window.priorityRouteAPI && window.priorityRouteAPI.getRouteStartTime && window.priorityRouteAPI.getRouteStartTime())
+                    || Number(localStorage.getItem('priorityRouteStartTime'))
+                    || Date.now();
+                window.startTime = routeStart;
+                startTimer();
+            } catch (e) { console.warn('Failed to start route timer', e); }
+            // G値とピンUIは非表示
+            try {
+                const gBox = document.getElementById('g-box');
+                if (gBox) gBox.style.display = 'none';
+                const pinBtn = document.getElementById('addPinBtn');
+                if (pinBtn) pinBtn.style.display = 'none';
+            } catch (e) {}
+            // センサー/助言/音声は起動しない
+        } else {
+            initActiveRecording();
+        }
     } else if (currentPath === '/recording/start' || currentPath === '/') {
         console.log('Initializing start recording screen');
         if (typeof initMap === 'function') {
@@ -100,11 +173,16 @@ document.addEventListener('DOMContentLoaded', function() {
         } else {
             console.log('initMap function not available');
         }
-        console.log('Starting GPS and motion monitoring for start screen (display only)');
-        watchPosition();
-        startMotionDetection();
-        // ★FIX: start 画面でもキャリブレーション収集を開始
-        startAutoCalibration();
+        // ルート記録モード中は助言・指摘・音声を起動しない（GPSのみ背景で route_recorder が担当）
+        if (localStorage.getItem('priorityRouteRecordingActive') === 'true') {
+            console.log('Route recording active: suppressing sensors and advice on start screen');
+        } else {
+            console.log('Starting GPS and motion monitoring for start screen (display only)');
+            watchPosition();
+            startMotionDetection();
+            // ★FIX: start 画面でもキャリブレーション収集を開始
+            startAutoCalibration();
+        }
     } else {
         console.log('No specific initialization for path:', currentPath);
     }

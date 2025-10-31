@@ -50,7 +50,7 @@ tailwind.config = {
   </div>
 
   <!-- G値 -->
-  <div class="bg-card-light rounded-lg p-4 text-gray-800 shadow mb-8 w-72 text-center">
+  <div id="g-box" class="bg-card-light rounded-lg p-4 text-gray-800 shadow mb-8 w-72 text-center">
     横G：<span id="g-x">0.00</span>
     前後G：<span id="g-z">0.00</span>
     上下G：<span id="g-y">0.00</span>
@@ -187,6 +187,12 @@ tailwind.config = {
 
     // === ⑤ 初期化 ===
     document.addEventListener("DOMContentLoaded", async () => {
+      // ルート記録モードでは通知・音声を抑止
+      const isRouteMode = localStorage.getItem('priorityRouteRecordingActive') === 'true';
+      if (isRouteMode) {
+        console.log('🔇 Route mode active on recording_active: suppressing proximity voice alerts');
+        return;
+      }
       await loadPriorityPinsForUser();
       await loadVoice();
       startProximityWatcher();
@@ -195,6 +201,8 @@ tailwind.config = {
   </script>
 
   <script type="module" src="{{ url_for('static', filename='main.js') }}"></script>
+  <!-- ルート記録（優先ルート）を継続するために読み込み -->
+  <script src="{{ url_for('static', filename='route_recorder.js') }}"></script>
   <!--録音内容-->
   <script>
     // 例：FlaskからJinja2経由でsession_idを埋め込む
