@@ -73,20 +73,6 @@
   </style>
 </head>
 <body>
-  <h1>全体平均スコア</h1>
-
-  <div class="score-section">
-    <!-- 疑似スコア -->
-    {% set labels = ["減速","加速","旋回","直進","総評"] %}
-    {% for label in labels %}
-    {% set val = overall_scores.get(label, 75) %}
-    <div class="score-item">{{ label }}
-      <div class="bar" style="--w:{{ val }}%">
-        <style> .bar[style*="--w:"]::after{ width: {{ val }}%; } </style>
-      </div>
-      <span class="score">{{ val }}点</span>
-    </div>
-    {% endfor %}
 
     <!-- セッション一覧 -->
     <div class="record-box mt-4">
