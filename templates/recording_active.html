@@ -96,6 +96,104 @@ tailwind.config = {
     const db = firebase.firestore();
   </script>
 
+  <script>
+    const NEAR_THRESHOLD_METERS = 40; // ✅ 通知距離（40m以内）
+
+    let priorityPins = [];
+    let notifiedPins = new Set(); // 既に通知済みのピンを記録
+    let audioCtx, voiceBuffer;
+
+    // === ① Firestoreからピンを読み込み ===
+    async function loadPriorityPinsForUser() {
+      try {
+        const userId = window.FLASK_USER_ID;
+        const snapshot = await firebase.firestore()
+          .collection("priority_pins")
+          .where("user_id", "==", userId)
+          .get();
+
+        priorityPins = snapshot.docs.map(doc => ({
+          id: doc.id,
+          lat: doc.data().lat,
+          lng: doc.data().lng
+        }));
+
+        console.log("📍 ロード完了 priority_pins:", priorityPins);
+      } catch (err) {
+        console.error("❌ ピン読み込み失敗:", err);
+      }
+    }
+
+    // === ② 音声をロード（1回のみ） ===
+    async function loadVoice() {
+      if (!window.audioContext) {
+        window.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      audioCtx = window.audioContext;
+      const url = "{{ url_for('static', filename='audio/focus_near.mp3') }}"; // あなたが用意する音声ファイル
+      const res = await fetch(url);
+      const arrayBuffer = await res.arrayBuffer();
+      voiceBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+    }
+
+    function playVoice() {
+      if (!audioCtx || !voiceBuffer) return;
+      const src = audioCtx.createBufferSource();
+      src.buffer = voiceBuffer;
+      src.connect(audioCtx.destination);
+      src.start(0);
+    }
+
+    // === ③ 距離を計算（Haversine公式） ===
+    function getDistanceMeters(lat1, lon1, lat2, lon2) {
+      const R = 6371000; // 地球半径（m）
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * Math.PI / 180) *
+        Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    // === ④ 現在地を監視して距離判定 ===
+    function startProximityWatcher() {
+      if (!navigator.geolocation) {
+        alert("この端末では位置情報が使えません。");
+        return;
+      }
+
+      navigator.geolocation.watchPosition(pos => {
+        const { latitude, longitude } = pos.coords;
+
+        priorityPins.forEach(pin => {
+          const dist = getDistanceMeters(latitude, longitude, pin.lat, pin.lng);
+
+          if (dist < NEAR_THRESHOLD_METERS && !notifiedPins.has(pin.id)) {
+            console.log(`🎯 ${dist.toFixed(1)}m以内: 重点ポイント ${pin.id}`);
+            notifiedPins.add(pin.id);
+            playVoice();
+          }
+        });
+      }, err => {
+        console.error("位置情報エラー:", err);
+      }, {
+        enableHighAccuracy: true,
+        maximumAge: 0,
+        timeout: 5000
+      });
+    }
+
+    // === ⑤ 初期化 ===
+    document.addEventListener("DOMContentLoaded", async () => {
+      await loadPriorityPinsForUser();
+      await loadVoice();
+      startProximityWatcher();
+      console.log("🚗 重点ポイント通知システム起動完了");
+    });
+  </script>
+
   <script type="module" src="{{ url_for('static', filename='main.js') }}"></script>
   <!--録音内容-->
   <script>
@@ -107,6 +205,7 @@ tailwind.config = {
   <!--<script src="{{ url_for('static', filename='record_voice.js') }}"></script>-->
   <script src="{{ url_for('static', filename='maps.js') }}"></script>
   <script src="{{ url_for('static', filename='session.js') }}"></script>
+  <script src="{{ url_for('static', filename='pin_utils.js') }}"></script>
   <script src="{{ url_for('static', filename='record_voice_unified.js') }}"></script>
   <!-- AudioContextのアンロック処理（これは残す） -->
   <script type="module">

@@ -282,10 +282,10 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now) {
   const absFwd = Math.abs(gz);
   
   let currentCondition = null;
-  const isBraking = gz >= 0.2;
-  const isAccelerating = gz <= -0.2;
+  const isBraking = gz <= -0.13;
+  const isAccelerating = gz >= 0.13;
   const isTurning = absSide >= 0.18;
-  const isStable = speed >= 30 && absFwd < 0.15 && absSide < 0.15 && Math.abs(rotZ) < 0.05;
+  const isStable = speed >= 30 && absFwd < 0.15 && absSide < 0.15 && Math.abs(rotZ) < 2;
 
   // 1. 条件判定とステート更新
   if (isTurning && absFwd < 0.2 && speed >= 15) {
@@ -324,14 +324,14 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now) {
   if (currentCondition !== 'turn') drivingState.turnStart = 0; // 他のイベントが検知されたらリセット
   if (drivingState.turnStart > 0) {
       duration = now - drivingState.turnStart;
-      if (duration >= 750) { // 1.5秒継続
+      if (duration >= 750) { // 0.75秒継続
           // G値の大きさでスムーズ/シャープを判定
-          if (absSide <= SHARP_TURN_G_THRESHOLD) {
-             type = 'smooth_turn';
-             window.sharpTurns = Math.max(0, window.sharpTurns - 1); // 褒めはスコアを減らす（スコアシステムに合わせて）
-          } else {
+          if (absSide >= SHARP_TURN_G_THRESHOLD) {
              type = 'sharp_turn';
              window.sharpTurns++;
+          } else {
+             type = 'smooth_turn';
+             window.sharpTurns = Math.max(0, window.sharpTurns - 1); // 褒めはスコアを減らす（スコアシステムに合わせて）
           }
           drivingState.turnStart = 0;
       }
@@ -341,8 +341,8 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now) {
   if (currentCondition !== 'accel') drivingState.accelStart = 0;
   if (drivingState.accelStart > 0) {
       duration = now - drivingState.accelStart;
-      if (duration >= 0.5) { 
-          if (absFwd >= -SUDDEN_ACCEL_G_THRESHOLD) { // 緩やかなG（褒め）
+      if (duration >= 500) { 
+          if (absFwd < SUDDEN_ACCEL_G_THRESHOLD) { // 緩やかなG（褒め）
              type = 'smooth_accel';
              window.suddenAccels = Math.max(0, window.suddenAccels - 1);
           } else {
@@ -352,8 +352,8 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now) {
           drivingState.accelStart = 0;
       }
   }
-
-  // 減速判定
+/*
+  // 継続時間からの減速判定
   if (currentCondition !== 'brake') drivingState.brakeStart = 0;
   if (drivingState.brakeStart > 0) {
       duration = now - drivingState.brakeStart;
@@ -368,12 +368,51 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now) {
           drivingState.brakeStart = 0;
       }
   }
+*/
+  // ===============================
+  // 🚗 停止直前ブレーキ評価ロジック
+  // ===============================
+  if (speed <= 10 && !drivingState.brakeEvaluated) {
+    const windowMs = 3000; // 直前3秒を分析
+    const recentSpeeds = speedHistory.filter(s => now - s.t <= windowMs);
+    const recentGs = window.gLogBuffer.filter(g => now - g.timestamp <= windowMs);
+
+    if (recentSpeeds.length > 2) {
+      const firstSpeed = recentSpeeds[0].speed;
+      const lastSpeed = recentSpeeds[recentSpeeds.length - 1].speed;
+      const deltaSpeed = firstSpeed - lastSpeed;
+      const durationSec = (recentSpeeds[recentSpeeds.length - 1].t - recentSpeeds[0].t) / 1000;
+      const decelRate = deltaSpeed / durationSec; // km/h/s
+
+      const avgG = recentGs.reduce((sum, g) => sum + g.g_z, 0) / recentGs.length;
+      const maxAbsG = Math.max(...recentGs.map(g => Math.abs(g.g_z)));
+
+      let type = null;
+
+      if (decelRate > 6 || maxAbsG >= 0.3) {
+        type = 'sudden_brake'; // 急ブレーキ
+      } else if (decelRate > 2 || Math.abs(avgG) >= 0.15) {
+        type = 'smooth_brake'; // 良いブレーキ
+      }
+
+      if (type) {
+        console.log(`🚗 停止直前ブレーキ判定 → ${type} (Δv/s=${decelRate.toFixed(2)} km/h/s, avgG=${avgG.toFixed(2)})`);
+        playRandomAudio(type);
+        drivingState.brakeEvaluated = true; // 一度だけ判定
+        lastEventTime = now; // クールダウンも兼ねる
+      }
+    }
+  }
+
+  // 再発動を許可（走り出したらリセット）
+  if (speed > 15) drivingState.brakeEvaluated = false;
+
   
   // 直進判定
   if (currentCondition !== 'straight') drivingState.straightStart = 0;
   if (drivingState.straightStart > 0) {
       duration = now - drivingState.straightStart;
-      if (duration >= 2000) { // 3秒継続
+      if (duration >= 5000) { // 5秒継続
           // 直進は褒めイベントのみ
           type = 'stable_drive';
           drivingState.straightStart = 0;

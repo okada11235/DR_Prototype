@@ -23,17 +23,17 @@ export const GOOD_ACCEL_MAX_G = 0.25;     // 良い加速 最大前後G
 export const GOOD_ACCEL_MAX_LAT_G = 0.20; // 良い加速時の最大横G
 export const GOOD_ACCEL_DURATION = 1000;  // 良い加速 持続時間（1.0s）
 
-export const GOOD_BRAKE_MIN_G = -0.30;    // 良いブレーキ 最小前後G
-export const GOOD_BRAKE_MAX_G = -0.15;    // 良いブレーキ 最大前後G
+export const GOOD_BRAKE_MIN_G = -0.25;    // 良いブレーキ 最小前後G (絶対値が最大)
+export const GOOD_BRAKE_MAX_G = -0.15;    // 良いブレーキ 最大前後G (絶対値が最小)
 export const GOOD_BRAKE_MAX_LAT_G = 0.20; // 良いブレーキ時の最大横G
 export const GOOD_BRAKE_DURATION = 1000;  // 良いブレーキ 持続時間（1.0s）
 
 // ■ 警告条件の閾値
 export const SUDDEN_ACCEL_G_THRESHOLD = 0.3;     // 急発進 前後G閾値
 
-export const SUDDEN_BRAKE_G_THRESHOLD = -0.35;    // 急ブレーキ 前後G閾値
+export const SUDDEN_BRAKE_G_THRESHOLD = -0.3;    // 急ブレーキ 前後G閾値
 
-export const SHARP_TURN_G_THRESHOLD = 0.35;       // 急旋回 横G閾値
+export const SHARP_TURN_G_THRESHOLD = 0.4;       // 急旋回 横G閾値
 
 // DeviceMotionEventのフレームスキップ管理（60Hzを15Hzに削減）
 export const MOTION_FRAME_SKIP = 4; // 4フレームに1回処理（元は6フレーム）

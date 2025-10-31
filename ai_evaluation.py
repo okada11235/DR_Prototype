@@ -79,10 +79,15 @@ def analyze_session_data(session_id, user_id, focus_point=''):
             
         # データ統計を計算
         stats = calculate_driving_stats(session_data, gps_logs, g_logs, avg_g_logs)
-        
-        # 生成AIで評価を作成（一旦ダミーデータで代替）
+
+        # 一個前のセッションの統計を取得
+        prev_stats = get_previous_session_stats(user_id, session_id)
+
+        # 成長コメント生成（前回比較込み）
         evaluation = generate_ai_evaluation(stats, focus_point)
-        
+        if evaluation and 'comments' in evaluation:
+            evaluation['comments'] = generate_ai_growth_comments(stats, prev_stats)
+
         return evaluation
         
     except Exception as e:
@@ -150,44 +155,32 @@ def calculate_driving_stats(session_data, gps_logs, g_logs, avg_g_logs):
 
 def generate_ai_evaluation(stats, focus_point=''):
     """
-    統計データを元に生成AIで運転評価を作成
-    OpenAI APIが利用可能な場合は使用し、そうでなければフォールバック
+    統計データを元に生成AIで「成長コメント」を作成
+    （スコア・評価結果・重点ポイントなし版）
     """
-    
-    # スコア計算
-    scores = calculate_scores(stats)
-    
-    # 生成方法の記録
-    generation_method = "rule-based"  # デフォルト
-    
-    # OpenAI APIが利用可能な場合はAIで生成、そうでなければフォールバック
+    generation_method = "rule-based"
+
     if client and openai.api_key:
         try:
-            print("🤖 Generating feedback using OpenAI GPT-3.5-turbo...")
-            comments = generate_ai_comments(stats, scores, focus_point)
-            overall_comment = generate_ai_overall_comment(stats, scores, focus_point)
-            generation_method = "openai"  # 成功時にOpenAIマーク
-            print("✅ OpenAI feedback generation completed successfully")
+            print("🤖 Generating growth feedback using OpenAI GPT-3.5-turbo...")
+            comments = generate_ai_growth_comments(stats)
+            overall_comment = generate_ai_growth_summary(stats)
+            generation_method = "openai"
+            print("✅ AI growth feedback generated successfully")
         except Exception as e:
             print(f"❌ OpenAI API error: {e}")
-            print("🔄 Switching to fallback rule-based evaluation...")
-            # エラーの場合はフォールバック
-            comments = generate_comments(stats, scores)
-            overall_comment = generate_overall_comment_no_score(stats, scores)
-            print("✅ Fallback evaluation completed")
+            print("🔄 Using fallback rule-based comments...")
+            comments = generate_growth_comments(stats)
+            overall_comment = "運転データの傾向を解析できませんでしたが、次回の安定走行を期待しています🚗"
     else:
-        # OpenAI APIが使用できない場合はフォールバック
-        print("⚠️ OpenAI API not available, using rule-based evaluation...")
-        comments = generate_comments(stats, scores)
-        overall_comment = generate_overall_comment_no_score(stats, scores)
-        print("✅ Rule-based evaluation completed")
-    
+        print("⚠️ OpenAI API not available, using rule-based comments...")
+        comments = generate_growth_comments(stats)
+        overall_comment = "データから全体的な変化を分析しました。引き続き安定した運転を目指しましょう💪"
+
     return {
-        'scores': scores,
         'comments': comments,
         'overall_comment': overall_comment,
-        'focus_point': focus_point,
-        'generation_method': generation_method,  # 生成方法を記録
+        'generation_method': generation_method,
         'generated_at': datetime.now(JST)
     }
 
@@ -220,93 +213,100 @@ def calculate_scores(stats):
         'overall': overall_score
     }
 
-def generate_comments(stats, scores):
+def compare_stats(prev_stats, current_stats):
     """
-    各項目のコメントを生成
+    前回と今回の統計情報の差分を計算して返す
+    """
+    if not prev_stats:
+        return None
+
+    diff = {
+        "sudden_brakes_diff": current_stats["sudden_brakes"] - prev_stats["sudden_brakes"],
+        "sudden_accels_diff": current_stats["sudden_accels"] - prev_stats["sudden_accels"],
+        "sharp_turns_diff": current_stats["sharp_turns"] - prev_stats["sharp_turns"],
+        "mean_gx_diff": round(current_stats["g_stats"]["mean_g_x"] - prev_stats["g_stats"]["mean_g_x"], 3),
+        "mean_gy_diff": round(current_stats["g_stats"]["mean_g_y"] - prev_stats["g_stats"]["mean_g_y"], 3),
+        "avg_speed_diff": round(current_stats["speed_stats"]["avg_speed"] - prev_stats["speed_stats"]["avg_speed"], 2),
+    }
+
+    return diff
+
+def generate_growth_comments(stats):
+    """
+    AIが使えない場合のフォールバック用・成長コメント（手動生成）
     """
     comments = {}
-    
-    # 減速コメント
-    if scores['brake'] >= 85:
-        comments['brake'] = {
-            'result': 'とても丁寧！',
-            'detail': f"急ブレーキ {stats['sudden_brakes']}回",
-            'comment': 'ブレーキのタイミングが完璧！乗り心地バッチリ👏'
-        }
-    elif scores['brake'] >= 70:
-        comments['brake'] = {
-            'result': '安定感あり',
-            'detail': f"急ブレーキ {stats['sudden_brakes']}回",
-            'comment': '適度な減速で安心感があります。この調子で！💨'
-        }
-    else:
-        comments['brake'] = {
-            'result': 'もう少し余裕を',
-            'detail': f"急ブレーキ {stats['sudden_brakes']}回",
-            'comment': '少し急なブレーキが多いかも。前方をよく見て早めの減速を心がけましょう！'
-        }
-    
-    # 加速コメント
-    if scores['accel'] >= 85:
-        comments['accel'] = {
-            'result': 'スムーズで快適！',
-            'detail': f"急加速 {stats['sudden_accels']}回",
-            'comment': '加速がとてもなめらか！快適な運転です🚗'
-        }
-    elif scores['accel'] >= 70:
-        comments['accel'] = {
-            'result': 'まずまず',
-            'detail': f"急加速 {stats['sudden_accels']}回",
-            'comment': '勢いあるドライブ！でももう少し抑えるとよりスムーズ💨'
-        }
-    else:
-        comments['accel'] = {
-            'result': '少し強めかな？',
-            'detail': f"急加速 {stats['sudden_accels']}回",
-            'comment': 'アクセルをもう少し優しく踏むと、より快適な運転になります！'
-        }
-    
-    # 旋回コメント
-    if scores['turn'] >= 85:
-        comments['turn'] = {
-            'result': 'ふんわり上手！',
-            'detail': f"急カーブ {stats['sharp_turns']}回",
-            'comment': 'カーブをとてもスムーズに曲がれています！お手本のような運転🔥'
-        }
-    elif scores['turn'] >= 70:
-        comments['turn'] = {
-            'result': 'まずまず',
-            'detail': f"急カーブ {stats['sharp_turns']}回",
-            'comment': '少し内側に切り込み気味！次はもう少し外へふんわり回ろう！'
-        }
-    else:
-        comments['turn'] = {
-            'result': 'やや急め？',
-            'detail': f"急カーブ {stats['sharp_turns']}回",
-            'comment': 'カーブではもう少しゆっくりと、ハンドルを優しく操作してみましょう！'
-        }
-    
-    # 直進コメント
-    if scores['straight'] >= 85:
-        comments['straight'] = {
-            'result': '安定感バッチリ！',
-            'detail': f"平均速度 {stats['speed_stats']['avg_speed']:.0f}km/h",
-            'comment': '真っすぐ走行キープ！安定感すごい🔥'
-        }
-    elif scores['straight'] >= 70:
-        comments['straight'] = {
-            'result': '概ね安定',
-            'detail': f"平均速度 {stats['speed_stats']['avg_speed']:.0f}km/h",
-            'comment': '直進は安定してます。この調子で他の項目も伸ばしましょう！'
-        }
-    else:
-        comments['straight'] = {
-            'result': '少しふらつき？',
-            'detail': f"平均速度 {stats['speed_stats']['avg_speed']:.0f}km/h",
-            'comment': 'ハンドルを軽く握って、まっすぐ走ることを意識してみましょう！'
-        }
-    
+
+    # 減速
+    comments["brake"] = {
+        "detail": f"急ブレーキ {stats['sudden_brakes']}回",
+        "comment": "最近はブレーキがより丁寧になってきています👏"
+    }
+
+    # 加速
+    comments["accel"] = {
+        "detail": f"急加速 {stats['sudden_accels']}回",
+        "comment": "加速が穏やかで安定しています🚗💨"
+    }
+
+    # 旋回
+    comments["turn"] = {
+        "detail": f"急カーブ {stats['sharp_turns']}回",
+        "comment": "カーブ時のG変化が少なくなり、ハンドル操作が上達しています✨"
+    }
+
+    # 直進
+    comments["straight"] = {
+        "detail": f"平均速度 {stats['speed_stats']['avg_speed']:.1f}km/h",
+        "comment": "全体的にまっすぐ安定した走行ができています💪"
+    }
+
     return comments
+
+
+def generate_ai_growth_summary(stats):
+    """
+    OpenAI APIで全体の成長傾向コメントを生成（点数なし）
+    """
+    driving_data = f"""
+走行時間: {stats['duration_minutes']:.1f}分
+走行距離: {stats['total_distance']:.2f}km
+急ブレーキ: {stats['sudden_brakes']}回
+急加速: {stats['sudden_accels']}回
+急カーブ: {stats['sharp_turns']}回
+平均速度: {stats['speed_stats']['avg_speed']:.1f}km/h
+"""
+
+    prompt = f"""
+あなたは運転アドバイザーAI「ドライボ」です。
+以下の運転データを参考に、全体的な“成長”や“安定の変化”を
+やさしい口調で2〜3文にまとめてください。
+点数や評価結果(result)は不要です。
+
+条件：
+- 成長や安定の変化を褒める
+- 前向きで温かい文章
+- 絵文字を使用
+- スコア・数字は表示しない
+
+運転データ:
+{driving_data}
+"""
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "あなたは優しい運転コーチAI『ドライボ』です。"},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=300,
+            temperature=0.7
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"⚠️ AI summary generation failed: {e}")
+        return "全体的に運転が安定してきています👏 引き続き丁寧な操作を意識していきましょう🚗💨"
 
 def generate_overall_comment(stats, scores):
     """
@@ -381,92 +381,136 @@ def generate_overall_comment_no_score(stats, scores):
     else:
         return f"まだまだ伸びしろがあります！特に{worst_name}を意識して、安全第一で上達していきましょう🚗"
 
-def generate_ai_comments(stats, scores, focus_point=''):
+def generate_ai_growth_comments(stats, prev_stats=None):
     """
-    OpenAI APIを使用して各項目のコメントを生成
+    OpenAI APIを使用して「成長コメント」を生成
+    一個前のセッションとの差分を含めてAIに投げる
     """
-    # 運転データをテキスト形式で整理
+    diff_text = ""
+    if prev_stats:
+        diff = compare_stats(prev_stats, stats)
+        if diff:
+            diff_text = f"""
+前回との差分データ:
+- 急ブレーキ変化: {diff['sudden_brakes_diff']}回
+- 急加速変化: {diff['sudden_accels_diff']}回
+- 急カーブ変化: {diff['sharp_turns_diff']}回
+- 平均G(前後)変化: {diff['mean_gx_diff']}
+- 平均G(左右)変化: {diff['mean_gy_diff']}
+- 平均速度変化: {diff['avg_speed_diff']}km/h
+"""
+
     driving_data = f"""
-運転統計データ:
+今回の運転データ:
 - 走行時間: {stats['duration_minutes']:.1f}分
 - 走行距離: {stats['total_distance']:.2f}km
 - 急ブレーキ: {stats['sudden_brakes']}回
 - 急加速: {stats['sudden_accels']}回
 - 急カーブ: {stats['sharp_turns']}回
-- 平均速度: {stats['speed_stats']['avg_speed']:.1f}km/h
 - 平均G値 (前後): {stats['g_stats']['mean_g_x']:.2f}
 - 平均G値 (左右): {stats['g_stats']['mean_g_y']:.2f}
-
-スコア:
-- 減速: {scores['brake']}点
-- 加速: {scores['accel']}点
-- 旋回: {scores['turn']}点
-- 直進: {scores['straight']}点
+- 平均速度: {stats['speed_stats']['avg_speed']:.1f}km/h
 """
-    
-    if focus_point:
-        driving_data += f"- 今回の重点ポイント: {focus_point}\n"
-    
+
     prompt = f"""
-あなたは親しみやすい運転アドバイザーのAI「ドライボ」です。
-以下の運転データを分析して、各項目について具体的で励ましを含むコメントを生成してください。
+あなたは運転の成長を見守るアドバイザーAI「ドライボ」です。
+以下の運転データと、前回との差分を参考に、
+成長や安定の変化を自然な言葉で伝えてください。
 
-{driving_data}
+条件：
+- スコアや数値は使わない
+- 「改善した点」「変化した点」を中心に具体的に述べる
+- 前向きで温かいトーン
+- 絵文字を使う
+- 出力は JSON 形式で返す
+- 各項目は "brake", "accel", "turn", "straight" と "overall_comment"
 
-以下のJSON形式で出力してください：
+出力例：
 {{
   "brake": {{
-    "result": "評価結果（例：とても丁寧！）",
-    "detail": "詳細データ（例：急ブレーキ 1回）", 
-    "comment": "親しみやすくて具体的なアドバイス"
+    "detail": "前回より急ブレーキが2回減りました",
+    "comment": "減速がスムーズになり、落ち着いた運転になっています👏"
   }},
   "accel": {{
-    "result": "評価結果",
-    "detail": "詳細データ",
-    "comment": "親しみやすくて具体的なアドバイス"
+    "detail": "急加速の回数はほぼ変わりませんでした",
+    "comment": "安定した加速が維持されています💨"
   }},
   "turn": {{
-    "result": "評価結果",
-    "detail": "詳細データ", 
-    "comment": "親しみやすくて具体的なアドバイス"
+    "detail": "横Gが小さくなっています",
+    "comment": "カーブ時の姿勢がより安定しました✨"
   }},
   "straight": {{
-    "result": "評価結果",
-    "detail": "詳細データ",
-    "comment": "親しみやすくて具体的なアドバイス"
-  }}
+    "detail": "平均G変化が減少しました",
+    "comment": "直進時のハンドル操作が丁寧になっています🚗"
+  }},
+  "overall_comment": "全体的に安定した運転になっています👏 この調子で続けていきましょう！"
 }}
 
-※コメントには絵文字を使用して親しみやすくしてください
-※スコアが高い場合は積極的に褒め、低い場合も前向きなアドバイスを心がけてください
+分析データ:
+{driving_data}
+{diff_text}
 """
 
     try:
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "あなたは親しみやすい運転アドバイザーAI「ドライボ」です。運転者を励まし、具体的なアドバイスを提供します。"},
+                {"role": "system", "content": "あなたは優しい運転コーチAI『ドライボ』です。"},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=1000,
+            max_tokens=800,
             temperature=0.7
         )
-        
         ai_response = response.choices[0].message.content.strip()
-        
-        # JSONとして解析
         try:
-            comments = json.loads(ai_response)
-            return comments
+            return json.loads(ai_response)
         except json.JSONDecodeError:
-            print(f"Failed to parse AI response as JSON: {ai_response}")
-            # フォールバックとして既存の関数を使用
-            return generate_comments(stats, scores)
-            
+            print("⚠️ JSON解析失敗。フォールバック使用。")
+            return generate_growth_comments(stats)
     except Exception as e:
-        print(f"OpenAI API call failed: {e}")
-        # エラーの場合はフォールバック
-        return generate_comments(stats, scores)
+        print(f"❌ OpenAI API error: {e}")
+        return generate_growth_comments(stats)
+    
+def get_previous_session_stats(user_id, current_session_id):
+    """
+    同一ユーザーの「一個前のセッション」をFirestoreから取得し、
+    calculate_driving_stats() で統計情報を返す。
+    """
+    try:
+        db = firestore.client()
+        sessions_ref = (
+            db.collection('sessions')
+            .where('user_id', '==', user_id)
+            .order_by('start_time', direction=firestore.Query.DESCENDING)
+            .limit(3)
+        )
+        sessions = list(sessions_ref.stream())
+
+        # セッションが2件以上ある（今回＋前回）
+        if len(sessions) >= 2:
+            current_id = sessions[0].id
+            prev_doc = sessions[1]
+
+            # 現在のIDが一致しない場合はスキップ
+            if current_id != current_session_id:
+                return None
+
+            prev_session_data = prev_doc.to_dict()
+            prev_ref = db.collection('sessions').document(prev_doc.id)
+
+            gps_logs = [doc.to_dict() for doc in prev_ref.collection('gps_logs').order_by('timestamp').stream()]
+            g_logs = [doc.to_dict() for doc in prev_ref.collection('g_logs').order_by('timestamp').stream()]
+            avg_g_logs = [doc.to_dict() for doc in prev_ref.collection('avg_g_logs').order_by('timestamp').stream()]
+
+            prev_stats = calculate_driving_stats(prev_session_data, gps_logs, g_logs, avg_g_logs)
+            return prev_stats
+        else:
+            print("⚠️ 前回セッションが見つかりません。")
+            return None
+    except Exception as e:
+        print(f"Error getting previous session stats: {e}")
+        return None
+
 
 def generate_ai_overall_comment(stats, scores, focus_point=''):
     """

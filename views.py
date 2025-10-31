@@ -136,7 +136,7 @@ def home():
 @views_bp.route('/recording/start')
 @login_required
 def recording_start():
-    return render_template('recording_start.html')
+    return render_template('recording_start.html', user_id=current_user.id)
 
 # 記録中画面
 @views_bp.route('/recording/active')
@@ -448,6 +448,9 @@ def update_pin():
             update_data["label"] = data["label"]
         if "speak_enabled" in data:
             update_data["speak_enabled"] = bool(data["speak_enabled"])
+        
+        # ピンが編集されたことを記録
+        update_data["edited"] = True
 
         db.collection("pins").document(pin_id).update(update_data)
         return jsonify({"status": "success"})
@@ -487,6 +490,42 @@ def add_voice_pin():
         print("Error in add_voice_pin:", e)
         return jsonify({"status": "error", "error": str(e)}), 500
 
+# === 🎙 音声録音時のピン設置API ===
+@views_bp.route('/api/add_voice_pin', methods=['POST'])
+@login_required
+def add_voice_recording_pin():
+    """
+    音声録音時にピンを設置するAPI。
+    speak_enabledパラメータに対応。
+    """
+    data = request.json
+    try:
+        lat = data.get("lat")
+        lng = data.get("lng")
+        label = data.get("label", "")
+        speak_enabled = data.get("speak_enabled", True)  # デフォルトはTrue
+        source = data.get("source", "voice")  # デフォルトは"voice"
+
+        pin_data = {
+            "user_id": current_user.id,
+            "lat": lat,
+            "lng": lng,
+            "label": label,
+            "speak_enabled": speak_enabled,
+            "created_at": datetime.now(JST),
+            "source": source,
+            "edited": False,  # 初期状態は未編集
+        }
+
+        # ✅ pinsコレクション直下に保存
+        doc_ref, _ = db.collection("pins").add(pin_data)
+        pin_id = doc_ref.id
+
+        return jsonify({"status": "success", "pin_id": pin_id})
+    except Exception as e:
+        print("Error in add_voice_recording_pin:", e)
+        return jsonify({"status": "error", "error": str(e)}), 500
+
 # === 🗺️ マップ画面ピン追加API ===
 @views_bp.route('/api/add_manual_pin', methods=['POST'])
 @login_required
@@ -511,23 +550,25 @@ def add_manual_pin():
             "source": "manual",
         }
 
-        # ✅ add() の戻り値を受け取る
-        result = db.collection("pins").add(pin_data)
-        print("DEBUG Firestore add() result:", result, type(result))
-
-        # ✅ 返り値の型を安全に解釈
-        doc_ref = None
-        for item in result:
-            if hasattr(item, "id"):  # DocumentReference
-                doc_ref = item
-                break
-
-        if not doc_ref:
-            raise ValueError("Firestore DocumentReference が見つかりません")
-
+        doc_ref = db.collection("pins").add(pin_data)[1]
         pin_id = doc_ref.id
-        print(f"✅ add_manual_pin: 新しいピンを追加しました ID={pin_id}")
-        return jsonify({"status": "success", "pin_id": pin_id}), 200
+
+        # ✅ username を users コレクションから取得
+        user_doc = db.collection("users").document(current_user.id).get()
+        user_name = "不明なユーザー"
+        if user_doc.exists:
+            user_data = user_doc.to_dict()
+            user_name = user_data.get("username", "不明なユーザー")
+
+        print(f"✅ add_manual_pin: 新しいピンを追加 ID={pin_id} by {user_name}")
+
+        # 👇 user_id と user_name も返す
+        return jsonify({
+            "status": "success",
+            "pin_id": pin_id,
+            "user_id": current_user.id,
+            "user_name": user_name
+        }), 200
 
     except Exception as e:
         print("❌ Error in add_manual_pin:", e)

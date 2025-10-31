@@ -514,7 +514,7 @@ let notifiedPins = new Set(); // 一度読み上げたピンを記録
 // Firestoreからピン情報を取得
 async function loadPinsFromFirestore() {
   try {
-    const res = await fetch("/api/get_all_pins");
+    const res = await fetch("/api/get_pins_all");
     const data = await res.json();
     if (data.status === "success") {
       pinsData = data.pins;
@@ -557,17 +557,19 @@ function monitorProximity() {
         if (distance <= 30 && !notifiedPins.has(pin.id)) {
           console.log(`📢 ピン「${pin.label || "名前なし"}」に接近 (${Math.round(distance)}m)`);
 
-          // 読み上げ
-          if (speakEnabled && "speechSynthesis" in window) {
+          // 🔊 speak_enabled が true の場合のみ読み上げ
+          if (speakEnabled && pin.speak_enabled && "speechSynthesis" in window) {
             const utter = new SpeechSynthesisUtterance(pin.label || "ピン地点です");
             utter.lang = "ja-JP";
             utter.rate = 1.0;
             speechSynthesis.speak(utter);
+          } else {
+            console.log(`🔇 ピン「${pin.label || "名前なし"}」は読み上げOFF設定です`);
           }
 
           // 一定時間再読み上げしない
           notifiedPins.add(pin.id);
-          setTimeout(() => notifiedPins.delete(pin.id), 60000); // 60秒後に再び許可
+          setTimeout(() => notifiedPins.delete(pin.id), 60000);
         }
       }
     },

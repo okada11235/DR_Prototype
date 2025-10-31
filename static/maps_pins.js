@@ -41,13 +41,25 @@ async function initMap() {
     if (data.status === "success" && data.pins) {
       data.pins.forEach((pin) => {
         const isTemporary = !pin.label || pin.label.trim() === "";
+        const isVoiceRecording = pin.source === "voice_recording";
+        const isVoiceCommand = pin.source === "voice_command";
+        const isEdited = pin.edited || false; // 編集済みフラグ
+
+        let iconUrl;
+        if (isTemporary) {
+          iconUrl = "http://maps.google.com/mapfiles/ms/icons/blue-dot.png"; // 青：未入力
+        } else if (isVoiceRecording && !isEdited) {
+          iconUrl = "http://maps.google.com/mapfiles/ms/icons/green-dot.png"; // 緑：録音作成・未編集
+        } else if (isVoiceCommand && !isEdited) {
+          iconUrl = "http://maps.google.com/mapfiles/ms/icons/yellow-dot.png"; // 黄：音声ピン・未編集
+        } else {
+          iconUrl = "http://maps.google.com/mapfiles/ms/icons/red-dot.png"; // 赤：編集済み
+        }
 
         const marker = new google.maps.Marker({
           position: { lat: pin.lat, lng: pin.lng },
           map,
-          icon: isTemporary
-            ? "http://maps.google.com/mapfiles/ms/icons/blue-dot.png"
-            : "http://maps.google.com/mapfiles/ms/icons/red-dot.png",
+          icon: iconUrl,
           title: pin.label || "(未入力ピン)",
         });
         marker.id = pin.id;
@@ -126,7 +138,10 @@ async function initMap() {
       if (result.status === "success") {
         console.log("✅ 新しい仮ピンを追加しました");
 
-        // 🔹 新しいピンを地図に追加
+        const pinId = result.pin_id;
+        const userId = result.user_id;
+        const userName = result.user_name || "不明";
+
         const marker = new google.maps.Marker({
           position: { lat, lng },
           map,
@@ -134,27 +149,40 @@ async function initMap() {
           title: "(未入力ピン)",
         });
 
-        // 🔹 InfoWindow（編集・削除・読み上げチェック付き）
-        const pinId = result.pin_id; // ← views.py 側で pin_id を返すようにしておくこと
-        const infoContent = `
+        const isOwner = userId === CURRENT_USER_ID;
+
+        let infoContent = `
           <div style="min-width:220px;">
-            <div style="font-size:12px; color:#666;">作成者: ${pin.user_id}</div>
             <label>メモ:</label><br>
             <input type="text" id="memo_${pinId}" 
                   value="" 
                   placeholder="内容を入力" 
-                  style="width:150px; margin-bottom:4px;"><br>
+                  style="width:150px; margin-bottom:4px;" 
+                  ${isOwner ? "" : "disabled"}><br>
+
             <label style="font-size:13px;">
-              <input type="checkbox" id="speak_${pinId}" checked>
+              <input type="checkbox" id="speak_${pinId}" checked ${isOwner ? "" : "disabled"}>
               読み上げる
             </label><br>
+        `;
+
+        if (isOwner) {
+          infoContent += `
             <button onclick="updatePinLabel('${pinId}')">💾 保存</button>
             <button onclick="deletePin('${pinId}')"
                     style="margin-left:5px; background-color:#f55; color:#fff; border:none; padding:3px 8px; border-radius:4px;">
                     🗑 削除
             </button>
+          `;
+        }
+
+        infoContent += `
+            <div style="font-size:12px; color:#666; margin-top:6px;">
+              作成者: ${userName}
+            </div>
           </div>
         `;
+
         const info = new google.maps.InfoWindow({ content: infoContent });
 
         marker.addListener("click", () => {
