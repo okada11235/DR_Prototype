@@ -105,27 +105,57 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     if (endButton && !endButton.hasEventListener) {
         console.log('Adding click listener to end button');
-        endButton.addEventListener('click', () => {
+        endButton.addEventListener('click', async () => {
             const isRouteMode = localStorage.getItem('priorityRouteRecordingActive') === 'true';
             const confirmEnd = confirm(isRouteMode ? 'ルート記録を終了しますか？' : '記録を終了してよろしいですか？');
             if (!confirmEnd) {
                 console.log('End canceled by user.');
                 return;
             }
+
             if (isRouteMode && window.priorityRouteAPI) {
                 // ルート記録の終了
                 window.priorityRouteAPI.stop(true).then(() => {
-                    // センサー類は使用していない前提
                     window.location.href = '/recording/start';
                 }).catch(() => {
                     window.location.href = '/recording/start';
                 });
                 return;
             }
-            // 通常の運転セッション終了
+
+            // 🚗 通常の運転セッション終了
             relockAudio(); // 🔒 終了時にロック
-            endSession(true);  // 正規の終了処理（Firestore保存含む）
+            await endSession(true); // Firestore保存含む
+
+            // ✅ ここから重点ポイントAI評価を実行
+            try {
+                const sessionId = window.sessionId;
+                if (!sessionId) {
+                    console.warn('⚠️ sessionId が未定義のため、AI評価をスキップします。');
+                    alert('セッションIDが取得できませんでした。重点ポイント評価をスキップしました。');
+                    return;
+                }
+
+                console.log(`🤖 重点ポイントAIフィードバック生成開始: session_id=${sessionId}`);
+                const res = await fetch(`/api/focus_feedback/${sessionId}`, { method: 'POST' });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    console.log('✅ フィードバック生成成功:', data);
+                    alert('重点ポイントのフィードバックを生成しました！');
+                } else {
+                    console.error('❌ フィードバック生成APIエラー:', res.status);
+                    alert('重点ポイントフィードバックの生成に失敗しました。');
+                }
+            } catch (err) {
+                console.error('❌ フィードバック生成中にエラー:', err);
+                alert('重点ポイントのフィードバック生成中にエラーが発生しました。');
+            }
+
+            // 🧭 終了後にセッション一覧ページへ遷移
+            window.location.href = '/sessions';
         });
+
         endButton.hasEventListener = true;
     }
     console.log('Initializing based on current path...');
