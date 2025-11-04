@@ -153,7 +153,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             // 🧭 終了後にセッション一覧ページへ遷移
-            window.location.href = '/sessions';
+            window.location.href = '/recording/completed';
         });
 
         endButton.hasEventListener = true;

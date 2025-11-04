@@ -820,25 +820,31 @@ def generate_ai_focus_feedback(current_stats: dict, diff: dict|None, first_time:
         return " / ".join(tips) + "。この調子でいきましょう🚗"
     return "落ち着いた操作を意識できています。次回も安全第一でいきましょう✨"
 
+# --- 追加: 未通過時のコメント定数 ---
+NOT_PASSED_COMMENT = "この重点ポイントは今回の走行で通過しなかったようです。次回、挑戦してみましょう！"
+NOT_PASSED_STATS = {"avg_speed": 0.0, "mean_gx": 0.0, "mean_gz": 0.0}
+MAX_PASS_DISTANCE_M = 50
+
 # --- 追加: セッション内の重点ポイントごとに解析し保存 ---
-def analyze_focus_points_for_session(session_id: str, user_id: str, radius_m: float = 10.0) -> dict:
+def analyze_focus_points_for_session(session_id: str, user_id: str, time_window_ms: int = 5000, max_pass_distance_m: int = MAX_PASS_DISTANCE_M) -> dict: # <-- max_pass_distance_mを追加
     """
     - recording_start.html で設定した priority_pins（user_id一致）を列挙
-    - 各ピンの半径±10mに入ったGPSログを抽出して統計
-    - 前回（過去セッション）の同pin_idの stats を collection_groupで取得して比較
+    - 各ピンの位置に最も近いGPSログを探してそのtimestamp_msを取得
+    - ±5秒の範囲で avg_g_logs を抽出して統計を作成
+    - 前回（過去セッション）の同pin_idの stats を比較
     - AIでコメント“だけ”生成
     - 保存先: sessions/{session_id}/focus_feedbacks/{pin_id}
-      （※ user_id と pin_id も同レコードに持たせて次回検索を高速化）
     """
     db = firestore.client()
-
-    # セッションのGPSログ
     sess_ref = db.collection("sessions").document(session_id)
+
     if not sess_ref.get().exists:
         print("session not found:", session_id)
         return {}
 
+    # GPSログと avg_g_logs を取得
     gps_logs = [d.to_dict() for d in sess_ref.collection("gps_logs").order_by("timestamp").stream()]
+    avg_g_logs = [d.to_dict() for d in sess_ref.collection("avg_g_logs").order_by("timestamp").stream()]
 
     # ユーザーの重点ピン（recording_start で作成）を取得
     pins = []
@@ -848,57 +854,83 @@ def analyze_focus_points_for_session(session_id: str, user_id: str, radius_m: fl
         pins.append(o)
 
     results = {}
+
     for pin in pins:
-        lat, lng, pin_id = float(pin["lat"]), float(pin["lng"]), pin["id"]
+            prev_stats = None
+            lat, lng, pin_id = float(pin["lat"]), float(pin["lng"]), pin["id"]
 
-        nearby = [g for g in gps_logs
-                  if get_distance_meters(lat, lng, float(g.get("latitude", 0.0) or 0.0),
-                                                   float(g.get("longitude", 0.0) or 0.0)) <= radius_m]
+            # --- GPSログから一番近い時刻を見つける ---
+            nearest_point = None
+            nearest_dist = float("inf")
+            for g in gps_logs:
+                dist = get_distance_meters(lat, lng, g.get("latitude", 0.0), g.get("longitude", 0.0))
+                if dist < nearest_dist:
+                    nearest_dist = dist
+                    nearest_point = g
 
-        if not nearby:
-            continue
+            if not nearest_point:
+                continue
 
-        # 今回の統計
-        current_stats = calc_focus_area_stats(nearby)
+            # 🚨 【重要】未通過判定ロジックをここに追加 🚨
+            passed_flag = True
+            
+            # 1. 未通過チェック (最も近い距離が許容範囲外)
+            if nearest_dist > max_pass_distance_m:
+                print(f"⚠️ Pin {pin_id} (Label: {pin.get('label', '')}) not passed. Nearest distance: {nearest_dist:.2f}m")
+                current_stats = NOT_PASSED_STATS
+                comment = NOT_PASSED_COMMENT
+                diff = None # 未通過の場合は比較不要
+                passed_flag = False
 
-        # 前回（過去セッション）の同pin_idの最新1件を取得（collection_group）
-        prev_stats = None
-        try:
-            cg = db.collection_group("focus_feedbacks") \
-                   .where("user_id", "==", user_id) \
-                   .where("pin_id", "==", pin_id) \
-                   .order_by("created_at", direction=firestore.Query.DESCENDING) \
-                   .limit(1) \
-                   .stream()
-            prev_doc = next(cg, None)
-            if prev_doc:
-                prev_stats = prev_doc.to_dict().get("stats")
-        except Exception as e:
-            print("collection_group query failed:", e)
+            # 2. 通過したが、ログがないチェック (既存ロジックを修正)
+            else:
+                center_time = nearest_point.get("timestamp_ms")
+                if not center_time:
+                    # このケースは通常起こらないが、念のためスキップ
+                    continue 
 
-        # 差分
-        diff = compare_focus_stats(prev_stats, current_stats)
+                # --- avg_g_logsから±5秒の範囲を抽出 ---
+                nearby = [g for g in avg_g_logs if abs(g.get("timestamp_ms", 0) - center_time) <= time_window_ms]
 
-        # AIコメント（先頭に初回メッセージ）
-        comment = generate_ai_focus_feedback(current_stats, diff, first_time=(prev_stats is None))
+                if not nearby:
+                    print(f"⚠️ No avg_g_logs found near pin {pin_id}. Treating as unanalyzed.")
+                    # ログがない場合は、未通過コメントとは違う、ログ不足のコメントにする
+                    current_stats = NOT_PASSED_STATS
+                    comment = "通過は確認されましたが、この地点でのGセンサーログが不足しているため、解析できませんでした。"
+                    diff = None
+                    
+                else:
+                    # --- 通過かつログありの通常処理 ---
+                    current_stats = calc_focus_area_stats(nearby)
+                    
+                    # ... (中略: 前回データ取得ロジック - 変更なし) ...
+                    
+                    # --- 差分計算 ---
+                    diff = compare_focus_stats(prev_stats, current_stats)
 
-        # セッション配下に保存（sessions/{sid}/focus_feedbacks/{pin_id}）
-        sess_ref.collection("focus_feedbacks").document(pin_id).set({
-            "created_at": datetime.now(JST),
-            "user_id": user_id,       # 次回のcollection_group検索用
-            "pin_id": pin_id,         # 次回のcollection_group検索用
-            "pin_label": pin.get("label", ""),
-            "stats": current_stats,   # 保存して次回は再計算不要
-            "diff": diff,
-            "ai_comment": comment,
-        })
+                    # --- AIコメント生成 ---
+                    comment = generate_ai_focus_feedback(current_stats, diff, first_time=(prev_stats is None))
 
-        results[pin_id] = {
-            "pin_label": pin.get("label", ""),
-            "stats": current_stats,
-            "diff": diff,
-            "ai_comment": comment
-        }
+            # --- Firestoreに保存 ---
+            # 🚨 【重要】保存データに passed_flag を追加 🚨
+            sess_ref.collection("focus_feedbacks").document(pin_id).set({
+                "created_at": datetime.now(JST),
+                "user_id": user_id,
+                "pin_id": pin_id,
+                "pin_label": pin.get("label", ""),
+                "stats": current_stats,
+                "diff": diff,
+                "ai_comment": comment,
+                "passed": passed_flag, # 通過フラグを保存
+            })
 
-    print(f"✅ focus_feedbacks stored under sessions/{session_id}")
+            results[pin_id] = {
+                "pin_label": pin.get("label", ""),
+                "stats": current_stats,
+                "diff": diff,
+                "ai_comment": comment
+            }
+
+    print(f"✅ focus_feedbacks (time-based) stored under sessions/{session_id}")
     return results
+
