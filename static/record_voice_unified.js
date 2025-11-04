@@ -143,13 +143,15 @@ const micManager = (() => {
       console.log('ℹ️ Voice recognition is disabled (autoStartRecognition=false)');
       return;
     }
-    // 頻度制限: 直近60秒以内の再起動はスキップ
-    if (Date.now() - lastStartTs < 60 * 1000) {
+    // 頻度制限: Androidは短め(8s)、その他は60s
+    const minIntervalMs = (typeof isAndroid !== 'undefined' && isAndroid) ? 8000 : 60000;
+    if (Date.now() - lastStartTs < minIntervalMs) {
       console.log('⏱️ Skip start: throttled (<60s)');
       return;
     }
-    // 15分で最大5回まで
-    if (startHistory.length >= 5) {
+    // 15分で最大回数: Androidは10回、その他は5回
+    const maxAttempts = (typeof isAndroid !== 'undefined' && isAndroid) ? 10 : 5;
+    if (startHistory.length >= maxAttempts) {
       console.log('🧯 Skip start: max attempts reached in 15min');
       return;
     }
@@ -206,9 +208,10 @@ const micManager = (() => {
     bgRecorder.ondataavailable = async (e) => {
       try {
         if (!e.data || e.data.size < 800) return; // 短すぎる断片はスキップ
+        const ext = extFromMime(mimeType || (e.data && e.data.type) || '');
         const res = await fetch('/transcribe', {
           method: 'POST',
-          body: (() => { const fd = new FormData(); fd.append('audio', e.data, `bg_${Date.now()}.webm`); fd.append('session_id', window.sessionId || 'bg'); return fd; })()
+          body: (() => { const fd = new FormData(); fd.append('audio', e.data, `bg_${Date.now()}.${ext}`); fd.append('session_id', window.sessionId || 'bg'); return fd; })()
         });
         if (!res.ok) {
           await maybeTriggerFallback(`HTTP ${res.status}`);
@@ -335,8 +338,7 @@ function pickBestAudioMime() {
     'audio/webm;codecs=opus',
     'audio/webm',
     'audio/ogg;codecs=opus',
-    'audio/mp4',
-    'audio/3gpp'
+    'audio/mp4'
   ];
   try {
     if (typeof MediaRecorder !== 'undefined' && typeof MediaRecorder.isTypeSupported === 'function') {
@@ -346,6 +348,14 @@ function pickBestAudioMime() {
     }
   } catch (_) {}
   return '';
+}
+
+function extFromMime(mt) {
+  const m = (mt || '').toLowerCase();
+  if (m.includes('webm')) return 'webm';
+  if (m.includes('ogg')) return 'ogg';
+  if (m.includes('mp4')) return 'm4a'; // Whisperの推奨拡張子
+  return 'webm';
 }
 
 // === ビープ音（開始・終了） ===
@@ -462,7 +472,8 @@ if (isIOS) {
           return;
         }
 
-  const fileName = `ios_${Date.now()}.webm`;
+  const ext = extFromMime(mimeType || recorder.mimeType || '');
+  const fileName = `ios_${Date.now()}.${ext}`;
         const path = `audio_records/${fileName}`;
         const storageRef = firebase.storage().ref().child(path);
 
@@ -638,12 +649,12 @@ else if (window.SpeechRecognition || window.webkitSpeechRecognition) {
       console.log("🎤 認識結果:", text);
 
       // === 録音トリガー ===
-      if (text.includes("録音") || text.includes("ろくおん")) {
+      if ((/録音|ろくおん/).test(text)) {
         await startRecordingAndUpload();
       }
 
       // === ピントリガー ===
-      if (text.includes("ピン") || text.includes("ぴん")) {
+      if ((/ピン|ぴん/).test(text)) {
         console.log("📍 音声コマンド「ピン」検出 → 現在地取得開始...");
 
         if (navigator.geolocation) {
@@ -838,7 +849,8 @@ async function startRecordingAndUpload() {
       // 終了音を実停止に同期
       try { playEndBeep(); } catch (_) {}
   const audioBlob = new Blob(chunks, { type: mimeType || 'audio/webm' });
-  const fileName = `whisper_${Date.now()}.webm`;
+  const ext = extFromMime(mimeType || recorder.mimeType || '');
+  const fileName = `whisper_${Date.now()}.${ext}`;
       const path = `audio_records/${fileName}`;
 
       const storage = firebase.storage().ref().child(path);
