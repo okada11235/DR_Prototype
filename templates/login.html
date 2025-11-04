@@ -31,6 +31,89 @@
     <p>アカウントをお持ちでない方は
         <a href="{{ url_for('auth.register') }}">こちら</a>
     </p>
+    <div class="perm-box" style="margin-top:16px; padding:12px; border:1px solid #ddd; border-radius:8px;">
+        <strong>はじめに必要な権限</strong>
+        <ul style="margin:8px 0 12px 18px;">
+            <li>
+              マイク（音声コマンド/録音）
+              <span id="perm-mic-ind" style="margin-left:6px; font-size:0.9em; color:#666;">未確認</span>
+            </li>
+            <li>
+              位置情報（GPSログ/ピン）
+              <span id="perm-geo-ind" style="margin-left:6px; font-size:0.9em; color:#666;">未確認</span>
+            </li>
+            <li>
+              モーション（運転評価: iOSのみ）
+              <span id="perm-motion-ind" style="margin-left:6px; font-size:0.9em; color:#666;">未確認</span>
+            </li>
+        </ul>
+        <button id="grant-permissions" type="button">権限をまとめて許可</button>
+        <span id="perm-status" style="margin-left:8px; font-size: 0.9em;"></span>
+    </div>
 </div>
+
+<script type="module">
+import { requestAllPermissions } from "{{ url_for('static', filename='permissions.js') }}";
+
+const statusEl = document.getElementById('perm-status');
+const btn = document.getElementById('grant-permissions');
+let permsReady = localStorage.getItem('perm_all') === 'granted';
+
+function updateIndicators() {
+    const mic = localStorage.getItem('perm_mic');
+    const geo = localStorage.getItem('perm_geo');
+    const motion = localStorage.getItem('perm_motion');
+    const set = (el, val) => {
+        if (!el) return;
+        if (val === 'granted') { el.textContent = '✅ 許可済み'; el.style.color = '#2e7d32'; }
+        else if (val === 'denied') { el.textContent = '❌ 未許可'; el.style.color = '#c62828'; }
+        else { el.textContent = '未確認'; el.style.color = '#666'; }
+    };
+    set(document.getElementById('perm-mic-ind'), mic);
+    set(document.getElementById('perm-geo-ind'), geo);
+    set(document.getElementById('perm-motion-ind'), motion);
+}
+
+function updateStatus() {
+    permsReady = localStorage.getItem('perm_all') === 'granted';
+    statusEl.textContent = permsReady ? '✅ 権限は許可済みです' : '';
+    updateIndicators();
+}
+updateStatus();
+
+btn?.addEventListener('click', async () => {
+    btn.disabled = true; statusEl.textContent = '要求中…';
+    try {
+        const { allOk } = await requestAllPermissions();
+        statusEl.textContent = allOk ? '✅ 許可が完了しました' : '⚠️ 一部許可されませんでした（後から設定可能）';
+        updateIndicators();
+    } catch (e) {
+        statusEl.textContent = '⚠️ 許可に失敗しました';
+    } finally {
+        btn.disabled = false; updateStatus();
+    }
+});
+
+// フォーム送信時、未許可なら先に権限要求してから送信
+const form = document.querySelector(`form[action="{{ url_for('auth.login') }}"]`);
+let alreadyRequested = false;
+form?.addEventListener('submit', async (ev) => {
+    if (localStorage.getItem('perm_all') === 'granted' || alreadyRequested) return; // 既にOK
+    ev.preventDefault();
+    btn?.setAttribute('disabled','true');
+    statusEl.textContent = '権限を確認中…';
+    try {
+        const { allOk } = await requestAllPermissions();
+        updateStatus();
+        alreadyRequested = true;
+    } catch (e) {
+        console.warn('Permission batch request failed on submit:', e);
+    } finally {
+        btn?.removeAttribute('disabled');
+        form.submit();
+    }
+});
+</script>
+
 </body>
 </html>

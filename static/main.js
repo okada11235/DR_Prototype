@@ -2,7 +2,7 @@
 
 import { startSession, endSession, startLogFlush, startPraiseCheck } from './session.js';
 import { initMap, watchPosition } from './maps.js';
-import { startMotionDetection, startAutoCalibration } from './sensors.js';
+import { startMotionDetection, startAutoCalibration, stopMotionDetection } from './sensors.js';
 import { startTimer, initScores } from './utils.js';
 import { unlockAudio, relockAudio } from './audio.js';
 
@@ -16,6 +16,9 @@ window.startSession = startSession;
 window.endSession = endSession;
 window.initMap = initMap;
 window.unlockAudio = unlockAudio; // iOS音声アンロック用に追加
+// iOSのユーザー操作イベントから呼べるようにエクスポート
+window.startMotionDetection = startMotionDetection;
+window.stopMotionDetection = stopMotionDetection;
 
 // 記録中画面の初期化処理
 function initActiveRecording() {
@@ -65,13 +68,13 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log('End button found:', !!endButton);
     if (startButton && !startButton.hasEventListener) {
         console.log('Adding click listener to start button');
-        startButton.addEventListener('click', async () => {
+        startButton.addEventListener('click', () => {
             // ルートの存在チェック（アクティブ・保存済みの両方を考慮）
             const routeIdLS = localStorage.getItem('priorityRouteId');
             let latestRouteExists = false;
             try {
                 if (window.priorityRouteAPI && window.priorityRouteAPI.getLatestRouteId) {
-                    const latestId = await window.priorityRouteAPI.getLatestRouteId();
+                    const latestId = window.priorityRouteAPI.getLatestRouteId();
                     latestRouteExists = !!latestId;
                 }
             } catch (e) { console.warn('Failed to check latest route id:', e); }
@@ -81,7 +84,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (doSetup) {
                     if (window.priorityRouteAPI && window.priorityRouteAPI.start) {
                         try {
-                            await window.priorityRouteAPI.start();
+                            window.priorityRouteAPI.start();
                             window.location.assign('/recording/active');
                         } catch (e) {
                             console.error('ルート設定開始に失敗:', e);
@@ -129,12 +132,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             // ✅ ここから重点ポイントAI評価を実行
             try {
-                const sessionId = window.sessionId;
-                if (!sessionId) {
-                    console.warn('⚠️ sessionId が未定義のため、AI評価をスキップします。');
-                    alert('セッションIDが取得できませんでした。重点ポイント評価をスキップしました。');
-                    return;
-                }
+                // ... 前提条件チェック (sessionId) ...
 
                 console.log(`🤖 重点ポイントAIフィードバック生成開始: session_id=${sessionId}`);
                 const res = await fetch(`/api/focus_feedback/${sessionId}`, { method: 'POST' });
@@ -142,18 +140,20 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (res.ok) {
                     const data = await res.json();
                     console.log('✅ フィードバック生成成功:', data);
-                    alert('重点ポイントのフィードバックを生成しました！');
+                    //alert('重点ポイントのフィードバックを生成しました！結果は次の画面で確認できます。'); // 成功
                 } else {
-                    console.error('❌ フィードバック生成APIエラー:', res.status);
-                    alert('重点ポイントフィードバックの生成に失敗しました。');
+                    // API側でエラーが起きている (4xx, 5xx ステータス)
+                    console.error('❌ フィードバック生成APIエラー (HTTP):', res.status);
+                    //alert(`重点ポイントフィードバックの生成に失敗しました。サーバーエラー: ${res.status}`); // APIエラー
                 }
             } catch (err) {
-                console.error('❌ フィードバック生成中にエラー:', err);
-                alert('重点ポイントのフィードバック生成中にエラーが発生しました。');
+                // ネットワーク、JSONパースエラーなど
+                console.error('❌ フィードバック生成中に致命的なエラー:', err);
+                //alert('ネットワーク接続またはデータ処理中に予期せぬエラーが発生しました。'); // 致命的エラー
             }
 
             // 🧭 終了後にセッション一覧ページへ遷移
-            window.location.href = '/sessions';
+            window.location.href = '/recording/completed';
         });
 
         endButton.hasEventListener = true;

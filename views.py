@@ -157,12 +157,34 @@ def recording_active():
 
     return render_template('recording_active.html', session_id=session_id)
 
-
-# 記録完了画面
+# 記録完了画面（直前のセッション情報付き）
 @views_bp.route('/recording/completed')
 @login_required
 def recording_completed():
-    return render_template('recording_completed.html')
+    db_ref = firestore.client()
+    # 直近のセッション（最新の start_time を持つ completed 状態）
+    latest_session = (
+        db_ref.collection('sessions')
+        .where('user_id', '==', current_user.id)
+        .where('status', '==', 'completed')
+        .order_by('end_time', direction=firestore.Query.DESCENDING)
+        .limit(1)
+        .stream()
+    )
+
+    session_obj = None
+    for doc in latest_session:
+        data = doc.to_dict()
+        data['id'] = doc.id
+        session_obj = data
+        break
+
+    if not session_obj:
+        # セッションが見つからない場合のフォールバック
+        return render_template('recording_completed.html', session=None)
+
+    return render_template('recording_completed.html', session=session_obj)
+
 
 # セッション一覧
 @views_bp.route('/sessions')
@@ -668,9 +690,30 @@ def recording_completed_re(session_id):
         end=end,
     )
 
+# === フィードバック生成API ===
 @views_bp.route('/api/focus_feedback/<session_id>', methods=['POST'])
 @login_required
 def api_focus_feedback(session_id):
-    from ai_evaluation import analyze_focus_points_for_session
-    feedbacks = analyze_focus_points_for_session(session_id, current_user.id)
-    return jsonify(feedbacks or {})
+    from ai_evaluation import analyze_focus_points_for_session # analyze_focus_points_for_sessionをインポート
+    db = firestore.client()
+
+    try:
+        # セッション取得
+        session_ref = db.collection("sessions").document(session_id)
+        session_doc = session_ref.get()
+        if not session_doc.exists:
+            return jsonify({"error": "Session not found"}), 404
+
+        user_id = session_doc.to_dict().get("user_id")
+
+        # 🚀 ai_evaluation.py の新しい関数を呼び出し、解析と保存を一括実行
+        results = analyze_focus_points_for_session(session_id, user_id)
+
+        # 成功したピンの数をカウントして返す
+        return jsonify({"status": "success", "count": len(results)})
+    except Exception as e:
+        print(f"❌ focus_feedback生成中エラー: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
