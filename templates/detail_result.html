@@ -176,6 +176,14 @@
       line-height: 1.4;
       color: #333;
     }
+
+    .robot {
+      width: 70px;
+      height: auto;
+      border-radius: 50%;
+      object-fit: cover;
+      background-color: #fff;
+    }
   </style>
 </head>
 <body>
@@ -199,7 +207,7 @@
 
     <!-- === 重点ポイントフィードバック === -->
     <div class="section" id="focus-feedback-section">
-      <h2>重点ポイントごとのフィードバック</h2>
+      <h2><img src="{{ url_for('static', filename='img/robot_side.png') }}" alt="ドライボ" class="robot">　重点ポイントごとのフィードバック</h2>
       <div id="focus-feedback-list">
         <p>AIフィードバックを読み込んでいます...</p>
       </div>
@@ -234,7 +242,7 @@
             listDiv.innerHTML = "";
 
             if (snapshot.empty) {
-              listDiv.innerHTML = "<p>重点ポイントのフィードバックはまだありません。</p>";
+              listDiv.innerHTML = "<p>🚧 重点ポイントが設定されてないよ！</p>";
               return;
             }
 
