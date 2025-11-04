@@ -324,6 +324,22 @@ tailwind.config = {
       update();
     })();
   </script>
+  <!-- 記録中ページに遷移しただけでマイク許可→音声起動を試みる（Android向け） -->
+  <script type="module">
+    import { requestMicrophone } from "{{ url_for('static', filename='permissions.js') }}";
+    (async () => {
+      try {
+        if (localStorage.getItem('perm_mic') !== 'granted') {
+          const res = await requestMicrophone();
+          console.log('🔐 requestMicrophone result:', res);
+        }
+      } catch (e) { console.warn('requestMicrophone failed:', e); }
+      try {
+        // すぐに音声コマンド待受を開始（フォールバック含む）
+        window.voiceRecognition?.start?.();
+      } catch (e) { console.warn('voiceRecognition.start failed:', e); }
+    })();
+  </script>
   <!-- iOS用: 初回タップでモーション許可をリクエストし、許可後にセンサー起動 -->
   <script>
     (function(){
