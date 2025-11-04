@@ -14,23 +14,32 @@ document.addEventListener("touchstart", unlockAudio, { once: true });
 
 // ✅ iOS & Android モーション許可リクエスト
 async function requestMotionPermission(callback) {
-    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
-        try {
-            const response = await DeviceMotionEvent.requestPermission();
-            if (response === 'granted') {
-                console.log("✅ Motion permission granted (iOS)");
-                callback();
-            } else {
-                alert('加速度センサーの使用が許可されませんでした。');
-            }
-        } catch (err) {
-            console.error('Motion permission request error:', err);
-            alert('加速度センサーの使用許可リクエストでエラーが発生しました。');
-        }
-    } else {
-        console.log("✅ Motion permission not required (Android or Desktop)");
+  // ログイン時に許可済みならスキップ
+  const preGranted = localStorage.getItem('perm_motion') === 'granted';
+  if (preGranted) {
+    console.log("✅ Motion permission already granted (from login)");
+    return void callback();
+  }
+
+  if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+    try {
+      const response = await DeviceMotionEvent.requestPermission();
+      if (response === 'granted') {
+        localStorage.setItem('perm_motion', 'granted');
+        console.log("✅ Motion permission granted (iOS)");
         callback();
+      } else {
+        localStorage.setItem('perm_motion', 'denied');
+        alert('加速度センサーの使用が許可されませんでした。');
+      }
+    } catch (err) {
+      console.error('Motion permission request error:', err);
+      alert('加速度センサーの使用許可リクエストでエラーが発生しました。');
     }
+  } else {
+    console.log("✅ Motion permission not required (Android or Desktop)");
+    callback();
+  }
 }
 
 // 重点ポイント取得機能

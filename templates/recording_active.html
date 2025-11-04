@@ -73,6 +73,17 @@ tailwind.config = {
     📍
   </button>
 
+  <!-- 🎤 音声コマンド トグルボタン -->
+  <button id="voiceToggleBtn"
+          style="position: fixed; bottom: 120px; left: 20px;
+                 background-color: #6b7280; color: white;
+                 border: none; border-radius: 9999px;
+                 height: 40px; padding: 0 14px; 
+                 font-size: 14px; font-weight: 700;
+                 box-shadow: 0 2px 6px rgba(0,0,0,0.3);">
+    🎤 音声OFF
+  </button>
+
   <!-- 終了ボタン -->
   <button id="end-button"
           class="bg-primary-green text-white text-xl font-bold py-3 px-10 rounded-xl shadow-lg hover:bg-cyan-400 transition">
@@ -219,6 +230,41 @@ tailwind.config = {
   <script type="module">
     import { autoUnlockAudio } from "./audio.js";
     autoUnlockAudio();
+  </script>
+  <script>
+    // 🎤 トグルボタンで音声認識をON/OFF
+    (function(){
+      const btn = document.getElementById('voiceToggleBtn');
+      if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+        btn.style.display = 'none'; // 非対応ブラウザ
+        return;
+      }
+      const update = () => {
+        const active = window.voiceRecognition?.isActive?.() || false;
+        btn.textContent = active ? '🎤 音声ON' : '🎤 音声OFF';
+        btn.style.backgroundColor = active ? '#00bcd4' : '#6b7280';
+      };
+      btn.addEventListener('click', () => {
+        const active = window.voiceRecognition?.isActive?.() || false;
+        if (active) {
+          window.voiceRecognition?.stop?.();
+        } else {
+          window.voiceRecognition?.start?.();
+        }
+        setTimeout(update, 300);
+      });
+      // ページ初期タップで一度だけON（Android向け）
+      const startOnFirstTap = () => {
+        try { window.voiceRecognition?.start?.(); } catch (e) {}
+        update();
+        window.removeEventListener('touchend', startOnFirstTap);
+        window.removeEventListener('click', startOnFirstTap);
+      };
+      window.addEventListener('touchend', startOnFirstTap, { once: true });
+      window.addEventListener('click', startOnFirstTap, { once: true });
+      // 初期表示
+      update();
+    })();
   </script>
 </body>
 </html>
