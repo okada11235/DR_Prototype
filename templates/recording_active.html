@@ -56,11 +56,11 @@ tailwind.config = {
     上下G：<span id="g-y">0.00</span>
   </div>
 
-  <!-- 録音ボタンを「終了ボタン」の上に追加
+  <!-- 🎙 手動録音ボタン（Androidでの音声認識不調時のフォールバック） -->
   <button id="recordBtn"
           class="bg-danger-red text-white text-xl font-bold py-3 px-10 rounded-xl shadow-lg hover:bg-red-500 transition mb-6">
     🎙 録音開始（5秒）
-  </button> -->
+  </button>
 
   <!-- 📍 ピン設置ボタン -->
   <button id="addPinBtn" 
@@ -226,6 +226,16 @@ tailwind.config = {
   <script src="{{ url_for('static', filename='session.js') }}"></script>
   <script src="{{ url_for('static', filename='pin_utils.js') }}"></script>
   <script src="{{ url_for('static', filename='record_voice_unified.js') }}"></script>
+  <script>
+    // 手動録音ボタンの配線
+    (function(){
+      const btn = document.getElementById('recordBtn');
+      if (!btn) return;
+      btn.addEventListener('click', async () => {
+        try { await startRecordingAndUpload(); } catch(e) { console.error('手動録音に失敗:', e); alert('録音を開始できませんでした。マイク権限やHTTPS接続をご確認ください。'); }
+      });
+    })();
+  </script>
   <!-- AudioContextのアンロック処理（これは残す） -->
   <script type="module">
     import { autoUnlockAudio } from "./audio.js";

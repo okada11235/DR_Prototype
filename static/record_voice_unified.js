@@ -72,6 +72,7 @@ const micManager = (() => {
       // 1回だけ取得し、以後再利用
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       console.log('🎤 Mic stream acquired');
+      try { localStorage.setItem('perm_mic', 'granted'); } catch (_) {}
       return stream;
     } finally {
       requesting = false;
@@ -179,8 +180,13 @@ const micManager = (() => {
     // Android向け: SpeechRecognitionが使えない場合の代替。
     // 単一のマイクストリームを維持し、2秒毎に短い音声をサーバーで文字起こし。
     const s = await ensureStream();
-    const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
-    bgRecorder = new MediaRecorder(s, { mimeType });
+    const mimeType = pickBestAudioMime();
+    try {
+      bgRecorder = mimeType ? new MediaRecorder(s, { mimeType }) : new MediaRecorder(s);
+    } catch (e) {
+      console.warn('MediaRecorder init failed (BG). Retrying without mimeType:', e);
+      try { bgRecorder = new MediaRecorder(s); } catch (e2) { console.error('BG MediaRecorder not available:', e2); throw e2; }
+    }
     const maybeTriggerFallback = async (reason) => {
       if (bgFallbackActivated) return;
       bgFallbackActivated = true;
@@ -229,7 +235,7 @@ const micManager = (() => {
         await maybeTriggerFallback(err && err.message ? err.message : 'exception');
       }
     };
-    bgRecorder.start(2000); // 2秒チャンク
+  bgRecorder.start(2000); // 2秒チャンク
     bgActive = true;
     retainStream = true; // 背景動作中はストリームを維持
     console.log('🎧 Background voice listener started');
@@ -323,6 +329,25 @@ const micManager = (() => {
   };
 })();
 
+// === 端末で使える音声コーデックを選ぶ（Android互換性向上） ===
+function pickBestAudioMime() {
+  const candidates = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/ogg;codecs=opus',
+    'audio/mp4',
+    'audio/3gpp'
+  ];
+  try {
+    if (typeof MediaRecorder !== 'undefined' && typeof MediaRecorder.isTypeSupported === 'function') {
+      for (const mt of candidates) {
+        try { if (MediaRecorder.isTypeSupported(mt)) return mt; } catch (_) {}
+      }
+    }
+  } catch (_) {}
+  return '';
+}
+
 // === ビープ音（開始・終了） ===
 function playStartBeep() {
   // 2連ビープ: 880Hz(150ms) → 1200Hz(120ms)
@@ -413,10 +438,13 @@ if (isIOS) {
       // iOSでも録音中は音声認識を停止
       micManager.setRecorderActive(true);
       const stream = await micManager.ensureStream();
-      const mimeType = MediaRecorder.isTypeSupported("audio/webm")
-        ? "audio/webm"
-        : "audio/mp4";
-      const recorder = new MediaRecorder(stream, { mimeType });
+      const mimeType = pickBestAudioMime();
+      let recorder;
+      try { recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream); }
+      catch (e) {
+        console.warn('iOS recorder init failed, retrying without mimeType:', e);
+        recorder = new MediaRecorder(stream);
+      }
       let chunks = [];
 
       recorder.ondataavailable = e => chunks.push(e.data);
@@ -425,7 +453,7 @@ if (isIOS) {
         micManager.setRecorderActive(false);
         micManager.releaseStream();
         playEndBeep();
-        const blob = new Blob(chunks, { type: mimeType });
+  const blob = new Blob(chunks, { type: mimeType || 'audio/webm' });
         console.log("🎙 iOS録音完了", blob.size);
 
         // 無音チェック
@@ -434,7 +462,7 @@ if (isIOS) {
           return;
         }
 
-        const fileName = `ios_${Date.now()}.webm`;
+  const fileName = `ios_${Date.now()}.webm`;
         const path = `audio_records/${fileName}`;
         const storageRef = firebase.storage().ref().child(path);
 
@@ -510,72 +538,92 @@ if (isIOS) {
     }
   }
 
-  // ✅ 音声認識で「録音」を検出したら呼び出す
-  window.SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (window.SpeechRecognition) {
-    const recognition = new SpeechRecognition();
-    recognition.lang = "ja-JP";
-    recognition.continuous = true;
-    recognition.interimResults = false;
+  // ✅ iOS向け 音声認識/フォールバック統一API
+  let iosRecognition = null; // Web Speech
+  let iosVoiceActive = false; // UI表示用
 
-    recognition.onresult = (event) => {
-      const transcript = event.results[event.results.length - 1][0].transcript.trim();
-      console.log("🎤 音声認識結果:", transcript);
-
-      if (transcript.includes("録音")) {
-        console.log("✅ キーワード「録音」を検出 → 録音開始");
-        iosRecordOnce();
+  function startIOSVoice() {
+    const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRec) {
+      if (!iosRecognition) {
+        iosRecognition = new SpeechRec();
+        iosRecognition.lang = 'ja-JP';
+        iosRecognition.continuous = true;
+        iosRecognition.interimResults = false;
+        iosRecognition.onresult = (event) => {
+          const transcript = event.results[event.results.length - 1][0].transcript.trim();
+          console.log('🎤(iOS) 音声認識結果:', transcript);
+          if (/録音|ろくおん/.test(transcript)) {
+            console.log('✅ (iOS) 「録音」検出 → 録音');
+            iosRecordOnce();
+          }
+          if (/ピン|ぴん/.test(transcript)) {
+            console.log('📍 (iOS) 「ピン」検出 → 現在地ピン');
+            if (navigator.geolocation) {
+              navigator.geolocation.getCurrentPosition((pos) => {
+                const { latitude, longitude } = pos.coords;
+                const now = new Date();
+                const dateString = now.toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit' });
+                const timeString = now.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                const label = `音声ピン ${dateString} ${timeString}`;
+                window.addVoicePinWithOptions && window.addVoicePinWithOptions(latitude, longitude, label, false, 'voice_command');
+              });
+            }
+          }
+        };
+        iosRecognition.onend = () => {
+          console.log('🔁 (iOS) 音声認識 onend');
+          // 過剰再起動を避けつつ再開
+          if (iosVoiceActive) setTimeout(() => { try { iosRecognition.start(); } catch(e) {} }, 1500);
+        };
+        iosRecognition.onerror = (e) => console.error('音声認識エラー(iOS):', e);
       }
-
-      // ✅ 追加：「ピン」で現在地に仮ピンを立てる
-      if (transcript.includes("ピン") || transcript.includes("ぴん")) {
-        console.log("📍 音声コマンド「ピン」検出 → 現在地取得中...");
+      try { iosRecognition.start(); iosVoiceActive = true; console.log('🎙 (iOS) Web Speech開始'); } catch(e) { console.warn('iOS Web Speech開始失敗:', e); }
+      return;
+    }
+    // ❌ Web Speech非対応 → Whisperフォールバック（2秒チャンク）
+    console.log('🧩 (iOS) Web Speech非対応 → サーバー文字起こしにフォールバック');
+    micManager.startBackgroundListener(async (cmd) => {
+      if (cmd === 'record') {
+        await iosRecordOnce();
+      } else if (cmd === 'pin') {
         if (navigator.geolocation) {
           navigator.geolocation.getCurrentPosition((pos) => {
             const { latitude, longitude } = pos.coords;
-            console.log("📍 現在地:", latitude, longitude);
-            
-            // 現在日時を取得してフォーマット
             const now = new Date();
-            const dateString = now.toLocaleDateString('ja-JP', {
-              year: 'numeric',
-              month: '2-digit',
-              day: '2-digit'
-            });
-            const timeString = now.toLocaleTimeString('ja-JP', { 
-              hour: '2-digit', 
-              minute: '2-digit', 
-              second: '2-digit' 
-            });
+            const dateString = now.toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit' });
+            const timeString = now.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
             const label = `音声ピン ${dateString} ${timeString}`;
-            
-            if (window.addVoicePinWithOptions) {
-              // 読み上げ無効でピンを作成
-              window.addVoicePinWithOptions(latitude, longitude, label, false, "voice_command");
-              console.log("✅ 音声ピンを作成しました:", label);
-            } else {
-              console.warn("⚠️ addVoicePinWithOptions 関数が未定義です");
-            }
+            window.addVoicePinWithOptions && window.addVoicePinWithOptions(latitude, longitude, label, false, 'voice_command');
           });
-        } else {
-          console.warn("❌ 現在地取得に未対応の環境");
         }
       }
-    };
-
-    recognition.onend = () => {
-      console.log("🔁 音声認識が終了 (iOS)");
-      // iOSは比較的安定するが、過剰再起動を避ける
-      setTimeout(() => {
-        try { recognition.start(); } catch(e) { /* noop */ }
-      }, 1500);
-    };
-
-    recognition.onerror = (e) => console.error("音声認識エラー:", e);
-
-    recognition.start();
-    console.log("🎙 音声認識を開始（「録音」で録音開始）");
+    });
+    iosVoiceActive = true;
   }
+
+  function stopIOSVoice() {
+    try { iosVoiceActive = false; iosRecognition && iosRecognition.stop && iosRecognition.stop(); } catch(e) {}
+    try { micManager.stopBackgroundListener && micManager.stopBackgroundListener(); } catch(e) {}
+  }
+
+  // グローバル操作API: 画面のトグルボタンからON/OFFできるように
+  window.voiceRecognition = {
+    start(){ startIOSVoice(); },
+    stop(){ stopIOSVoice(); },
+    isActive(){ return iosVoiceActive || (micManager.isBackgroundActive && micManager.isBackgroundActive()); }
+  };
+
+  // 初回ユーザー操作で一度だけ開始（iOSのオートスタート対策）
+  const startOnUserGestureIOS = () => {
+    try { startIOSVoice(); } catch(e) { console.warn('iOS音声開始失敗:', e); }
+    window.removeEventListener('touchend', startOnUserGestureIOS);
+    window.removeEventListener('click', startOnUserGestureIOS);
+    window.removeEventListener('keydown', startOnUserGestureIOS);
+  };
+  window.addEventListener('touchend', startOnUserGestureIOS, { once: true });
+  window.addEventListener('click', startOnUserGestureIOS, { once: true });
+  window.addEventListener('keydown', startOnUserGestureIOS, { once: true });
 }
 
 // === Android / PC 音声認識トリガー ===
@@ -669,10 +717,9 @@ else if (window.SpeechRecognition || window.webkitSpeechRecognition) {
   const saved = localStorage.getItem('voiceRecognitionAutoStart');
   let enable = isAndroid ? false : (saved === 'true');
 
-  // 記録中ページではAndroidでも起動を許可（ログイン時に権限取得済み前提）
+  // 記録中ページではAndroidでも起動を許可（権限はensureStreamで都度取得）
   const page = document.body?.dataset?.page;
-  const micGranted = localStorage.getItem('perm_mic') === 'granted';
-  if (isAndroid && page === 'recording_active' && micGranted) {
+  if (isAndroid && page === 'recording_active') {
     try {
       recognition = micManager.initRecognitionIfNeeded();
       if (recognition) {
@@ -690,13 +737,13 @@ else if (window.SpeechRecognition || window.webkitSpeechRecognition) {
 
   micManager.setAutoStart(enable);
   // tryStartRecognition は Android でも recording_active なら呼ぶ
-  if (!isAndroid || (isAndroid && page === 'recording_active' && micGranted)) {
+  if (!isAndroid || (isAndroid && page === 'recording_active')) {
     micManager.tryStartRecognition();
   }
   console.log(`✅ 音声認識 初期化（autoStart=${enable}, page=${page}）`);
 
   // Androidの記録中ページでは、認識の自動再起動ループは抑制しつつ、緩やかなKeepAliveを有効化
-  if (isAndroid && page === 'recording_active' && micGranted) {
+  if (isAndroid && page === 'recording_active') {
     micManager.setNoAutoRestart(true);     // onend/onerrorの即時再起動はしない
     micManager.setRetainStream(false);     // 事前取得はしない（競合防止）
     micManager.startKeepAlive(180);        // 3分間隔で穏やかに再起動（上限とスロットル適用）
@@ -777,18 +824,21 @@ async function startRecordingAndUpload() {
     micManager.setRecorderActive(true);
   micManager.pauseBackgroundListener?.();
     const stream = await micManager.ensureStream();
-    const mimeType = MediaRecorder.isTypeSupported("audio/webm")
-      ? "audio/webm"
-      : "audio/mp4";
-    const recorder = new MediaRecorder(stream, { mimeType });
+    const mimeType = pickBestAudioMime();
+    let recorder;
+    try { recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream); }
+    catch (e) {
+      console.warn('Recorder init failed, retrying without mimeType:', e);
+      recorder = new MediaRecorder(stream);
+    }
     const chunks = [];
 
     recorder.ondataavailable = e => chunks.push(e.data);
     recorder.onstop = async () => {
       // 終了音を実停止に同期
       try { playEndBeep(); } catch (_) {}
-      const audioBlob = new Blob(chunks, { type: mimeType });
-      const fileName = `whisper_${Date.now()}.webm`;
+  const audioBlob = new Blob(chunks, { type: mimeType || 'audio/webm' });
+  const fileName = `whisper_${Date.now()}.webm`;
       const path = `audio_records/${fileName}`;
 
       const storage = firebase.storage().ref().child(path);
