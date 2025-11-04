@@ -648,7 +648,7 @@ def get_all_pins():
         return jsonify({"status": "error", "error": str(e)}), 500
     
 from flask import render_template, request
-from ai_evaluation import generate_feedback  # あなたのAI評価関数を使用
+#from ai_evaluation import generate_feedback  # あなたのAI評価関数を使用
 
 @views_bp.route('/recording/completed_re/<session_id>')
 @login_required
@@ -661,13 +661,16 @@ def recording_completed_re(session_id):
     logs = get_avg_g_logs_for_session(session_id)
     logs = [l for l in logs if (l.get("timestamp_ms") or 0) >= int(start) and (l.get("timestamp_ms") or 0) <= int(end)]
 
-    # 🔹 AI評価（ai_evaluation.py を利用）
-    ai_feedback = generate_feedback(logs)
-
     return render_template(
         'recording_completed_re.html',
         session_id=session_id,
         start=start,
         end=end,
-        ai_feedback=ai_feedback
     )
+
+@views_bp.route('/api/focus_feedback/<session_id>', methods=['POST'])
+@login_required
+def api_focus_feedback(session_id):
+    from ai_evaluation import analyze_focus_points_for_session
+    feedbacks = analyze_focus_points_for_session(session_id, current_user.id)
+    return jsonify(feedbacks or {})

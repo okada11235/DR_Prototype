@@ -183,11 +183,11 @@ def generate_ai_evaluation(stats, focus_point=''):
         'generation_method': generation_method,
         'generated_at': datetime.now(JST)
     }
-
+"""
 def calculate_scores(stats):
-    """
+    
     統計データからスコアを計算
-    """
+    
     # 減速スコア（急ブレーキの数で計算）
     brake_score = max(50, 100 - stats['sudden_brakes'] * 10)
     
@@ -212,7 +212,7 @@ def calculate_scores(stats):
         'straight': int(straight_score),
         'overall': overall_score
     }
-
+"""
 def compare_stats(prev_stats, current_stats):
     """
     前回と今回の統計情報の差分を計算して返す
@@ -230,11 +230,11 @@ def compare_stats(prev_stats, current_stats):
     }
 
     return diff
-
+"""
 def generate_growth_comments(stats):
-    """
+    
     AIが使えない場合のフォールバック用・成長コメント（手動生成）
-    """
+    
     comments = {}
 
     # 減速
@@ -262,7 +262,7 @@ def generate_growth_comments(stats):
     }
 
     return comments
-
+"""
 
 def generate_ai_growth_summary(stats):
     """
@@ -307,11 +307,11 @@ def generate_ai_growth_summary(stats):
     except Exception as e:
         print(f"⚠️ AI summary generation failed: {e}")
         return "全体的に運転が安定してきています👏 引き続き丁寧な操作を意識していきましょう🚗💨"
-
+"""
 def generate_overall_comment(stats, scores):
-    """
+    
     総評コメントを生成（スコア表示あり - 旧バージョン）
-    """
+    
     overall_score = scores['overall']
     
     # 最も優秀な項目を特定
@@ -344,11 +344,12 @@ def generate_overall_comment(stats, scores):
     else:
         return f"今回の総評は{overall_score}点でした。 " \
                f"まだまだ伸びしろがあります！特に{worst_name}を意識して、安全第一で上達していきましょう🚗"
-
+"""
+"""
 def generate_overall_comment_no_score(stats, scores):
-    """
+    
     総評コメントを生成（スコア表示なし）
-    """
+    
     # 最も優秀な項目を特定
     best_aspect = max(scores, key=lambda k: scores[k] if k != 'overall' else 0)
     best_score = scores[best_aspect]
@@ -380,7 +381,7 @@ def generate_overall_comment_no_score(stats, scores):
                f"{best_name}が良好です。{worst_name}を意識して、さらにスムーズな運転を目指しましょう！"
     else:
         return f"まだまだ伸びしろがあります！特に{worst_name}を意識して、安全第一で上達していきましょう🚗"
-
+"""
 def generate_ai_growth_comments(stats, prev_stats=None):
     """
     OpenAI APIを使用して「成長コメント」を生成
@@ -636,11 +637,11 @@ def save_evaluation_to_session(session_id, user_id, evaluation):
     except Exception as e:
         print(f"Error saving evaluation: {e}")
         return False
-    
+"""
 def generate_feedback(logs):
-    """
+    
     走行データからAI評価を生成し、総評＋各項目のフィードバックを返す
-    """
+    
     if not logs:
         return {
             "overall": "この範囲にはデータがありません。",
@@ -691,4 +692,213 @@ def generate_feedback(logs):
     }
 
     return feedback
+"""
 
+def generate_ai_focus_feedback(current_stats, diff=None, first_time=False):
+    """
+    各重点ポイント地点のAIコメントを生成（比較済みの数値を渡す）
+    """
+    prompt = "あなたは運転コーチAI『ドライボ』です。\n"
+    if first_time:
+        prompt += "これは初めて重視した地点です。\n"
+
+    prompt += f"""
+地点での運転データ:
+- 平均速度: {current_stats['avg_speed']:.1f} km/h
+- 平均G前後: {current_stats['mean_gz']:.3f}
+- 横G: {current_stats['mean_gx']:.3f}
+"""
+    if diff:
+        prompt += f"""
+前回との差分:
+- 平均速度変化: {diff['speed_diff']:.2f}
+- G前後変化: {diff['gz_diff']:.3f}
+- 横G変化: {diff['gx_diff']:.3f}
+"""
+
+    prompt += """
+これらを踏まえ、やさしい口調で1〜2文のフィードバックを出してください。
+例：「減速がよりスムーズになりました👏」「この地点の進入が落ち着いてきました✨」
+"""
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=150,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        print("⚠️ AI focus feedback failed:", e)
+        return "データをもとにした解析に失敗しましたが、引き続き安全運転を意識しましょう🚗"
+
+def compare_focus_stats(prev, curr):
+    if not prev:
+        return None
+    return {
+        "speed_diff": curr["avg_speed"] - prev["avg_speed"],
+        "gx_diff": curr["mean_gx"] - prev["mean_gx"],
+        "gz_diff": curr["mean_gz"] - prev["mean_gz"],
+    }
+
+
+# --- 追加: 2点間の距離[m]（ハバースイン） ---
+from math import radians, sin, cos, sqrt, atan2
+
+def get_distance_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """地球上の2点間距離（m）"""
+    R = 6371000.0
+    dlat = radians(lat2 - lat1)
+    dlon = radians(lon2 - lon1)
+    a = sin(dlat/2)**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon/2)**2
+    return R * 2.0 * atan2(sqrt(a), sqrt(1.0 - a))
+
+# --- 追加: 重点ポイント近傍の統計を作る（速度/Gの平均） ---
+def calc_focus_area_stats(gps_nearby: list) -> dict:
+    if not gps_nearby:
+        return {"avg_speed": 0.0, "mean_gx": 0.0, "mean_gz": 0.0}
+
+    n = float(len(gps_nearby))
+    avg_speed = sum(g.get("speed", 0.0) or 0.0 for g in gps_nearby) / n
+    mean_gx   = sum(g.get("g_x",   0.0) or 0.0 for g in gps_nearby) / n
+    mean_gz   = sum(g.get("g_z",   0.0) or 0.0 for g in gps_nearby) / n
+    return {
+        "avg_speed": round(avg_speed, 3),
+        "mean_gx":   round(mean_gx,   4),
+        "mean_gz":   round(mean_gz,   4),
+    }
+
+# --- 追加: 前回との差分計算 ---
+def compare_focus_stats(prev: dict|None, curr: dict) -> dict|None:
+    if not prev:
+        return None
+    return {
+        "speed_diff": round(curr["avg_speed"] - (prev.get("avg_speed") or 0.0), 3),
+        "gx_diff":    round(curr["mean_gx"]   - (prev.get("mean_gx")   or 0.0), 4),
+        "gz_diff":    round(curr["mean_gz"]   - (prev.get("mean_gz")   or 0.0), 4),
+    }
+
+# --- 追加: 各重点ポイントのAIコメント（比較済みの数値だけ渡す） ---
+def generate_ai_focus_feedback(current_stats: dict, diff: dict|None, first_time: bool) -> str:
+    intro = "はじめて重視した地点です。 " if first_time else ""
+    # AIはコメント生成のみを担当。数値比較は上で済ませている
+    prompt = f"""あなたは運転コーチAI『ドライボ』です。
+{intro}次の数値（平均速度・G値と、その前回からの変化）が与えられます。
+やさしい口調で1〜2文で、具体的かつ前向きなフィードバックを返してください。
+スコアや点数は出さないでください。絵文字を少し使ってください。
+
+今回の地点データ:
+- 平均速度: {current_stats['avg_speed']} km/h
+- 平均G(前後): {current_stats['mean_gz']}
+- 平均G(横): {current_stats['mean_gx']}
+
+前回との差分:
+{('- 平均速度変化: ' + str(diff['speed_diff']) + '\\n- 前後G変化: ' + str(diff['gz_diff']) + '\\n- 横G変化: ' + str(diff['gx_diff'])) if diff else '（前回データなし）'}
+"""
+    try:
+        if client:
+            res = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.6,
+                max_tokens=180,
+            )
+            return res.choices[0].message.content.strip()
+    except Exception as e:
+        print("AI focus feedback error:", e)
+
+    # フォールバック（AIが使えない/失敗時）
+    if first_time:
+        return "はじめて重視した地点です。落ち着いた進入と丁寧な減速を意識できるとさらに安心です👏"
+    if diff:
+        tips = []
+        if diff["speed_diff"] < 0: tips.append("進入速度が落ち着いてきました")
+        if diff["gz_diff"]   < 0: tips.append("減速がよりスムーズになっています")
+        if diff["gx_diff"]   < 0: tips.append("横Gが小さく安定しています")
+        if not tips: tips.append("安定感が維持されています")
+        return " / ".join(tips) + "。この調子でいきましょう🚗"
+    return "落ち着いた操作を意識できています。次回も安全第一でいきましょう✨"
+
+# --- 追加: セッション内の重点ポイントごとに解析し保存 ---
+def analyze_focus_points_for_session(session_id: str, user_id: str, radius_m: float = 10.0) -> dict:
+    """
+    - recording_start.html で設定した priority_pins（user_id一致）を列挙
+    - 各ピンの半径±10mに入ったGPSログを抽出して統計
+    - 前回（過去セッション）の同pin_idの stats を collection_groupで取得して比較
+    - AIでコメント“だけ”生成
+    - 保存先: sessions/{session_id}/focus_feedbacks/{pin_id}
+      （※ user_id と pin_id も同レコードに持たせて次回検索を高速化）
+    """
+    db = firestore.client()
+
+    # セッションのGPSログ
+    sess_ref = db.collection("sessions").document(session_id)
+    if not sess_ref.get().exists:
+        print("session not found:", session_id)
+        return {}
+
+    gps_logs = [d.to_dict() for d in sess_ref.collection("gps_logs").order_by("timestamp").stream()]
+
+    # ユーザーの重点ピン（recording_start で作成）を取得
+    pins = []
+    for p in db.collection("priority_pins").where("user_id", "==", user_id).stream():
+        o = p.to_dict()
+        o["id"] = p.id
+        pins.append(o)
+
+    results = {}
+    for pin in pins:
+        lat, lng, pin_id = float(pin["lat"]), float(pin["lng"]), pin["id"]
+
+        nearby = [g for g in gps_logs
+                  if get_distance_meters(lat, lng, float(g.get("latitude", 0.0) or 0.0),
+                                                   float(g.get("longitude", 0.0) or 0.0)) <= radius_m]
+
+        if not nearby:
+            continue
+
+        # 今回の統計
+        current_stats = calc_focus_area_stats(nearby)
+
+        # 前回（過去セッション）の同pin_idの最新1件を取得（collection_group）
+        prev_stats = None
+        try:
+            cg = db.collection_group("focus_feedbacks") \
+                   .where("user_id", "==", user_id) \
+                   .where("pin_id", "==", pin_id) \
+                   .order_by("created_at", direction=firestore.Query.DESCENDING) \
+                   .limit(1) \
+                   .stream()
+            prev_doc = next(cg, None)
+            if prev_doc:
+                prev_stats = prev_doc.to_dict().get("stats")
+        except Exception as e:
+            print("collection_group query failed:", e)
+
+        # 差分
+        diff = compare_focus_stats(prev_stats, current_stats)
+
+        # AIコメント（先頭に初回メッセージ）
+        comment = generate_ai_focus_feedback(current_stats, diff, first_time=(prev_stats is None))
+
+        # セッション配下に保存（sessions/{sid}/focus_feedbacks/{pin_id}）
+        sess_ref.collection("focus_feedbacks").document(pin_id).set({
+            "created_at": datetime.now(JST),
+            "user_id": user_id,       # 次回のcollection_group検索用
+            "pin_id": pin_id,         # 次回のcollection_group検索用
+            "pin_label": pin.get("label", ""),
+            "stats": current_stats,   # 保存して次回は再計算不要
+            "diff": diff,
+            "ai_comment": comment,
+        })
+
+        results[pin_id] = {
+            "pin_label": pin.get("label", ""),
+            "stats": current_stats,
+            "diff": diff,
+            "ai_comment": comment
+        }
+
+    print(f"✅ focus_feedbacks stored under sessions/{session_id}")
+    return results
