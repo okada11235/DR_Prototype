@@ -157,12 +157,34 @@ def recording_active():
 
     return render_template('recording_active.html', session_id=session_id)
 
-
-# 記録完了画面
+# 記録完了画面（直前のセッション情報付き）
 @views_bp.route('/recording/completed')
 @login_required
 def recording_completed():
-    return render_template('recording_completed.html')
+    db_ref = firestore.client()
+    # 直近のセッション（最新の start_time を持つ completed 状態）
+    latest_session = (
+        db_ref.collection('sessions')
+        .where('user_id', '==', current_user.id)
+        .where('status', '==', 'completed')
+        .order_by('end_time', direction=firestore.Query.DESCENDING)
+        .limit(1)
+        .stream()
+    )
+
+    session_obj = None
+    for doc in latest_session:
+        data = doc.to_dict()
+        data['id'] = doc.id
+        session_obj = data
+        break
+
+    if not session_obj:
+        # セッションが見つからない場合のフォールバック
+        return render_template('recording_completed.html', session=None)
+
+    return render_template('recording_completed.html', session=session_obj)
+
 
 # セッション一覧
 @views_bp.route('/sessions')

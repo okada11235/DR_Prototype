@@ -149,6 +149,17 @@
       <h2>重点ポイントごとのフィードバック</h2>
       <div id="focus-feedback-list"></div>
     </div>
+
+    <!-- 詳細リザルトページへの遷移 -->
+    {% if session %}
+      <div style="margin-top: 20px;">
+        <a href="{{ url_for('sessions.detail_result_page', session_id=session.id) }}" class="btn btn-primary">
+          🚗 記録の詳細を確認する
+        </a>
+      </div>
+    {% else %}
+      <p>セッション情報が見つかりませんでした。</p>
+    {% endif %}
   </main>
 
   <!-- ✅ ナビバー -->
