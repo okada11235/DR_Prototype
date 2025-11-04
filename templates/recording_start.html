@@ -405,5 +405,33 @@
     async
     defer
   ></script>
+  <!-- iOS用: 初回タップでモーション許可をリクエストし、許可後にセンサー起動 -->
+  <script>
+    (function(){
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      if (!isIOS) return;
+      if (typeof DeviceMotionEvent === 'undefined' || typeof DeviceMotionEvent.requestPermission !== 'function') return;
+      try { if (localStorage.getItem('perm_motion') === 'granted') return; } catch(_) {}
+      const ask = async () => {
+        try {
+          const r = await DeviceMotionEvent.requestPermission();
+          localStorage.setItem('perm_motion', r === 'granted' ? 'granted' : 'denied');
+          if (r === 'granted') {
+            if (!window.isMotionDetectionActive && typeof window.startMotionDetection === 'function') {
+              try { window.startMotionDetection(); } catch(_) {}
+            }
+          } else {
+            alert('加速度センサーの許可が必要です。設定から有効にしてください。');
+          }
+        } catch (e) {
+          console.warn('Motion permission request failed:', e);
+        }
+        window.removeEventListener('touchend', ask);
+        window.removeEventListener('click', ask);
+      };
+      window.addEventListener('touchend', ask, { once: true });
+      window.addEventListener('click', ask, { once: true });
+    })();
+  </script>
 </body>
 </html>

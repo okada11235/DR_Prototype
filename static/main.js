@@ -2,7 +2,7 @@
 
 import { startSession, endSession, startLogFlush, startPraiseCheck } from './session.js';
 import { initMap, watchPosition } from './maps.js';
-import { startMotionDetection, startAutoCalibration } from './sensors.js';
+import { startMotionDetection, startAutoCalibration, stopMotionDetection } from './sensors.js';
 import { startTimer, initScores } from './utils.js';
 import { unlockAudio, relockAudio } from './audio.js';
 
@@ -16,6 +16,9 @@ window.startSession = startSession;
 window.endSession = endSession;
 window.initMap = initMap;
 window.unlockAudio = unlockAudio; // iOS音声アンロック用に追加
+// iOSのユーザー操作イベントから呼べるようにエクスポート
+window.startMotionDetection = startMotionDetection;
+window.stopMotionDetection = stopMotionDetection;
 
 // 記録中画面の初期化処理
 function initActiveRecording() {
