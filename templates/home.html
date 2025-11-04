@@ -70,6 +70,27 @@
       text-align: left;
       box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     }
+    
+    /* ▼ 天気ボックス用の調整スタイル ▼ */
+    .weather-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.9em;
+      color: #555;
+      border-bottom: 1px solid #eee;
+      padding-bottom: 5px;
+      margin-bottom: 10px;
+    }
+    .weather-icon {
+        background-color: #e0f0f5;
+        border-radius: 50%;
+        display: block; /* imgを中央揃え可能にする */
+    }
+    .text-xs { font-size: 0.75rem; } /* 小さい文字サイズ */
+    .text-sm { font-size: 0.875rem; } /* やや小さい文字サイズ */
+    /* ▲ 調整スタイルここまで ▲ */
+
 
     .custom-nav-bar{background:#378da0;border-top:2px solid #5a7d8d;box-shadow:inset 0 0 5px rgba(0,0,0,.2);height:45px}
     .custom-nav-link{color:#fff;font-weight:bold;font-size:1rem;padding:0 1rem;line-height:41px;height:100%;display:block}
@@ -90,14 +111,49 @@
   <main class="main">
     <img src="{{ url_for('static', filename='img/robot.png') }}" alt="ドライボ" class="robot">
 
-    <div class="message-box">
-      <p>こんにちは。私の名前はドライボ。<br>運転アシストロボットです。</p>
-    </div>
+    <!-- ▼ 天気情報ボックス ▼ -->
+    <div class="message-box" id="weather-box">
+      <div class="weather-header">
+        <strong>現在地の天気と予測</strong>
+        <span id="weather-location">（取得中...）</span>
+      </div>
+      <!-- 新しいレイアウト: 現在と3時間後を並列表示 -->
+      <div class="d-flex justify-content-around align-items-center text-center">
+        
+        <!-- 1. 現在の天気 -->
+        <div class="flex-fill">
+          <div class="text-sm font-weight-bold text-secondary mb-1">現在</div>
+          <img id="weather-icon" src="https://placehold.co/50x50/ffffff/cdeae0?text=..." alt="天気" class="mx-auto weather-icon" style="width: 50px; height: 50px;">
+          <div class="mt-1">
+              <span id="weather-temp" class="text-lg font-weight-bold" style="color:#2090c2;">--℃</span>
+          </div>
+          <span id="weather-desc" class="text-xs">---</span>
+        </div>
+        
+        <!-- 区切り線 -->
+        <div class="vr h-16 mx-2" style="color: #ddd;"></div>
 
-    <div class="message-box">
-      <p>ハンドル操作がなめらかで安定してるよ！<br>
-      ブレーキがちょっと急になりがちかも。</p>
+        <!-- 2. 3時間後の予測 -->
+        <div class="flex-fill">
+          <div class="text-sm font-weight-bold text-secondary mb-1">
+            3時間後 (<span id="forecast-3h-time">--:--</span>)
+          </div>
+          <img id="weather-icon-3h" src="https://placehold.co/50x50/ffffff/cdeae0?text=..." alt="3時間後天気" class="mx-auto weather-icon" style="width: 50px; height: 50px;">
+          <div class="mt-1">
+              <span id="weather-temp-3h" class="text-lg font-weight-bold" style="color:#e44d8f;">--℃</span>
+          </div>
+          <span id="weather-desc-3h" class="text-xs">---</span>
+        </div>
+      </div>
     </div>
+    <!-- ▲ 天気情報ボックス ▲ -->
+
+    <!-- ▼ 天気アドバイス (最初は非表示) ▼ -->
+    <div class="message-box" id="weather-advice-box" style="display: none;">
+      <p id="weather-advice-text"></p>
+    </div>
+    <!-- ▲ 天気アドバイス ▲ -->
+
   </main>
 
   <!-- ✅ result.htmlと同じ下部ナビ -->
@@ -126,6 +182,307 @@
 
   <!-- ✅ BootstrapのJSも入れる（念のため） -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+  <!-- ✅ 天気情報取得スクリプト -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      // 1. APIキー（!!ご自身のキーに差し替えてください!!）
+      // OpenWeatherMapの無料APIキーが必要です
+      // !!! ここに新しく生成したAPIキーを貼り付けてください !!!
+      const OWM_API_KEY = '21e24128ecb01f604c8181f7cece2285'; 
+
+      // **********************************************
+      // !!! 【テスト用】メッセージ強制表示フラグ (解除済み) !!!
+      // テスト完了後、必ず false に戻すか、この行を削除してください。
+      const TEST_ADVICE_MODE = false; 
+      // **********************************************
+
+      // 2. DOM要素の取得
+      // 現在の天気
+      const weatherLocationEl = document.getElementById('weather-location');
+      const weatherIconEl = document.getElementById('weather-icon');
+      const weatherTempEl = document.getElementById('weather-temp');
+      const weatherDescEl = document.getElementById('weather-desc');
+      // 3時間後の天気 (新規追加)
+      const weatherIcon3hEl = document.getElementById('weather-icon-3h');
+      const weatherTemp3hEl = document.getElementById('weather-temp-3h');
+      const weatherDesc3hEl = document.getElementById('weather-desc-3h');
+      const forecast3hTimeEl = document.getElementById('forecast-3h-time');
+
+      const weatherAdviceBoxEl = document.getElementById('weather-advice-box');
+      const weatherAdviceTextEl = document.getElementById('weather-advice-text');
+
+      // 3. 位置情報の取得
+      if (navigator.geolocation) {
+        // タイムアウトを10秒に設定
+        const options = { timeout: 10000 };
+        navigator.geolocation.getCurrentPosition(onLocationSuccess, onLocationError, options);
+      } else {
+        weatherLocationEl.textContent = '（位置情報が利用不可）';
+      }
+
+      // 4. 位置情報取得成功時の処理
+      async function onLocationSuccess(position) {
+        const lat = position.coords.latitude;
+        const lon = position.coords.longitude;
+
+        let locationName = null; // 都市名を格納する変数
+        
+        // 4-1. 【追加】都市名を取得するために Current Weather API (2.5) を呼び出す
+        const locationApiUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${OWM_API_KEY}&lang=ja`;
+        try {
+            const locationResponse = await fetch(locationApiUrl);
+            if (locationResponse.ok) {
+                const locationData = await locationResponse.json();
+                locationName = locationData.name || `緯度:${lat.toFixed(2)}, 経度:${lon.toFixed(2)}`;
+            } else {
+                console.warn('都市名取得API呼び出し失敗:', locationResponse.status);
+            }
+        } catch (error) {
+            console.error('都市名取得に失敗:', error);
+        }
+        
+        // 5. 天気APIの呼び出し (One Call API 3.0/3.5)
+        // ✅ One Call API (3.0/3.5) を使用
+        // exclude=daily,alerts により、現在(current)、分ごと(minutely)、時間ごと(hourly)のデータのみを取得します。
+        const apiUrl = `https://api.openweathermap.org/data/3.0/onecall?lat=${lat}&lon=${lon}&appid=${OWM_API_KEY}&units=metric&lang=ja&exclude=daily,alerts`;
+        
+        try {
+          // タイムアウト処理（5秒）
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+          const response = await fetch(apiUrl, { signal: controller.signal });
+          clearTimeout(timeoutId);
+          
+          const errorResponse = response.clone();
+
+          if (!response.ok) {
+            let errorMessage = `APIエラー: ${response.status} ${response.statusText}`;
+            if (response.status === 401) {
+                 try {
+                     const errorData = await errorResponse.json();
+                     console.error('OpenWeatherMap 401 エラー詳細:', errorData.message || '詳細不明');
+                 } catch (e) {
+                     console.error('OpenWeatherMap 401 エラー詳細: JSONパースエラー');
+                 }
+                 weatherLocationEl.textContent = '（天気取得失敗）';
+                 weatherDescEl.textContent = `401: APIキーが不正または未認証です`;
+                 weatherIconEl.src = 'https://placehold.co/50x50/ffebee/b71c1c?text=401';
+                 throw new Error(`API Key Error: 401 Unauthorized`);
+            }
+            weatherLocationEl.textContent = '（天気取得失敗）';
+            weatherDescEl.textContent = errorMessage;
+            weatherIconEl.src = 'https://placehold.co/50x50/ffebee/b71c1c?text=Err';
+            throw new Error(errorMessage);
+          }
+          const data = await response.json();
+          
+          // 6. UIの更新
+          // ✅ locationName を渡す
+          updateWeatherUI(data, locationName);
+
+        } catch (error) {
+          console.error('天気情報の取得に失敗:', error);
+          if (!error.message || !error.message.includes('API Key Error')) {
+            weatherLocationEl.textContent = '（天気取得失敗）';
+            weatherDescEl.textContent = `---`;
+            if (error.name === 'AbortError') {
+              weatherLocationEl.textContent = '（タイムアウト）';
+              weatherDescEl.textContent = `サーバー応答が遅延しました`;
+            }
+          }
+        }
+      }
+
+      // 7. 位置情報取得失敗時の処理
+      function onLocationError(error) {
+        let message = '（位置情報取得失敗）';
+        switch(error.code) {
+          case error.PERMISSION_DENIED:
+            message = "（位置情報の利用が許可されていません）";
+            break;
+          case error.POSITION_UNAVAILABLE:
+            message = "（位置情報が利用できません）";
+            break;
+          case error.TIMEOUT:
+            message = "（位置情報の取得がタイムアウトしました）";
+            break;
+        }
+        weatherLocationEl.textContent = message;
+      }
+
+      // 8. UIを更新する関数
+      // ✅ locationName パラメータを追加
+      function updateWeatherUI(data, locationName) {
+        if (!data.current || !data.current.weather || data.current.weather.length === 0) {
+            weatherLocationEl.textContent = '（データ形式エラー）';
+            return;
+        }
+
+        // ✅ 都市名があれば表示し、なければデフォルトの場所名を表示
+        weatherLocationEl.textContent = locationName || '（現在地）';
+
+        // 8-1. 現在の天気を表示
+        weatherTempEl.textContent = `${Math.round(data.current.temp)}℃`;
+        weatherDescEl.textContent = data.current.weather[0].description;
+        weatherIconEl.src = `https://openweathermap.org/img/wn/${data.current.weather[0].icon}@2x.png`;
+        weatherIconEl.alt = data.current.weather[0].description;
+
+        // 8-2. 3時間後の予測データを取得 (hourly[3]は3時間後)
+        if (data.hourly && data.hourly.length >= 4) {
+            const forecast3h = data.hourly[3];
+            const date3h = new Date((forecast3h.dt) * 1000);
+
+            // 3時間後のUIを更新
+            forecast3hTimeEl.textContent = `${date3h.getHours()}:00`;
+            weatherTemp3hEl.textContent = `${Math.round(forecast3h.temp)}℃`;
+            weatherDesc3hEl.textContent = forecast3h.weather[0].description;
+            weatherIcon3hEl.src = `https://openweathermap.org/img/wn/${forecast3h.weather[0].icon}@2x.png`;
+            weatherIcon3hEl.alt = forecast3h.weather[0].description;
+        } else {
+            // 3時間後のデータがない場合の処理
+            forecast3hTimeEl.textContent = '--:--';
+            weatherTemp3hEl.textContent = '--℃';
+            weatherDesc3hEl.textContent = 'データなし';
+            weatherIcon3hEl.src = 'https://placehold.co/50x50/ffffff/cdeae0?text=--';
+        }
+
+
+        // 9. 天気に応じたアドバイスの表示 (Hourly予測とCurrent天気の両方を使用)
+        const currentWeatherMain = data.current.weather[0].main; 
+        
+        // 予測的な要素 (hourlyデータを使用)
+        const predictedAdvice = getPredictedAdvice(data);
+        
+        // 予測があればそれを表示、なければ現在の天気に基づくアドバイスを表示
+        const advice = predictedAdvice || getWeatherAdvice(currentWeatherMain);
+        
+        if (advice) {
+          weatherAdviceTextEl.textContent = `ドライボより: ${advice}`;
+          weatherAdviceBoxEl.style.display = 'block';
+        }
+      }
+
+      // 7. 位置情報取得失敗時の処理 (関数内容は変更なし)
+      function onLocationError(error) {
+        let message = '（位置情報取得失敗）';
+        switch(error.code) {
+          case error.PERMISSION_DENIED:
+            message = "（位置情報の利用が許可されていません）";
+            break;
+          case error.POSITION_UNAVAILABLE:
+            message = "（位置情報が利用できません）";
+            break;
+          case error.TIMEOUT:
+            message = "（位置情報の取得がタイムアウトしました）";
+            break;
+        }
+        weatherLocationEl.textContent = message;
+        // 3時間後予測の初期値も更新 (追加)
+        weatherTemp3hEl.textContent = '--℃';
+        weatherDesc3hEl.textContent = '---';
+        forecast3hTimeEl.textContent = '--:--';
+        weatherIcon3hEl.src = 'https://placehold.co/50x50/ffffff/cdeae0?text=--';
+      }
+
+      // 10. 予測アドバイスを生成する関数
+      function getPredictedAdvice(data) {
+        // **********************************************
+        // !!! 【テスト用】強制的にメッセージを表示する (解除済み) !!!
+        if (TEST_ADVICE_MODE) {
+            // テスト後は、必ずこの if ブロックを削除するか、TEST_ADVICE_MODEをfalseに戻してください。
+            return '【テストモード】まもなく雨が降りそうです。ワイパーの準備と慎重な運転を心がけてください。';
+        }
+        // !!! 【テスト用】ここまで !!!
+        // **********************************************
+
+        const hourly = data.hourly;
+        if (!hourly || hourly.length < 6) {
+            // データ不足の場合
+            return null; 
+        }
+
+        let rainStartHour = -1;
+        let snowStartHour = -1;
+
+        // 向こう6時間 (hourly[0]は現在の時間を含む) をチェック
+        for (let i = 0; i < 6; i++) {
+            const hourData = hourly[i];
+            const mainWeather = hourData.weather[0].main;
+
+            // 降水確率 (pop) が50%を超え、かつ雨/霧/曇りなどの場合をチェック
+            const isRainingCondition = (mainWeather === 'Rain' || mainWeather === 'Drizzle' || (hourData.pop > 0.5 && (mainWeather === 'Clouds' || mainWeather === 'Mist')));
+            const isSnowingCondition = (mainWeather === 'Snow');
+            
+            // 雨の予測が見つかり、まだ記録されていない場合
+            if (isRainingCondition && rainStartHour === -1) {
+                rainStartHour = i;
+            } 
+            
+            // 雪の予測が見つかり、まだ記録されていない場合
+            if (isSnowingCondition && snowStartHour === -1) {
+                snowStartHour = i;
+            }
+            
+            // 両方見つかったらチェック終了
+            if (rainStartHour !== -1 && snowStartHour !== -1) break;
+        }
+
+        // アドバイスを組み立てる (雪を優先)
+        if (snowStartHour !== -1) {
+            const hour = new Date((hourly[snowStartHour].dt) * 1000).getHours();
+            if (snowStartHour <= 1) { // 1時間以内 (まもなく)
+                return '【予測】まもなく雪が降る予報です。\n路面が急激に滑りやすくなる可能性があります。早めの減速と、急ブレーキ、急ハンドルを避けた非常に慎重な運転を心がけてください。\n特に橋の上やトンネルの出入り口は凍結しやすいので注意が必要です。';
+            } else { // 2～5時間後
+                return `【予測】約${snowStartHour}時間後（${hour}時頃）から雪が降る予報です。\n出発前にタイヤの状態をチェックし、必要であればスタッドレスタイヤやチェーンの準備をしましょう。\n気温も下がる見込みですので、安全第一で無理のない運転計画を立ててください。`;
+            }
+        }
+
+        if (rainStartHour !== -1) {
+            const hour = new Date((hourly[rainStartHour].dt) * 1000).getHours();
+            if (rainStartHour <= 1) { // 1時間以内 (まもなく)
+                return '【予測】まもなく強い雨が降り始める予報です。\n雨が降り始めると、路面の油膜で特に滑りやすくなります。ワイパーをすぐに準備し、視界の確保を最優先にしてください。\n車間距離を十分に空け、スピードを落として走行しましょう。';
+            } else { // 2～5時間後
+                return `【予測】約${rainStartHour}時間後（${hour}時頃）に雨が降り始める予報です。\n出発時は晴れていても、念のため傘と、視界対策のための撥水スプレー等をお忘れなく。\n雨脚が強まる前に目的地に到着できるよう、時間に余裕を持った運転を心がけましょう。`;
+            }
+        }
+
+        return null; // 予測的な注意が必要な天候変化がない場合
+      }
+
+      // 11. 現在の天気に基づくアドバイスを生成する関数
+      function getWeatherAdvice(weatherMain) {
+        // OpenWeatherMapの主な天気コードに基づいています
+        switch (weatherMain) {
+          case 'Rain':
+          case 'Drizzle':
+          case 'Thunderstorm':
+            return '現在雨が降っており、視界が悪く路面が滑りやすい状態です。\n水たまりを高速で通過すると、タイヤが水に浮き、ハンドルやブレーキが全く効かなくなる危険があります。車間距離を普段の2倍程度に空け、速度を落として慎重に運転してください。';
+          case 'Snow':
+            return '現在雪が降っています。スリップの危険性が非常に高まっています。\n急発進、急加速、急ブレーキなど「急」のつく操作は絶対に避け、ゆっくりと、いつも以上に慎重に運転してください。\n雪道では視界も悪くなるため、ヘッドライトを点灯しましょう。';
+          case 'Clear':
+            return '快晴で最高のドライブ日和ですね！気持ちの良いドライブを楽しんでください。\nただし、日差しが強い場合は、サングラスや日よけを活用して視界を確保しましょう。\n快晴でも油断せず、安全運転でいきましょう！';
+          case 'Clouds':
+            return '曇り空です。運転しやすい天気ですが、油断せず安全運転でいきましょう！\n長距離運転の場合は、適度に休憩を取り、リフレッシュすることを忘れずに。\n特に夜間は対向車のライトに注意が必要です。';
+          case 'Mist':
+          case 'Fog':
+          case 'Haze':
+          case 'Smoke':
+          case 'Dust':
+          case 'Sand':
+          case 'Ash':
+            return '霧や霞で視界が非常に悪くなっています。フォグランプを点灯し、前の車との距離を十分にとってください。\n無理な追い越しは危険です。低速で走行し、後続車にも注意を促すためにハザードランプの利用も検討しましょう。\n視界不良の際は、路肩に停車して天候回復を待つのも一つの手です。';
+          case 'Squall':
+          case 'Tornado':
+             return '現在、突風や荒れた天候が予想されます！\nハンドルをしっかり握り、速度を落として安全な場所に避難することを最優先に考えてください。\n特に高架下や建物の近くなど、風の影響を受けやすい場所での運転には細心の注意が必要です。';
+          default:
+            return '今日も一日、安全運転でいきましょう！\n特に変わりやすい天気の日には、常に最新の予報をチェックすることをおすすめします。\n素敵なドライブになりますように！';
+        }
+      }
+    });
+  </script>
+
   
   <!-- ✅ Firebase & ルート記録スクリプト（バックグラウンドで継続） -->
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>

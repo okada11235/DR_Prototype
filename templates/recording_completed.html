@@ -149,6 +149,17 @@
       <h2>重点ポイントごとのフィードバック</h2>
       <div id="focus-feedback-list"></div>
     </div>
+
+    <!-- 詳細リザルトページへの遷移 -->
+    {% if session %}
+      <div style="margin-top: 20px;">
+        <a href="{{ url_for('sessions.detail_result_page', session_id=session.id) }}" class="btn btn-primary">
+          🚗 記録の詳細を確認する
+        </a>
+      </div>
+    {% else %}
+      <p>セッション情報が見つかりませんでした。</p>
+    {% endif %}
   </main>
 
   <!-- ✅ ナビバー -->
@@ -191,41 +202,68 @@
       const listDiv = document.getElementById("focus-feedback-list");
       const section = document.getElementById("focus-feedback-section");
       const loading = document.getElementById("loading-section");
+      let firstLoaded = false;
+      let timeoutTriggered = false;
 
       try {
-        const snapshot = await db.collection("sessions")
+        // --- ⏱️ 5秒経過したら強制的にメッセージを表示 ---
+        const timeout = setTimeout(() => {
+          if (!firstLoaded && !timeoutTriggered) {
+            timeoutTriggered = true;
+            loading.style.display = "none";
+            section.style.display = "block";
+            listDiv.innerHTML = `
+              <div style="text-align:center; color:#777; padding:10px;">
+                🚧 重点ポイントが設定されてないよ！
+              </div>
+            `;
+          }
+        }, 5000); // 5秒
+
+        // --- 🔁 Firestore リアルタイム監視 ---
+        db.collection("sessions")
           .doc(sessionId)
           .collection("focus_feedbacks")
           .orderBy("created_at", "desc")
-          .get();
+          .onSnapshot(snapshot => {
+            if (!snapshot.empty) {
+              // ✅ 初回データ到着
+              firstLoaded = true;
+              clearTimeout(timeout);
 
-        if (snapshot.empty) {
-          listDiv.innerHTML = "<p>重点ポイントのフィードバックはまだありません。</p>";
-        } else {
-          snapshot.forEach(doc => {
-            const d = doc.data();
-            const div = document.createElement("div");
-            div.className = "pin-feedback";
-            div.innerHTML = `
-              <div class="pin-label">📍 ${d.pin_label || "(ラベルなし)"}</div>
-              <div class="pin-comment">${d.ai_comment || "コメントなし"}</div>
-              <div style="font-size:0.9em;color:#555;margin-top:4px;">
-                平均速度: ${d.stats?.avg_speed ?? "--"} km/h　
-                前後G: ${d.stats?.mean_gz ?? "--"}　
-                横G: ${d.stats?.mean_gx ?? "--"}
-              </div>
-            `;
-            listDiv.appendChild(div);
+              loading.style.display = "none";
+              section.style.display = "block";
+              listDiv.innerHTML = "";
+
+              snapshot.forEach(doc => {
+                const d = doc.data();
+                const div = document.createElement("div");
+                div.className = "pin-feedback";
+                div.innerHTML = `
+                  <div class="pin-label">📍 ${d.pin_label || "(ラベルなし)"}</div>
+                  <div class="pin-comment">${d.ai_comment || "コメントなし"}</div>
+                  <div style="font-size:0.9em;color:#555;margin-top:4px;">
+                    平均速度: ${d.stats?.avg_speed ?? "--"} km/h　
+                    前後G: ${d.stats?.mean_gz ?? "--"}　
+                    横G: ${d.stats?.mean_gx ?? "--"}
+                  </div>
+                `;
+                listDiv.appendChild(div);
+              });
+            }
+          }, error => {
+            console.error("❌ フィードバック監視エラー:", error);
+            clearTimeout(timeout);
+            loading.style.display = "none";
+            section.style.display = "block";
+            listDiv.innerHTML = "<p>データの読み込み中にエラーが発生しました。</p>";
           });
-        }
 
-        loading.style.display = "none";
-        section.style.display = "block";
       } catch (e) {
         console.error("❌ フィードバック読み込みエラー:", e);
-        listDiv.innerHTML = "<p>データの読み込み中にエラーが発生しました。</p>";
         loading.style.display = "none";
         section.style.display = "block";
+        listDiv.innerHTML = "<p>データの取得中にエラーが発生しました。</p>";
       }
     }
 

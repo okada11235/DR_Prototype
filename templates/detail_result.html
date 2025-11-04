@@ -137,38 +137,179 @@
       padding: 10px;
       box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
+    .top-header {
+      display: flex;
+      justify-content: space-between;  /* 左右に配置 */
+      align-items: center;              /* ← 高さを揃える */
+      margin-bottom: 20px;
+      padding: 0 5px;
+    }
+
+    /* 戻るボタン（既存デザインに少し調整） */
+    .back-button {
+      display: inline-block;
+      background-color: #00bcd4;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: bold;
+      transition: background-color 0.3s, transform 0.2s;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+      font-size: 0.95em;               /* ← 日付と高さを合わせる */
+    }
+
+    .back-button:hover {
+      background-color: #0097a7;
+      transform: translateY(-1px);
+    }
+
+    .back-button:active {
+      background-color: #00838f;
+      transform: translateY(0);
+    }
+
+    /* 日付情報を右寄せに */
+    .date-info {
+      text-align: right;
+      font-size: 0.95em;
+      line-height: 1.4;
+      color: #333;
+    }
+
+    .robot {
+      width: 70px;
+      height: auto;
+      border-radius: 50%;
+      object-fit: cover;
+      background-color: #fff;
+    }
   </style>
 </head>
 <body>
 
 <div class="container">
-  {% if display_error %}
-    <div class="warn">{{ display_error }}</div>
-  {% else %}
-    <div class="date-info">
-      <strong>{{ session.start_time.strftime('%Y/%m/%d') if session.start_time else '' }}</strong><br>
-      {{ session.start_time.strftime('%H:%M') if session.start_time else '??:??' }}
-       〜
-      {{ session.end_time.strftime('%H:%M') if session.end_time else '記録中' }}<br>
-      走行距離：{{ "%.2f"|format(session.distance) if session.distance is not none else "N/A" }} km
+  <div class="top-header">
+    <a id="back-button" href="{{ url_for('sessions.results_page') }}" class="back-button">
+      ← 戻る
+    </a>
+    {% if display_error %}
+      <div class="warn">{{ display_error }}</div>
+    {% else %}
+      <div class="date-info">
+        <strong>{{ session.start_time.strftime('%Y/%m/%d') if session.start_time else '' }}</strong><br>
+        {{ session.start_time.strftime('%H:%M') if session.start_time else '??:??' }}
+        〜
+        {{ session.end_time.strftime('%H:%M') if session.end_time else '記録中' }}<br>
+        走行距離：{{ "%.2f"|format(session.distance) if session.distance is not none else "N/A" }} km
+      </div>
+  </div>
+
+    <!-- === 重点ポイントフィードバック === -->
+    <div class="section" id="focus-feedback-section">
+      <h2><img src="{{ url_for('static', filename='img/robot_side.png') }}" alt="ドライボ" class="robot">　重点ポイントごとのフィードバック</h2>
+      <div id="focus-feedback-list">
+        <p>AIフィードバックを読み込んでいます...</p>
+      </div>
     </div>
 
-    <div class="score-section">
-      <h2>スコア</h2>
-      <div style="color:#007e99;font-size:.9em;margin-bottom:5px;">重点（減速、直進）</div>
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 
-      {% for label,val in detail_scores.items() %}
-        <div class="score-item">{{ label }}
-          <div class="bar"><style>.score-item:nth-of-type({{ loop.index }}) .bar::after{width:{{ val }}%;}</style></div>
-          <span class="score">{{ val }}点</span>
-        </div>
-      {% endfor %}
-    </div>
+    <script>
+      // === Firebase 初期化 ===
+      const firebaseConfig = {
+        apiKey: "AIzaSyCEuouICKd32x3-4y5QzA_2ovq8pydvez4",
+        authDomain: "drive-prototype-32ef0.firebaseapp.com",
+        projectId: "drive-prototype-32ef0",
+        storageBucket: "drive-prototype-32ef0.firebasestorage.app",
+        messagingSenderId: "500916744769",
+        appId: "1:500916744769:web:d5a529ef05d15bb2934cc0"
+      };
+      firebase.initializeApp(firebaseConfig);
+      const db = firebase.firestore();
 
-    <div class="comment-box">
-      <img src="{{ url_for('static', filename='img/robot_side.png') }}" alt="bot">
-      <div>{{ comment_text }}</div>
-    </div>
+      // === 重点ポイントフィードバックのリアルタイム表示 ===
+      function loadFocusFeedbacks(sessionId) {
+        const listDiv = document.getElementById("focus-feedback-list");
+
+        db.collection("sessions")
+          .doc(sessionId)
+          .collection("focus_feedbacks")
+          .orderBy("created_at", "desc")
+          .onSnapshot(snapshot => {
+            listDiv.innerHTML = "";
+
+            if (snapshot.empty) {
+              listDiv.innerHTML = "<p>🚧 重点ポイントが設定されてないよ！</p>";
+              return;
+            }
+
+            snapshot.forEach(doc => {
+              const d = doc.data();
+              const div = document.createElement("div");
+              div.className = "pin-feedback";
+              div.innerHTML = `
+                <div class="pin-label">📍 ${d.pin_label || "(ラベルなし)"}</div>
+                <div class="pin-comment">${d.ai_comment || "コメントなし"}</div>
+                <div style="font-size:0.9em;color:#555;margin-top:4px;">
+                  平均速度: ${d.stats?.avg_speed ?? "--"} km/h　
+                  前後G: ${d.stats?.mean_gz ?? "--"}　
+                  横G: ${d.stats?.mean_gx ?? "--"}
+                </div>
+              `;
+              listDiv.appendChild(div);
+            });
+          }, err => {
+            console.error("❌ フィードバック読み込みエラー:", err);
+            listDiv.innerHTML = "<p>データの取得中にエラーが発生しました。</p>";
+          });
+      }
+
+      // === ページロード時に自動読み込み ===
+      document.addEventListener("DOMContentLoaded", () => {
+        const sessionId = "{{ session.id }}";
+        if (sessionId) {
+          loadFocusFeedbacks(sessionId);
+        }
+      });
+    </script>
+
+    <style>
+      .section {
+        background-color: #fff;
+        border-radius: 8px;
+        margin: 15px auto;
+        padding: 15px 20px;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+        width: 100%;
+        text-align: left;
+      }
+      .section h2 {
+        font-size: 1.3em;
+        color: #2090c2;
+        margin-bottom: 8px;
+        border-bottom: 2px solid #a5dbe0;
+        padding-bottom: 4px;
+      }
+      .pin-feedback {
+        background: #f5fbfd;
+        border-left: 5px solid #4db6ac;
+        padding: 10px 12px;
+        margin: 10px 0;
+        border-radius: 5px;
+      }
+      .pin-label {
+        font-weight: bold;
+        color: #007c91;
+        font-size: 1.05em;
+      }
+      .pin-comment {
+        margin-top: 4px;
+        color: #333;
+      }
+    </style>
 
     <!-- ====== 音声ログ ====== -->
     <div class="audio-section mt-4">
@@ -559,10 +700,24 @@ function initMap(){
   const poly=new google.maps.Polyline({ path, geodesic:true, strokeColor:'#007bff', strokeOpacity:1.0, strokeWeight:4 });
   poly.setMap(mapInstance);
 
+  // 日本語ラベル対応マップ
+  const labelMap = {
+    sudden_brake: '急ブレーキ',
+    sudden_accel: '急発進',
+    sharp_turn: '急カーブ',
+    unstable_drive: '不安定な運転',
+    smooth_turn: '良カーブ',
+    smooth_accel: '良加速',
+    smooth_brake: '良減速',
+    stable_drive: '安定した運転'
+  };
   // 凡例
   const legend=document.getElementById('legend');
   legend.innerHTML = Object.entries(colorMap).map(([k,c])=>(
-    `<div class="legend-item"><span class="legend-color" style="background:${c}"></span><span>${k.replace(/_/g,' ')}</span></div>`
+    `<div class="legend-item">
+      <span class="legend-color" style="background:${c}"></span>
+      <span>${labelMap[k] || k}</span>
+    </div>`
   )).join('');
 
   // イベントマーカー
