@@ -321,7 +321,7 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now) {
   let duration = 0;
 
   // 旋回判定
-  if (currentCondition !== 'turn') drivingState.turnStart = 0; // 他のイベントが検知されたらリセット
+  //if (currentCondition !== 'turn') drivingState.turnStart = 0; // 他のイベントが検知されたらリセット
   if (drivingState.turnStart > 0) {
       duration = now - drivingState.turnStart;
       if (duration >= 750) { // 0.75秒継続
@@ -338,7 +338,7 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now) {
   }
   
   // 加速判定
-  if (currentCondition !== 'accel') drivingState.accelStart = 0;
+  //if (currentCondition !== 'accel') drivingState.accelStart = 0;
   if (drivingState.accelStart > 0) {
       duration = now - drivingState.accelStart;
       if (duration >= 500) { 
@@ -370,9 +370,9 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now) {
   }
 */
   // ===============================
-  // 🚗 停止直前ブレーキ評価ロジック
+  // 🚗 停止直前ブレーキ評価ロジック（安定・上書き防止版）
   // ===============================
-  if (speed <= 10 && !drivingState.brakeEvaluated) {
+  if (!drivingState.brakeEvaluated && speed <= 12) { // 少し余裕をもたせる
     const windowMs = 3000; // 直前3秒を分析
     const recentSpeeds = speedHistory.filter(s => now - s.t <= windowMs);
     const recentGs = window.gLogBuffer.filter(g => now - g.timestamp <= windowMs);
@@ -389,19 +389,28 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now) {
 
       let type = null;
 
-      if (decelRate > 6 || maxAbsG >= 0.3) {
+      // ✅ 閾値は少しマイルドにして誤検知を防止
+      if (decelRate > 6.0 || maxAbsG >= 0.30) {
         type = 'sudden_brake'; // 急ブレーキ
-      } else if (decelRate > 2 || Math.abs(avgG) >= 0.15) {
+      } else if (decelRate > 2.0 || Math.abs(avgG) >= 0.15) {
         type = 'smooth_brake'; // 良いブレーキ
       }
 
       if (type) {
-        console.log(`🚗 停止直前ブレーキ判定 → ${type} (Δv/s=${decelRate.toFixed(2)} km/h/s, avgG=${avgG.toFixed(2)})`);
-        playRandomAudio(type);
+        // ✅ ほかのイベント（加速や旋回）で上書きされないように「個別発火」
+        if (now - lastEventTime > COOLDOWN_MS) { // クールダウン制御あり
+          console.log(`🚗 停止直前ブレーキ判定 → ${type} (Δv/s=${decelRate.toFixed(2)} km/h/s, avgG=${avgG.toFixed(2)})`);
+          playRandomAudio(type);
+          lastEventTime = now;
+        }
         drivingState.brakeEvaluated = true; // 一度だけ判定
-        lastEventTime = now; // クールダウンも兼ねる
       }
     }
+  }
+
+  // ✅ 再発動許可（走り出したら解除）
+  if (speed > 15) {
+    drivingState.brakeEvaluated = false;
   }
 
   // 再発動を許可（走り出したらリセット）
@@ -416,9 +425,18 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now) {
           // 直進は褒めイベントのみ
           type = 'stable_drive';
           drivingState.straightStart = 0;
+
+          // 🎵 直進イベントの再生頻度を5回に1回に制限
+          window.straightCounter = (window.straightCounter || 0) + 1;
+          if (window.straightCounter % 5 !== 0) {
+              // 5回に1回以外は音を鳴らさない
+              console.log(`🚗 stable_drive 検知（${window.straightCounter}回目）→ 音声スキップ`);
+              type = null; // 音声なしで終了
+          } else {
+              console.log(`🎵 stable_drive 検知（${window.straightCounter}回目）→ 音声再生`);
+          }
       }
   }
-
 
   // 3. イベントの発火とクールダウン
   if (!type) return null;

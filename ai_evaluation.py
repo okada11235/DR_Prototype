@@ -94,23 +94,25 @@ def analyze_session_data(session_id, user_id, focus_point=''):
         print(f"Error analyzing session data: {e}")
         return None
 
+import math
+
 def calculate_driving_stats(session_data, gps_logs, g_logs, avg_g_logs):
     """
-    運転データから統計情報を計算
+    運転データから統計情報を計算（RMS平均でGの強さを算出）
     """
-    # 基本統計
+    # === 走行基本情報 ===
     total_distance = session_data.get('distance', 0)
     duration_minutes = 0
     if session_data.get('start_time') and session_data.get('end_time'):
         duration = session_data['end_time'] - session_data['start_time']
         duration_minutes = duration.total_seconds() / 60
-    
-    # イベント統計
+
+    # === イベント統計 ===
     sudden_brakes = session_data.get('sudden_brakes', 0)
     sudden_accels = session_data.get('sudden_accels', 0)
     sharp_turns = session_data.get('sharp_turns', 0)
-    
-    # Gセンサーデータの統計
+
+    # === Gセンサーデータ統計（RMSで安定性を評価） ===
     g_stats = {
         'mean_g_x': 0,
         'mean_g_y': 0,
@@ -119,30 +121,36 @@ def calculate_driving_stats(session_data, gps_logs, g_logs, avg_g_logs):
         'max_g_y': 0,
         'max_g_z': 0
     }
-    
-    if avg_g_logs:
-        g_x_values = [log.get('g_x', 0) for log in avg_g_logs]
-        g_y_values = [log.get('g_y', 0) for log in avg_g_logs]
-        g_z_values = [log.get('g_z', 0) for log in avg_g_logs]
-        
-        if g_x_values:
-            g_stats['mean_g_x'] = sum(g_x_values) / len(g_x_values)
-            g_stats['max_g_x'] = max(abs(g) for g in g_x_values)
-        if g_y_values:
-            g_stats['mean_g_y'] = sum(g_y_values) / len(g_y_values)
-            g_stats['max_g_y'] = max(abs(g) for g in g_y_values)
-        if g_z_values:
-            g_stats['mean_g_z'] = sum(g_z_values) / len(g_z_values)
-            g_stats['max_g_z'] = max(abs(g) for g in g_z_values)
-    
-    # 速度統計
+
+    # ※ g_logs と avg_g_logs のどちらが多いかで自動選択
+    g_source = avg_g_logs if avg_g_logs else g_logs
+
+    if g_source:
+        g_x_values = [g.get('g_x', 0.0) for g in g_source]
+        g_y_values = [g.get('g_y', 0.0) for g in g_source]
+        g_z_values = [g.get('g_z', 0.0) for g in g_source]
+
+        n = len(g_source)
+
+        # === RMS平均値 ===
+        g_stats['mean_g_x'] = math.sqrt(sum(g**2 for g in g_x_values) / n)
+        g_stats['mean_g_y'] = math.sqrt(sum(g**2 for g in g_y_values) / n)
+        g_stats['mean_g_z'] = math.sqrt(sum(g**2 for g in g_z_values) / n)
+
+        # === 最大絶対G値 ===
+        g_stats['max_g_x'] = max(abs(g) for g in g_x_values)
+        g_stats['max_g_y'] = max(abs(g) for g in g_y_values)
+        g_stats['max_g_z'] = max(abs(g) for g in g_z_values)
+
+    # === 速度統計 ===
     speed_stats = {'avg_speed': 0, 'max_speed': 0}
     if gps_logs:
         speeds = [log.get('speed', 0) for log in gps_logs if log.get('speed', 0) > 0]
         if speeds:
             speed_stats['avg_speed'] = sum(speeds) / len(speeds)
             speed_stats['max_speed'] = max(speeds)
-    
+
+    # === まとめ ===
     return {
         'duration_minutes': duration_minutes,
         'total_distance': total_distance,
@@ -826,14 +834,19 @@ NOT_PASSED_STATS = {"avg_speed": 0.0, "mean_gx": 0.0, "mean_gz": 0.0}
 MAX_PASS_DISTANCE_M = 50
 
 # --- 追加: セッション内の重点ポイントごとに解析し保存 ---
-def analyze_focus_points_for_session(session_id: str, user_id: str, time_window_ms: int = 5000, max_pass_distance_m: int = MAX_PASS_DISTANCE_M) -> dict: # <-- max_pass_distance_mを追加
+import statistics
+from datetime import datetime
+
+def analyze_focus_points_for_session(
+    session_id: str,
+    user_id: str,
+    time_window_ms: int = 3000,
+    max_pass_distance_m: int = MAX_PASS_DISTANCE_M
+) -> dict:
     """
-    - recording_start.html で設定した priority_pins（user_id一致）を列挙
-    - 各ピンの位置に最も近いGPSログを探してそのtimestamp_msを取得
-    - ±5秒の範囲で avg_g_logs を抽出して統計を作成
-    - 前回（過去セッション）の同pin_idの stats を比較
-    - AIでコメント“だけ”生成
-    - 保存先: sessions/{session_id}/focus_feedbacks/{pin_id}
+    各priority pin（重点ポイント）での運転動作を解析し、
+    「減速中／加速中／旋回中／直進中」を自動判定してAIコメントを生成・保存する。
+    判定には 平均G値＋標準偏差＋最大値 の複合指標を使用。
     """
     db = firestore.client()
     sess_ref = db.collection("sessions").document(session_id)
@@ -842,11 +855,10 @@ def analyze_focus_points_for_session(session_id: str, user_id: str, time_window_
         print("session not found:", session_id)
         return {}
 
-    # GPSログと avg_g_logs を取得
+    # --- データ取得 ---
     gps_logs = [d.to_dict() for d in sess_ref.collection("gps_logs").order_by("timestamp").stream()]
     avg_g_logs = [d.to_dict() for d in sess_ref.collection("avg_g_logs").order_by("timestamp").stream()]
 
-    # ユーザーの重点ピン（recording_start で作成）を取得
     pins = []
     for p in db.collection("priority_pins").where("user_id", "==", user_id).stream():
         o = p.to_dict()
@@ -856,81 +868,107 @@ def analyze_focus_points_for_session(session_id: str, user_id: str, time_window_
     results = {}
 
     for pin in pins:
-            prev_stats = None
-            lat, lng, pin_id = float(pin["lat"]), float(pin["lng"]), pin["id"]
+        prev_stats = None
+        lat, lng, pin_id = float(pin["lat"]), float(pin["lng"]), pin["id"]
 
-            # --- GPSログから一番近い時刻を見つける ---
-            nearest_point = None
-            nearest_dist = float("inf")
-            for g in gps_logs:
-                dist = get_distance_meters(lat, lng, g.get("latitude", 0.0), g.get("longitude", 0.0))
-                if dist < nearest_dist:
-                    nearest_dist = dist
-                    nearest_point = g
+        # --- GPSログから最も近い点を取得 ---
+        nearest_point = None
+        nearest_dist = float("inf")
+        for g in gps_logs:
+            dist = get_distance_meters(lat, lng, g.get("latitude", 0.0), g.get("longitude", 0.0))
+            if dist < nearest_dist:
+                nearest_dist = dist
+                nearest_point = g
 
-            if not nearest_point:
+        if not nearest_point:
+            continue
+
+        passed_flag = True
+
+        # --- 未通過判定 ---
+        if nearest_dist > max_pass_distance_m:
+            print(f"⚠️ Pin {pin_id} not passed (nearest={nearest_dist:.1f}m)")
+            current_stats = NOT_PASSED_STATS
+            comment = NOT_PASSED_COMMENT
+            diff = None
+            action_type = "未通過"
+            passed_flag = False
+
+        else:
+            center_time = nearest_point.get("timestamp_ms")
+            if not center_time:
                 continue
 
-            # 🚨 【重要】未通過判定ロジックをここに追加 🚨
-            passed_flag = True
-            
-            # 1. 未通過チェック (最も近い距離が許容範囲外)
-            if nearest_dist > max_pass_distance_m:
-                print(f"⚠️ Pin {pin_id} (Label: {pin.get('label', '')}) not passed. Nearest distance: {nearest_dist:.2f}m")
+            # --- ±5秒のavg_g_logsを抽出 ---
+            nearby = [g for g in avg_g_logs if abs(g.get("timestamp_ms", 0) - center_time) <= time_window_ms]
+
+            if not nearby:
                 current_stats = NOT_PASSED_STATS
-                comment = NOT_PASSED_COMMENT
-                diff = None # 未通過の場合は比較不要
-                passed_flag = False
-
-            # 2. 通過したが、ログがないチェック (既存ロジックを修正)
+                comment = "通過しましたが、この地点のGログが不足して解析できませんでした。"
+                diff = None
+                action_type = "解析不可"
             else:
-                center_time = nearest_point.get("timestamp_ms")
-                if not center_time:
-                    # このケースは通常起こらないが、念のためスキップ
-                    continue 
+                # --- Gと速度の統計 ---
+                gx_vals = [g.get('g_x', 0.0) for g in nearby]
+                gz_vals = [g.get('g_z', 0.0) for g in nearby]
+                speeds = [g.get('speed', 0.0) for g in nearby]
 
-                # --- avg_g_logsから±5秒の範囲を抽出 ---
-                nearby = [g for g in avg_g_logs if abs(g.get("timestamp_ms", 0) - center_time) <= time_window_ms]
+                gx_mean = sum(gx_vals) / len(gx_vals)
+                gz_mean = sum(gz_vals) / len(gz_vals)
+                gx_std = statistics.pstdev(gx_vals)
+                gz_std = statistics.pstdev(gz_vals)
+                max_gx = max(abs(g) for g in gx_vals)
+                max_gz = max(abs(g) for g in gz_vals)
+                avg_speed = sum(speeds) / len(speeds)
 
-                if not nearby:
-                    print(f"⚠️ No avg_g_logs found near pin {pin_id}. Treating as unanalyzed.")
-                    # ログがない場合は、未通過コメントとは違う、ログ不足のコメントにする
-                    current_stats = NOT_PASSED_STATS
-                    comment = "通過は確認されましたが、この地点でのGセンサーログが不足しているため、解析できませんでした。"
-                    diff = None
-                    
+                current_stats = {
+                    "avg_speed": round(avg_speed, 3),
+                    "mean_gx": round(gx_mean, 4),
+                    "mean_gz": round(gz_mean, 4),
+                    "std_gx": round(gx_std, 4),
+                    "std_gz": round(gz_std, 4),
+                    "max_gx": round(max_gx, 4),
+                    "max_gz": round(max_gz, 4)
+                }
+
+                # --- 🚗 動作タイプを複合判定 ---
+                if max_gx > 0.25 or gx_std > 0.08:
+                    action_type = "旋回中"
+                elif gz_mean < -0.12 and gz_std > 0.05:
+                    action_type = "減速中"
+                elif gz_mean > 0.12 and gz_std > 0.05:
+                    action_type = "加速中"
                 else:
-                    # --- 通過かつログありの通常処理 ---
-                    current_stats = calc_focus_area_stats(nearby)
-                    
-                    # ... (中略: 前回データ取得ロジック - 変更なし) ...
-                    
-                    # --- 差分計算 ---
-                    diff = compare_focus_stats(prev_stats, current_stats)
+                    action_type = "直進中"
 
-                    # --- AIコメント生成 ---
-                    comment = generate_ai_focus_feedback(current_stats, diff, first_time=(prev_stats is None))
+                # --- 前回データとの比較 ---
+                diff = compare_focus_stats(prev_stats, current_stats)
 
-            # --- Firestoreに保存 ---
-            # 🚨 【重要】保存データに passed_flag を追加 🚨
-            sess_ref.collection("focus_feedbacks").document(pin_id).set({
-                "created_at": datetime.now(JST),
-                "user_id": user_id,
-                "pin_id": pin_id,
-                "pin_label": pin.get("label", ""),
-                "stats": current_stats,
-                "diff": diff,
-                "ai_comment": comment,
-                "passed": passed_flag, # 通過フラグを保存
-            })
+                # --- AIコメント生成（動作タイプを含める） ---
+                base_comment = generate_ai_focus_feedback(current_stats, diff, first_time=(prev_stats is None))
+                comment = f"この地点では{action_type}でした。{base_comment}"
 
-            results[pin_id] = {
-                "pin_label": pin.get("label", ""),
-                "stats": current_stats,
-                "diff": diff,
-                "ai_comment": comment
-            }
+        # --- Firestoreに保存 ---
+        sess_ref.collection("focus_feedbacks").document(pin_id).set({
+            "created_at": datetime.now(JST),
+            "user_id": user_id,
+            "pin_id": pin_id,
+            "pin_label": pin.get("label", ""),
+            "stats": current_stats,
+            "diff": diff,
+            "ai_comment": comment,
+            "passed": passed_flag,
+            "action_type": action_type,
+        })
 
-    print(f"✅ focus_feedbacks (time-based) stored under sessions/{session_id}")
+        # --- ローカル結果に格納 ---
+        results[pin_id] = {
+            "pin_label": pin.get("label", ""),
+            "stats": current_stats,
+            "diff": diff,
+            "ai_comment": comment,
+            "action_type": action_type,
+        }
+
+    print(f"✅ focus_feedbacks (複合指標対応) stored under sessions/{session_id}")
     return results
-

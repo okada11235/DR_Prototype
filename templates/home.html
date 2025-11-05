@@ -105,7 +105,15 @@
       <img src="{{ url_for('static', filename='img/icon.png') }}" alt="ドライブバディロゴ">
       <div class="title">ドライブバディ</div>
     </div>
-    <a href="{{ url_for('auth.logout') }}" class="logout">ログアウト</a>
+
+    <div class="account-info" style="text-align:right;">
+      <div style="font-size: 0.9em; color: #555;">
+        <span style="color:#007e99;">
+          {{ current_user.name or current_user.username or current_user.id }}
+        </span>
+      </div>
+      <a href="{{ url_for('auth.logout') }}" class="logout">ログアウト</a>
+    </div>
   </header>
 
   <main class="main">

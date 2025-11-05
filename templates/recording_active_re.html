@@ -123,6 +123,7 @@ tailwind.config = {
       sessionStart = sessionStartMs;
       startReal = Date.now();
       playing = true;
+      /*
       // 🎵 10秒後に録音開始音（ポン）
       setTimeout(() => {
         if (typeof playStartBeep === "function") {
@@ -138,6 +139,18 @@ tailwind.config = {
           console.log("🔇 録音終了音を再生しました（15秒後）");
         }
       }, 25000);
+      */
+        // 🎵 再生開始10秒後 → 「急発進」イベント音を再生
+      setTimeout(() => {
+        playRandomAudio("stable_drive"); // ← イベント音カテゴリを使用
+        console.log("🔊 イベント音（安定した走行）を再生しました（5秒後）");
+      }, 5000);
+
+      // 🎵 再生開始15秒後 → 「急ブレーキ」イベント音を再生
+      setTimeout(() => {
+        playRandomAudio("sudden_brake");
+        console.log("🔊 イベント音（急ブレーキ）を再生しました（10秒後）");
+      }, 20000);
       timer = setInterval(step, 100);
     }
 

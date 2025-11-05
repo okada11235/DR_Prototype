@@ -90,8 +90,6 @@ export const audioFiles = {
     ],
     sudden_brake: [
         "/static/audio/sudden_brake_1.wav",
-        "/static/audio/sudden_brake_2.wav",
-        "/static/audio/sudden_brake_3.wav"
     ],
     unstable_drive: [
         "/static/audio/unstable_drive_1.wav",
