@@ -5,7 +5,7 @@ from firebase_admin import firestore
 from datetime import datetime
 from config import JST
 from models import db
-from ai_evaluation import analyze_session_data, save_evaluation_to_session
+from ai_evaluation import analyze_focus_points_for_session
 
 # Blueprintの作成
 sessions_bp = Blueprint('sessions', __name__)
@@ -602,13 +602,13 @@ def generate_ai_evaluation(session_id):
         print(f"Generating AI evaluation for session {session_id}, focus: {focus_point}")
         
         # AI評価を生成（重点ポイントを渡す）
-        evaluation = analyze_session_data(session_id, current_user.id, focus_point)
+        evaluation = analyze_focus_points_for_session(session_id, current_user.id, focus_point)
         
         if evaluation is None:
             return jsonify({'status': 'error', 'message': 'Failed to generate evaluation'}), 500
         
         # Firestoreに保存
-        if save_evaluation_to_session(session_id, current_user.id, evaluation):
+        if analyze_focus_points_for_session(session_id, current_user.id, evaluation):
             return jsonify({'status': 'ok', 'evaluation': evaluation})
         else:
             return jsonify({'status': 'error', 'message': 'Failed to save evaluation'}), 500

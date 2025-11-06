@@ -462,6 +462,20 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now) {
     lastGps.event = type;
   }
 
+  // ✅ 即イベント反映：イベント発生時にGPSログを複製して保存
+  if (type) {
+    const lastGPS = window.gpsLogBuffer?.[window.gpsLogBuffer.length - 1];
+    if (lastGPS) {
+      const eventLog = {
+        ...lastGPS,
+        event: type,
+        timestamp: Date.now()
+      };
+      window.gpsLogBuffer.push(eventLog);
+      console.log("📍 Event GPS log added:", eventLog);
+    }
+  }
+
   return type;
 }
 

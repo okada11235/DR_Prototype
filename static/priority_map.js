@@ -48,16 +48,51 @@ async function initPriorityMap() {
     const confirmAdd = confirm("ここを重点ポイントに設定しますか？");
     if (!confirmAdd) return;
 
-    const label = prompt("この地点のラベル名を入力してください:", "交差点");
+    const label = prompt("この地点のラベル名を入力してください:", "交差点手前");
     if (label === null) return;
+
+    // 🎯 focus_type選択（新規追加）
+    const focusOptions = [
+      { key: "brake_soft", name: "穏やかな減速" },
+      { key: "accel_smooth", name: "滑らかな発進" },
+      { key: "turn_stability", name: "カーブの安定性" },
+      { key: "smooth_overall", name: "全体の滑らかさ" },
+      { key: "stop_smooth", name: "停止直前の滑らかさ" },
+      { key: "speed_consistency", name: "一定速度の維持" }
+    ];
+
+    let focusMenu = "意識するポイントを選んでください：\n";
+    focusOptions.forEach((opt, i) => {
+      focusMenu += `${i + 1}. ${opt.name}\n`;
+    });
+
+    const choice = prompt(focusMenu, "1");
+    if (!choice || isNaN(choice) || choice < 1 || choice > focusOptions.length) {
+      alert("⚠️ 有効な番号を選んでください。");
+      return;
+    }
+    const selectedFocus = focusOptions[choice - 1];
 
     const userId = window.FLASK_USER_ID || null;
     try {
       const docRef = await firebase.firestore().collection("priority_pins").add({
-        lat, lng, label, user_id: userId, created_at: new Date()
+        lat,
+        lng,
+        label,
+        focus_type: selectedFocus.key,
+        focus_label: selectedFocus.name,
+        user_id: userId,
+        created_at: new Date(),
       });
-      console.log("✅ ピン追加:", label);
-      addMarker(map, { id: docRef.id, lat, lng, label });
+      console.log("✅ ピン追加:", label, selectedFocus.name);
+      addMarker(map, {
+        id: docRef.id,
+        lat,
+        lng,
+        label,
+        focus_type: selectedFocus.key,
+        focus_label: selectedFocus.name,
+      });
     } catch (err) {
       console.error("❌ Firestore追加エラー:", err);
     }
@@ -86,14 +121,25 @@ function addMarker(map, pin) {
   });
 
   const info = new google.maps.InfoWindow({
-    content: `
-      <div style="font-size:14px;">
-        <label>ラベル：</label><br>
-        <input id="label-${pin.id}" type="text" value="${pin.label || ""}"
-               style="width:140px;padding:4px;margin-top:4px;border:1px solid #ccc;border-radius:4px;"><br>
-        <button id="save-${pin.id}" style="background:#4CAF50;color:#fff;border:none;border-radius:4px;padding:4px 8px;margin-top:6px;">💾 保存</button>
-        <button id="delete-${pin.id}" style="background:#f55;color:#fff;border:none;border-radius:4px;padding:4px 8px;margin-top:6px;margin-left:4px;">🗑️ 削除</button>
-      </div>`,
+  content: `
+    <div style="font-size:14px;">
+      <label>ラベル：</label><br>
+      <input id="label-${pin.id}" type="text" value="${pin.label || ""}"
+            style="width:140px;padding:4px;margin-top:4px;border:1px solid #ccc;border-radius:4px;"><br>
+
+      <label>意識ポイント：</label><br>
+      <select id="focus-${pin.id}" style="width:150px;padding:4px;margin-top:4px;border:1px solid #ccc;border-radius:4px;">
+        <option value="brake_soft" ${pin.focus_type === "brake_soft" ? "selected" : ""}>穏やかな減速</option>
+        <option value="accel_smooth" ${pin.focus_type === "accel_smooth" ? "selected" : ""}>滑らかな発進</option>
+        <option value="turn_stability" ${pin.focus_type === "turn_stability" ? "selected" : ""}>カーブの安定性</option>
+        <option value="smooth_overall" ${pin.focus_type === "smooth_overall" ? "selected" : ""}>全体の滑らかさ</option>
+        <option value="stop_smooth" ${pin.focus_type === "stop_smooth" ? "selected" : ""}>停止直前の滑らかさ</option>
+        <option value="speed_consistency" ${pin.focus_type === "speed_consistency" ? "selected" : ""}>一定速度の維持</option>
+      </select><br>
+
+      <button id="save-${pin.id}" style="background:#4CAF50;color:#fff;border:none;border-radius:4px;padding:4px 8px;margin-top:6px;">💾 保存</button>
+      <button id="delete-${pin.id}" style="background:#f55;color:#fff;border:none;border-radius:4px;padding:4px 8px;margin-top:6px;margin-left:4px;">🗑️ 削除</button>
+    </div>`,
   });
 
   marker.addListener("click", () => {
@@ -106,10 +152,17 @@ function addMarker(map, pin) {
       if (saveBtn && labelInput) {
         saveBtn.addEventListener("click", async () => {
           const newLabel = labelInput.value.trim();
+          const newFocus = document.getElementById(`focus-${pin.id}`).value;
           if (!newLabel) return alert("ラベルを入力してください。");
-          await firebase.firestore().collection("priority_pins").doc(pin.id).update({ label: newLabel });
+
+          await firebase.firestore().collection("priority_pins").doc(pin.id).update({
+            label: newLabel,
+            focus_type: newFocus,
+          });
+
           pin.label = newLabel;
-          alert("✅ ラベルを更新しました。");
+          pin.focus_type = newFocus;
+          alert("✅ ピン情報を更新しました。");
           info.close();
         });
       }

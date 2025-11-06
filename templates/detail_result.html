@@ -205,111 +205,117 @@
       </div>
   </div>
 
-    <!-- === 重点ポイントフィードバック === -->
-    <div class="section" id="focus-feedback-section">
-      <h2><img src="{{ url_for('static', filename='img/robot_side.png') }}" alt="ドライボ" class="robot"> フィードバック</h2>
-      <div id="focus-feedback-list">
-        <p>AIフィードバックを読み込んでいます...</p>
-      </div>
-    </div>
+<!-- === 重点ポイントフィードバック === -->
+<div class="section" id="feedback-section">
+  <h2>🤖 フィードバック</h2>
+  <div id="focus-feedback-list">
+    <p>AIフィードバックを読み込んでいます...</p>
+  </div>
+</div>
 
-    <!-- Firebase SDK -->
-    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <!-- ✅ Firebase SDKの読み込みは必ずここで script タグで行う！ -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 
-    <script>
-      // === Firebase 初期化 ===
-      const firebaseConfig = {
-        apiKey: "AIzaSyCEuouICKd32x3-4y5QzA_2ovq8pydvez4",
-        authDomain: "drive-prototype-32ef0.firebaseapp.com",
-        projectId: "drive-prototype-32ef0",
-        storageBucket: "drive-prototype-32ef0.firebasestorage.app",
-        messagingSenderId: "500916744769",
-        appId: "1:500916744769:web:d5a529ef05d15bb2934cc0"
-      };
-      firebase.initializeApp(firebaseConfig);
-      const db = firebase.firestore();
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyCEuouICKd32x3-4y5QzA_2ovq8pydvez4",
+      authDomain: "drive-prototype-32ef0.firebaseapp.com",
+      projectId: "drive-prototype-32ef0",
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
 
-      // === 重点ポイントフィードバックのリアルタイム表示 ===
-      function loadFocusFeedbacks(sessionId) {
-        const listDiv = document.getElementById("focus-feedback-list");
+    function getRatingBadge(rating) {
+      switch (rating) {
+        case "とてもいい": return `<span class="rating-badge rating-verygood">😁 とてもいい</span>`;
+        case "いい": return `<span class="rating-badge rating-good">😊 いい</span>`;
+        case "ふつう": return `<span class="rating-badge rating-normal">😐 ふつう</span>`;
+        case "わるい": return `<span class="rating-badge rating-bad">😢 わるい</span>`;
+        default: return `<span class="rating-badge rating-none">未評価</span>`;
+      }
+    }
 
-        db.collection("sessions")
-          .doc(sessionId)
-          .collection("focus_feedbacks")
-          .orderBy("created_at", "desc")
-          .onSnapshot(snapshot => {
-            listDiv.innerHTML = "";
+    function loadFocusFeedbacks(sessionId) {
+      const listDiv = document.getElementById("focus-feedback-list");
+      db.collection("sessions").doc(sessionId)
+        .collection("focus_feedbacks")
+        .orderBy("created_at", "desc")
+        .onSnapshot(snapshot => {
+          listDiv.innerHTML = "";
+          if (snapshot.empty) {
+            listDiv.innerHTML = "<p style='color:#777;'>🚧 重点ポイントが設定されていません。</p>";
+            return;
+          }
 
-            if (snapshot.empty) {
-              listDiv.innerHTML = "<p>🚧 重点ポイントが設定されてないよ！</p>";
-              return;
-            }
-
-            snapshot.forEach(doc => {
-              const d = doc.data();
-              const div = document.createElement("div");
-              div.className = "pin-feedback";
-              div.innerHTML = `
-                <div class="pin-label">📍 ${d.pin_label || "(ラベルなし)"}</div>
-                <div class="pin-comment">${d.ai_comment || "コメントなし"}</div>
-                <div style="font-size:0.9em;color:#555;margin-top:4px;">
-                  平均速度: ${d.stats?.avg_speed ?? "--"} km/h　
-                  前後G: ${d.stats?.mean_gz ?? "--"}　
-                  横G: ${d.stats?.mean_gx ?? "--"}
-                </div>
-              `;
-              listDiv.appendChild(div);
-            });
-          }, err => {
-            console.error("❌ フィードバック読み込みエラー:", err);
-            listDiv.innerHTML = "<p>データの取得中にエラーが発生しました。</p>";
+          snapshot.forEach(doc => {
+            const d = doc.data();
+            const badge = getRatingBadge(d.rating);
+            const div = document.createElement("div");
+            div.className = "pin-feedback";
+            div.innerHTML = `
+              <div class="pin-label">📍 ${d.pin_label || "(ラベルなし)"} ${badge}</div>
+              <div style="margin-left:1.2em;color:#00796b;font-size:0.95em;">🎯 ${d.focus_label || "意識ポイント未設定"}</div>
+              <div class="pin-comment">💬 ${d.ai_comment || "コメントなし"}</div>
+            `;
+            listDiv.appendChild(div);
           });
-      }
+        });
+    }
 
-      // === ページロード時に自動読み込み ===
-      document.addEventListener("DOMContentLoaded", () => {
-        const sessionId = "{{ session.id }}";
-        if (sessionId) {
-          loadFocusFeedbacks(sessionId);
-        }
-      });
-    </script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const sessionId = "{{ session.id }}";
+      if (sessionId) loadFocusFeedbacks(sessionId);
+    });
+  </script>
 
-    <style>
-      .section {
-        background-color: #fff;
-        border-radius: 8px;
-        margin: 15px auto;
-        padding: 15px 20px;
-        box-shadow: 0 1px 4px rgba(0,0,0,0.1);
-        width: 100%;
-        text-align: left;
-      }
-      .section h2 {
-        font-size: 1.3em;
-        color: #2090c2;
-        margin-bottom: 8px;
-        border-bottom: 2px solid #a5dbe0;
-        padding-bottom: 4px;
-      }
-      .pin-feedback {
-        background: #f5fbfd;
-        border-left: 5px solid #4db6ac;
-        padding: 10px 12px;
-        margin: 10px 0;
-        border-radius: 5px;
-      }
-      .pin-label {
-        font-weight: bold;
-        color: #007c91;
-        font-size: 1.05em;
-      }
-      .pin-comment {
-        margin-top: 4px;
-        color: #333;
-      }
-    </style>
+  <style>
+    .section {
+      background-color: #fff;
+      border-radius: 8px;
+      margin: 15px auto;
+      padding: 15px 20px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+      width: 100%;
+      text-align: left;
+    }
+    .section h2 {
+      font-size: 1.3em;
+      color: #2090c2;
+      margin-bottom: 8px;
+      border-bottom: 2px solid #a5dbe0;
+      padding-bottom: 4px;
+    }
+    .pin-feedback {
+      background: #f5fbfd;
+      border-left: 5px solid #4db6ac;
+      padding: 10px 12px;
+      margin: 10px 0;
+      border-radius: 5px;
+    }
+    .pin-label {
+      font-weight: bold;
+      color: #007c91;
+      font-size: 1.05em;
+    }
+    .pin-comment {
+      margin-top: 4px;
+      color: #333;
+    }
+    .rating-badge {
+      display: inline-block;
+      font-weight: bold;
+      border-radius: 12px;
+      padding: 2px 8px;
+      font-size: 0.85em;
+      margin-left: 6px;
+    }
+    .rating-good { background: #b3e5fc; color: #0277bd; }
+    .rating-verygood { background: #c8e6c9; color: #2e7d32; }
+    .rating-normal { background: #fff9c4; color: #795548; }
+    .rating-bad { background: #ffcdd2; color: #c62828; }
+    .rating-none { background: #e0e0e0; color: #555; }
+  </style>
 
     <!-- ====== 音声ログ ====== -->
     <div class="audio-section mt-4">
@@ -382,7 +388,6 @@
       🚗 この走行を“イベント音声つき”で再生
     </a>
   </div>
-</div>
 
     <nav class="navbar navbar-expand custom-nav-bar fixed-bottom">
     <div class="container-fluid justify-content-center">
