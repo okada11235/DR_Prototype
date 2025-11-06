@@ -165,40 +165,64 @@
       const section = document.getElementById("focus-feedback-section");
       const loading = document.getElementById("loading-section");
 
-      db.collection("sessions").doc(sessionId)
-        .collection("focus_feedbacks")
-        .orderBy("created_at", "desc")
-        .onSnapshot(snapshot => {
-          loading.style.display = "none";
-          section.style.display = "block";
-          listDiv.innerHTML = "";
+      try {
+        const snapshot = await db.collection("sessions").doc(sessionId)
+          .collection("focus_feedbacks")
+          .orderBy("created_at", "desc")
+          .get();
 
-          if (snapshot.empty) {
-            listDiv.innerHTML = `<div style="text-align:center;color:#777;">🚧 重点ポイントが設定されていません。</div>`;
-            return;
-          }
+        loading.style.display = "none";
+        section.style.display = "block";
+        listDiv.innerHTML = "";
 
-          snapshot.forEach(doc => {
-            const d = doc.data();
-            const badge = getRatingBadge(d.rating);
-            const div = document.createElement("div");
-            div.className = "pin-feedback";
-            div.innerHTML = `
-              <div class="pin-label">📍 ${d.pin_label || "(ラベルなし)"} ${badge}</div>
-              <div style="margin-left:1.2em;color:#00796b;font-size:0.95em;">🎯 ${d.focus_label || "意識ポイント未設定"}</div>
-              <div class="pin-comment">${d.ai_comment || "コメントなし"}</div>
-            `;
-            listDiv.appendChild(div);
-          });
+        if (snapshot.empty) {
+          listDiv.innerHTML = `<div style="text-align:center;color:#777;">🚧 重点ポイントが設定されていません。</div>`;
+          return;
+        }
+
+        snapshot.forEach(doc => {
+          const d = doc.data();
+          d.id = doc.id;  // ✅ ← FirestoreのドキュメントIDを追加！
+
+          const badge = getRatingBadge(d.rating);
+          const div = document.createElement("div");
+          div.className = "pin-feedback";
+
+          div.innerHTML = `
+            <div class="pin-label">📍 ${d.pin_label || "(ラベルなし)"} ${badge}</div>
+            <div style="margin-left:1.2em;color:#00796b;font-size:0.95em;">
+              🎯 ${d.focus_label || "意識ポイント未設定"}
+            </div>
+            <div class="pin-comment">
+              💬 ${(d.short_comment || "コメントなし").replace(/\n/g, "<br>")}
+              <div style="text-align:right;margin-top:4px;">
+                <a href="/feedback_detail_completed/${sessionId}/${d.id}"
+                  style="color:#007bff;font-size:0.9em;text-decoration:none;">
+                  ➡ 詳細を見る
+                </a>
+              </div>
+            </div>
+          `;
+          listDiv.appendChild(div);
+
+          // ✅ デバッグログ（確認用）
+          console.log("🎯 session:", sessionId, "pin_id:", d.id);
         });
+
+      } catch (err) {
+        console.error("❌ focus_feedbacks 読み込み失敗:", err);
+        listDiv.innerHTML = `<div style="text-align:center;color:#d00;">エラーが発生しました。</div>`;
+      }
     }
 
     document.addEventListener("DOMContentLoaded", () => {
       const sessionData = localStorage.getItem("lastSessionData");
       if (!sessionData) return;
       const parsed = JSON.parse(sessionData);
+
       document.getElementById("total-time").textContent = parsed.totalTime || "--:--";
       document.getElementById("total-distance").textContent = (parsed.distance || 0).toFixed(2) + " km";
+
       if (parsed.session_id) loadFocusFeedbacks(parsed.session_id);
     });
   </script>

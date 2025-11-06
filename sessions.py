@@ -497,6 +497,7 @@ def detail_result_page(session_id):
     """
     session_ref = db.collection('sessions').document(session_id)
     session_doc = session_ref.get()
+    print(f"🧾 Firestore check: sessions/{session_id}, exists={session_doc.exists}")
     if not session_doc.exists:
         return render_template('detail_result.html',
                                session=None,
@@ -558,12 +559,6 @@ def detail_result_page(session_id):
         "sharp_turns": s.get("sharp_turns"),
     }
 
-    # コメント（擬似）
-    comment_text = "全体的に安定した運転でした！特に直進の安定感が素晴らしいです👏 旋回時のG変化をもう少し抑えれば、さらに上級者レベルです🔥"
-
-    # スコア（擬似）
-    detail_scores = {"減速": 80, "加速": 75, "旋回": 70, "直進": 90, "総評": 79}
-
     # 🔹 録音音声を取得
     audio_records = get_audio_records(session_id)
 
@@ -572,8 +567,6 @@ def detail_result_page(session_id):
                            gps_logs=gps_logs,
                            avg_g_logs=avg_g_logs,
                            audio_records=audio_records,
-                           detail_scores=detail_scores,
-                           comment_text=comment_text,
                            display_error=None)
 
 # AI評価生成エンドポイント

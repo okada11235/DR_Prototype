@@ -148,20 +148,33 @@ def recording_start():
 @views_bp.route('/recording/active')
 @login_required
 def recording_active():
-    # 最新のセッションを取得
+    db_ref = firestore.client()
+
+    # 最新セッションを取得
     session_ref = (
-        db.collection("sessions")
+        db_ref.collection("sessions")
         .where("user_id", "==", current_user.id)
         .order_by("start_time", direction=firestore.Query.DESCENDING)
         .limit(1)
         .stream()
     )
+
     session_id = None
     for doc in session_ref:
         session_id = doc.id
         break
 
-    return render_template('recording_active.html', session_id=session_id)
+    # ⚠️ セッションが存在しない場合の安全対策
+    if not session_id:
+        print("⚠️ recording_active: セッションが見つかりません。recording_startから開始してください。")
+        return render_template(
+            "recording_active.html",
+            session_id="",
+            error_message="セッションが存在しません。運転を開始してから記録を行ってください。"
+        )
+
+    print(f"✅ recording_active session_id={session_id}")
+    return render_template("recording_active.html", session_id=session_id)
 
 # 記録完了画面（直前のセッション情報付き）
 @views_bp.route('/recording/completed')
@@ -723,3 +736,83 @@ def api_focus_feedback(session_id):
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
+# === リザルト→詳細フィードバック表示ページ ===
+@views_bp.route('/feedback_detail_result/<session_id>/<pin_id>')
+@login_required
+def feedback_detail_result(session_id, pin_id):
+    db = firestore.client()
+    feedback = None
+
+    try:
+        # ✅ focus_feedbacks から該当フィードバックを取得
+        ref = (
+            db.collection("sessions")
+            .document(session_id)
+            .collection("focus_feedbacks")
+            .document(pin_id)
+        )
+        doc = ref.get()
+
+        if doc.exists:
+            feedback = doc.to_dict()
+            print(f"✅ フィードバック取得成功: session={session_id}, pin={pin_id}")
+        else:
+            print(f"⚠️ feedback_detail_result: 該当する feedback が見つかりません: {session_id}/{pin_id}")
+    except Exception as e:
+        print(f"❌ Firestoreクエリ中にエラー発生: {e}")
+        import traceback
+        traceback.print_exc()
+
+    if not feedback:
+        return render_template(
+            "feedback_detail_result.html",
+            feedback=None,
+            session_id=session_id,
+            error_message="該当するフィードバックが見つかりませんでした。"
+        )
+
+    return render_template(
+        "feedback_detail_result.html",
+        feedback=feedback,
+        session_id=session_id
+    )
+
+# === 記録終了→詳細フィードバック表示ページ ===
+@views_bp.route('/feedback_detail_completed/<session_id>/<pin_id>')
+@login_required
+def feedback_detail_completed(session_id, pin_id):
+    db = firestore.client()
+    feedback = None
+
+    try:
+        # ✅ focus_feedbacks からピンポイントで取得
+        doc_ref = (
+            db.collection("sessions")
+            .document(session_id)
+            .collection("focus_feedbacks")
+            .document(pin_id)
+        )
+        doc = doc_ref.get()
+
+        if doc.exists:
+            feedback = doc.to_dict()
+            print(f"✅ 取得成功: session={session_id}, pin={pin_id}")
+        else:
+            print(f"⚠️ 該当フィードバックが存在しません: {session_id}/{pin_id}")
+    except Exception as e:
+        print(f"❌ Firestoreアクセス中にエラー発生: {e}")
+        import traceback; traceback.print_exc()
+
+    if not feedback:
+        return render_template(
+            "feedback_detail_completed.html",
+            feedback=None,
+            session_id=session_id,
+            error_message="該当するフィードバックが見つかりませんでした。"
+        )
+
+    return render_template(
+        "feedback_detail_completed.html",
+        feedback=feedback,
+        session_id=session_id
+    )

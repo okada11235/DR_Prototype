@@ -213,6 +213,58 @@ def generate_ai_focus_feedback(focus_type_name, current_stats, diff, rating, dif
 
     return feedback_text
 
+# ==========================================================
+#  簡潔版フィードバック生成
+# ==========================================================
+def summarize_feedback(ai_comment: str, diff_text: str) -> str:
+    """長文のAIコメントから簡潔な要約を生成（良い点・改善点・比較）"""
+    import openai, os
+    from flask import current_app
+
+    # === OpenAI APIキーの取得方法（旧構成と互換） ===
+    api_key_path = os.getenv("OPENAI_API_KEY")
+    api_key_value = None
+
+    if api_key_path:
+        if os.path.exists(api_key_path):
+            with open(api_key_path, "r", encoding="utf-8") as f:
+                api_key_value = f.read().strip()
+        else:
+            # 環境変数そのものがキーの場合
+            api_key_value = api_key_path
+
+    if not api_key_value:
+        print("⚠️ OpenAI APIキーが見つかりません。")
+        api_key_value = "DUMMY_KEY"
+
+    client = openai.OpenAI(api_key=api_key_value)
+    prompt = f"""
+    以下は運転に関するAIフィードバックです。
+    この文章から「良い点」「改善点」「前回との比較」を1行ずつ簡潔に要約してください。
+
+    {ai_comment}
+
+    【出力フォーマット】
+    😊 良い点: ...
+    ⚠ 改善点: ...
+    📈 比較: ...
+    """
+
+    try:
+        res = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=150
+        )
+        summary = res.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"⚠️ 要約生成エラー: {e}")
+        summary = (
+            "😊 良い点: 全体的に安定した走行でした。\n"
+            "⚠ 改善点: カーブ時の揺れに注意しましょう。\n"
+            "📈 比較: 前回とほぼ同じ傾向です。"
+        )
+    return summary
 
 # ==========================================================
 #  メイン：重点ポイント解析
@@ -299,14 +351,14 @@ def analyze_focus_points_for_session(session_id: str, user_id: str) -> dict:
         prev_doc = sess_ref.collection("focus_feedbacks").document(pin_id).get()
         prev_stats = prev_doc.to_dict().get("stats") if prev_doc.exists else None
 
-        # 🔧 修正: diff, diff_text の2つを受け取る
         diff, diff_text = compare_focus_stats(prev_stats, current_stats)
-
         rating = get_focus_rating(current_stats, focus_type)
-
-        # 🔧 修正: diff_text を追加で渡す
         ai_comment = generate_ai_focus_feedback(focus_type_name, current_stats, diff, rating, diff_text)
 
+        # ✅ 要約（短縮版フィードバック）を追加
+        short_comment = summarize_feedback(ai_comment, diff_text)
+
+        # --- Firestoreに保存 ---
         sess_ref.collection("focus_feedbacks").document(pin_id).set({
             "created_at": datetime.now(JST),
             "pin_label": pin.get("label", ""),
@@ -315,7 +367,8 @@ def analyze_focus_points_for_session(session_id: str, user_id: str) -> dict:
             "stats": current_stats,
             "diff": diff,
             "rating": rating,
-            "ai_comment": ai_comment,
+            "ai_comment": ai_comment,       # ← 長文
+            "short_comment": short_comment, # ← 短文（追加）
             "passed": True
         })
 

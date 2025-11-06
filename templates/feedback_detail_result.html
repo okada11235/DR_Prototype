@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>詳細フィードバック - ドライボ</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <style>
+    body {
+      background-color: #eaf8fb;
+      font-family: "Hiragino Maru Gothic ProN", sans-serif;
+      color: #333;
+    }
+    .card {
+      border: none;
+      border-radius: 16px;
+      box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1);
+      background: #fff;
+      padding: 24px;
+      margin-top: 30px;
+    }
+    h3 {
+      color: #007e99;
+      font-weight: bold;
+      border-bottom: 2px solid #a5dbe0;
+      padding-bottom: 6px;
+      margin-bottom: 16px;
+    }
+    .feedback-meta {
+      font-size: 1.05em;
+      color: #555;
+      margin-bottom: 10px;
+    }
+    .feedback-meta strong {
+      color: #007c91;
+    }
+    .ai-comment {
+      background: #f5fbfd;
+      border-left: 5px solid #4db6ac;
+      padding: 16px;
+      border-radius: 8px;
+      font-size: 1.05em;
+      white-space: pre-line;
+      line-height: 1.6em;
+    }
+    .back-btn {
+      display: inline-block;
+      margin-top: 18px;
+      text-decoration: none;
+      color: #007e99;
+      font-weight: bold;
+      border: 1px solid #007e99;
+      padding: 6px 14px;
+      border-radius: 8px;
+      transition: all 0.2s ease;
+    }
+    .back-btn:hover {
+      background: #007e99;
+      color: #fff;
+    }
+    .rating-badge {
+      display: inline-block;
+      font-weight: bold;
+      border-radius: 12px;
+      padding: 3px 10px;
+      font-size: 0.9em;
+      margin-left: 6px;
+    }
+    .rating-verygood { background: #c8e6c9; color: #2e7d32; }
+    .rating-good { background: #b3e5fc; color: #0277bd; }
+    .rating-normal { background: #fff9c4; color: #795548; }
+    .rating-bad { background: #ffcdd2; color: #c62828; }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <div class="card">
+      <h3>📍 {{ feedback.pin_label or "重点ポイント" }} の詳細フィードバック</h3>
+
+      <div class="feedback-meta">
+        <strong>🎯 意識項目:</strong> {{ feedback.focus_label or "未設定" }}<br>
+        <strong>評価:</strong>
+        {% if feedback.rating == "とてもいい" %}
+          <span class="rating-badge rating-verygood">🌟 とてもいい</span>
+        {% elif feedback.rating == "いい" %}
+          <span class="rating-badge rating-good">😊 いい</span>
+        {% elif feedback.rating == "ふつう" %}
+          <span class="rating-badge rating-normal">😐 ふつう</span>
+        {% elif feedback.rating == "わるい" %}
+          <span class="rating-badge rating-bad">⚠️ わるい</span>
+        {% else %}
+          <span class="rating-badge">未評価</span>
+        {% endif %}
+      </div>
+
+      <div class="ai-comment">
+        {{ feedback.ai_comment or "フィードバックが見つかりませんでした。" }}
+      </div>
+
+      <div class="text-end">
+      {% if session_id %}
+        <a href="{{ url_for('sessions.detail_result_page', session_id=session_id) }}" class="back-btn">← 詳細リザルトに戻る</a>
+      {% else %}
+        <p style="color: #888; text-align:center;">セッション情報が見つからないため戻ることができません。</p>
+      {% endif %}
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

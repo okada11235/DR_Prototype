@@ -207,7 +207,7 @@
 
 <!-- === 重点ポイントフィードバック === -->
 <div class="section" id="feedback-section">
-  <h2>🤖 フィードバック</h2>
+  <h2><img src="{{ url_for('static', filename='img/robot_side.png') }}" alt="ドライボ" class="robot"> フィードバック</h2>
   <div id="focus-feedback-list">
     <p>AIフィードバックを読み込んでいます...</p>
   </div>
@@ -238,11 +238,13 @@
 
     function loadFocusFeedbacks(sessionId) {
       const listDiv = document.getElementById("focus-feedback-list");
+
       db.collection("sessions").doc(sessionId)
         .collection("focus_feedbacks")
         .orderBy("created_at", "desc")
         .onSnapshot(snapshot => {
           listDiv.innerHTML = "";
+
           if (snapshot.empty) {
             listDiv.innerHTML = "<p style='color:#777;'>🚧 重点ポイントが設定されていません。</p>";
             return;
@@ -250,15 +252,32 @@
 
           snapshot.forEach(doc => {
             const d = doc.data();
+            d.id = doc.id;  // ✅ ← これを追加！重要！！
+
             const badge = getRatingBadge(d.rating);
             const div = document.createElement("div");
             div.className = "pin-feedback";
+
             div.innerHTML = `
               <div class="pin-label">📍 ${d.pin_label || "(ラベルなし)"} ${badge}</div>
-              <div style="margin-left:1.2em;color:#00796b;font-size:0.95em;">🎯 ${d.focus_label || "意識ポイント未設定"}</div>
-              <div class="pin-comment">💬 ${d.ai_comment || "コメントなし"}</div>
+              <div style="margin-left:1.2em;color:#00796b;font-size:0.95em;">
+                🎯 ${d.focus_label || "意識ポイント未設定"}
+              </div>
+              <div class="pin-comment">
+                💬 ${(d.short_comment || "コメントなし").replace(/\n/g, "<br>")}
+                <div style="text-align:right;margin-top:4px;">
+                  <a href="/feedback_detail_result/${sessionId}/${d.id}"
+                    style="color:#007bff;font-size:0.9em;text-decoration:none;">
+                    ➡ 詳細を見る
+                  </a>
+                </div>
+              </div>
             `;
+
             listDiv.appendChild(div);
+
+            // 🔍 デバッグ出力（確認用）
+            console.log("🎯 session:", sessionId, "pin_id:", d.id);
           });
         });
     }

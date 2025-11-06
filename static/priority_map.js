@@ -56,7 +56,7 @@ async function initPriorityMap() {
       { key: "brake_soft", name: "穏やかな減速" },
       { key: "accel_smooth", name: "滑らかな発進" },
       { key: "turn_stability", name: "カーブの安定性" },
-      { key: "smooth_overall", name: "全体の滑らかさ" },
+      { key: "smooth_overall", name: "直進の安定性" },
       { key: "stop_smooth", name: "停止直前の滑らかさ" },
       { key: "speed_consistency", name: "一定速度の維持" }
     ];
@@ -132,7 +132,7 @@ function addMarker(map, pin) {
         <option value="brake_soft" ${pin.focus_type === "brake_soft" ? "selected" : ""}>穏やかな減速</option>
         <option value="accel_smooth" ${pin.focus_type === "accel_smooth" ? "selected" : ""}>滑らかな発進</option>
         <option value="turn_stability" ${pin.focus_type === "turn_stability" ? "selected" : ""}>カーブの安定性</option>
-        <option value="smooth_overall" ${pin.focus_type === "smooth_overall" ? "selected" : ""}>全体の滑らかさ</option>
+        <option value="smooth_overall" ${pin.focus_type === "smooth_overall" ? "selected" : ""}>直進の安定性</option>
         <option value="stop_smooth" ${pin.focus_type === "stop_smooth" ? "selected" : ""}>停止直前の滑らかさ</option>
         <option value="speed_consistency" ${pin.focus_type === "speed_consistency" ? "selected" : ""}>一定速度の維持</option>
       </select><br>
