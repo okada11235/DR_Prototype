@@ -398,11 +398,41 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now) {
 
       if (type) {
         // ✅ ほかのイベント（加速や旋回）で上書きされないように「個別発火」
-        if (now - lastEventTime > COOLDOWN_MS) { // クールダウン制御あり
+        if (now - lastEventTime > COOLDOWN_MS) {
           console.log(`🚗 停止直前ブレーキ判定 → ${type} (Δv/s=${decelRate.toFixed(2)} km/h/s, avgG=${avgG.toFixed(2)})`);
           playRandomAudio(type);
-          lastEventTime = now;
+
+          // ✅ Firestore送信バッファに即保存（GPS + G + 平均G）
+          const lastGps = window.lastKnownPosition || { latitude: 0, longitude: 0 };
+          const gxs = window.latestGX ?? 0;
+          const gys = window.latestGY ?? 0;
+          const gzs = window.latestGZ ?? 0;
+
+          const logData = {
+            timestamp: now,
+            latitude: lastGps.latitude,
+            longitude: lastGps.longitude,
+            g_x: gxs,
+            g_y: gys,
+            g_z: gzs,
+            speed,
+            event: type
+          };
+
+          // 🔹 各バッファに追加（sessions.pyのバルク保存で送られる）
+          if (!window.gLogBuffer) window.gLogBuffer = [];
+          if (!window.avgGLogBuffer) window.avgGLogBuffer = [];
+          if (!window.gpsLogBuffer) window.gpsLogBuffer = [];
+
+          window.gLogBuffer.push(logData);
+          window.avgGLogBuffer.push(logData);
+          window.gpsLogBuffer.push(logData);
+
+          console.log("✅ Firestoreバッファに即保存:", type, logData);
+
+          lastEventTime = now; // クールダウン更新
         }
+
         drivingState.brakeEvaluated = true; // 一度だけ判定
       }
     }
