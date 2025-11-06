@@ -299,9 +299,13 @@ def analyze_focus_points_for_session(session_id: str, user_id: str) -> dict:
         prev_doc = sess_ref.collection("focus_feedbacks").document(pin_id).get()
         prev_stats = prev_doc.to_dict().get("stats") if prev_doc.exists else None
 
-        diff = compare_focus_stats(prev_stats, current_stats)
+        # 🔧 修正: diff, diff_text の2つを受け取る
+        diff, diff_text = compare_focus_stats(prev_stats, current_stats)
+
         rating = get_focus_rating(current_stats, focus_type)
-        ai_comment = generate_ai_focus_feedback(focus_type_name, current_stats, diff, rating)
+
+        # 🔧 修正: diff_text を追加で渡す
+        ai_comment = generate_ai_focus_feedback(focus_type_name, current_stats, diff, rating, diff_text)
 
         sess_ref.collection("focus_feedbacks").document(pin_id).set({
             "created_at": datetime.now(JST),

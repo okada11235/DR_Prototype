@@ -56,6 +56,12 @@ export function startSession() {
     console.log('=== startSession function called ===');
     console.log('Current sessionId:', window.sessionId);
     console.log('isSessionStarting:', window.isSessionStarting);
+
+    // 🚀 対策1：前回のセッションデータを必ずクリア
+    localStorage.removeItem('activeSessionId');
+    localStorage.removeItem('sessionStartTime');
+    localStorage.removeItem('lastSessionData'); // 終了画面用に残っている場合も初期化
+    window.sessionId = null;
     
     if (window.isSessionStarting) {
         console.warn('Session start already in progress');
