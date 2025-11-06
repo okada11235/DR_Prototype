@@ -132,6 +132,12 @@ def index():
 def home():
     return render_template('home.html')
 
+# 説明ページ
+@views_bp.route('/explain')
+@login_required
+def explain():
+    return render_template('explain.html')
+
 # 記録開始画面
 @views_bp.route('/recording/start')
 @login_required
