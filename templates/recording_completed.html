@@ -169,63 +169,73 @@
       const loading = document.getElementById("loading-section");
       const hint = document.getElementById("loading-hint");
 
-      try {
-        // 最初は「生成中...」を表示
-        loading.querySelector("h2").textContent = "🤖 フィードバック生成中...";
-        hint.textContent = "AIが運転データを分析しています...";
+      // 初期表示
+      loading.style.display = "block";
+      section.style.display = "none";
+      listDiv.innerHTML = "";
+      loading.querySelector("h2").textContent = "🤖 フィードバック生成中...";
+      hint.textContent = "AIが運転データを分析しています...";
 
-        // まずは firestore からデータを取得
-        const snapshot = await db.collection("sessions").doc(sessionId)
-          .collection("focus_feedbacks")
-          .orderBy("created_at", "desc")
-          .get();
+      // ✅ Firestoreのリアルタイムリスナーで監視
+      const ref = db.collection("sessions").doc(sessionId)
+        .collection("focus_feedbacks")
+        .orderBy("created_at", "desc");
 
-        // === データがまだない場合（AI生成中） ===
+      ref.onSnapshot(snapshot => {
         if (snapshot.empty) {
-          hint.textContent = "分析中です。もう少しお待ちください...";
+          hint.textContent = "分析中です。順次フィードバックが表示されます...";
           console.log("⏳ focus_feedbacks はまだ生成中...");
-          // 5秒後に再試行
-          setTimeout(() => loadFocusFeedbacks(sessionId), 5000);
           return;
         }
 
-        // === データが取得できた場合 ===
+        // 一度でもデータが来たら、セクションを表示
         loading.style.display = "none";
         section.style.display = "block";
-        listDiv.innerHTML = "";
-        hint.textContent = "";
 
-        snapshot.forEach(doc => {
-          const d = doc.data();
-          d.id = doc.id;
+        // 現在のDOMに既に描画済みのIDを控えておく
+        const existingIds = Array.from(document.querySelectorAll(".pin-feedback"))
+          .map(div => div.dataset.id);
 
-          const badge = getRatingBadge(d.rating);
-          const div = document.createElement("div");
-          div.className = "pin-feedback";
-          div.innerHTML = `
-            <div class="pin-label">📍 ${d.pin_label || "(ラベルなし)"} ${badge}</div>
-            <div style="margin-left:1.2em;color:#00796b;font-size:0.95em;">
-              🎯 ${d.focus_label || "意識ポイント未設定"}
-            </div>
-            <div class="pin-comment">
-              💬 ${(d.short_comment || "コメントなし").replace(/\n/g, "<br>")}
-              <div style="text-align:right;margin-top:4px;">
-                <a href="/feedback_detail_completed/${sessionId}/${d.id}"
-                  style="color:#007bff;font-size:0.9em;text-decoration:none;">
-                  ➡ 詳細を見る
-                </a>
+        snapshot.docChanges().forEach(change => {
+          if (change.type === "added") {
+            const d = change.doc.data();
+            d.id = change.doc.id;
+
+            // すでに表示済みならスキップ
+            if (existingIds.includes(d.id)) return;
+
+            const badge = getRatingBadge(d.rating);
+            const div = document.createElement("div");
+            div.className = "pin-feedback";
+            div.dataset.id = d.id;
+
+            div.innerHTML = `
+              <div class="pin-label">📍 ${d.pin_label || "(ラベルなし)"} ${badge}</div>
+              <div style="margin-left:1.2em;color:#00796b;font-size:0.95em;">
+                🎯 ${d.focus_label || "意識ポイント未設定"}
               </div>
-            </div>
-          `;
-          listDiv.appendChild(div);
-        });
+              <div class="pin-comment">
+                💬 ${(d.short_comment || "コメントなし").replace(/\n/g, "<br>")}
+                <div style="text-align:right;margin-top:4px;">
+                  <a href="/feedback_detail_completed/${sessionId}/${d.id}"
+                    style="color:#007bff;font-size:0.9em;text-decoration:none;">
+                    ➡ 詳細を見る
+                  </a>
+                </div>
+              </div>
+            `;
 
-      } catch (err) {
-        console.error("❌ focus_feedbacks 読み込み失敗:", err);
+            // 新しい順に上から追加
+            listDiv.insertBefore(div, listDiv.firstChild);
+            console.log("🆕 新しいフィードバックを追加:", d.pin_label || "ラベルなし");
+          }
+        });
+      }, err => {
+        console.error("❌ focus_feedbacks リアルタイム取得失敗:", err);
         listDiv.innerHTML = `<div style="text-align:center;color:#d00;">エラーが発生しました。</div>`;
         loading.querySelector("h2").textContent = "⚠️ エラーが発生しました";
         hint.textContent = "通信状況を確認してください。";
-      }
+      });
     }
 
     document.addEventListener("DOMContentLoaded", () => {
