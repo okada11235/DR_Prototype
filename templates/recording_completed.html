@@ -112,10 +112,13 @@
 
     <!-- ローディング -->
     <div id="loading-section" class="section">
-      <h2>🤖 フィードバックを取得中...</h2>
+      <h2>🤖 フィードバック生成中...</h2>
       <p style="text-align:center;">
-        <div style="display:inline-block;width:20px;height:20px;border:3px solid #f3f3f3;border-top:3px solid #2090c2;border-radius:50%;animation:spin 1s linear infinite;margin-right:10px;"></div>
-        重点ポイントのデータを読み込んでいます...
+        <div style="display:inline-block;width:22px;height:22px;border:3px solid #f3f3f3;border-top:3px solid #2090c2;border-radius:50%;animation:spin 1s linear infinite;margin-right:10px;"></div>
+        AIが走行データを分析しています...
+      </p>
+      <p id="loading-hint" style="text-align:center;color:#007c91;font-size:0.9em;margin-top:5px;">
+        （走行距離が長い場合生成に時間がかかります。）
       </p>
     </div>
 
@@ -164,25 +167,41 @@
       const listDiv = document.getElementById("focus-feedback-list");
       const section = document.getElementById("focus-feedback-section");
       const loading = document.getElementById("loading-section");
+      const hint = document.getElementById("loading-hint");
 
       try {
+        // 最初は「生成中...」を表示
+        loading.querySelector("h2").textContent = "🤖 フィードバック生成中...";
+        hint.textContent = "AIが運転データを分析しています...";
+
+        // まずは firestore からデータを取得
         const snapshot = await db.collection("sessions").doc(sessionId)
           .collection("focus_feedbacks")
           .orderBy("created_at", "desc")
           .get();
 
+        // === データがまだない場合（AI生成中） ===
+        if (snapshot.empty) {
+          hint.textContent = "分析中です。もう少しお待ちください...";
+          console.log("⏳ focus_feedbacks はまだ生成中...");
+          // 5秒後に再試行
+          setTimeout(() => loadFocusFeedbacks(sessionId), 5000);
+          return;
+        }
+
+        // === データが取得できた場合 ===
         loading.style.display = "none";
         section.style.display = "block";
         listDiv.innerHTML = "";
+        hint.textContent = "";
 
         snapshot.forEach(doc => {
           const d = doc.data();
-          d.id = doc.id;  // ✅ ← FirestoreのドキュメントIDを追加！
+          d.id = doc.id;
 
           const badge = getRatingBadge(d.rating);
           const div = document.createElement("div");
           div.className = "pin-feedback";
-
           div.innerHTML = `
             <div class="pin-label">📍 ${d.pin_label || "(ラベルなし)"} ${badge}</div>
             <div style="margin-left:1.2em;color:#00796b;font-size:0.95em;">
@@ -199,14 +218,13 @@
             </div>
           `;
           listDiv.appendChild(div);
-
-          // ✅ デバッグログ（確認用）
-          console.log("🎯 session:", sessionId, "pin_id:", d.id);
         });
 
       } catch (err) {
         console.error("❌ focus_feedbacks 読み込み失敗:", err);
         listDiv.innerHTML = `<div style="text-align:center;color:#d00;">エラーが発生しました。</div>`;
+        loading.querySelector("h2").textContent = "⚠️ エラーが発生しました";
+        hint.textContent = "通信状況を確認してください。";
       }
     }
 
