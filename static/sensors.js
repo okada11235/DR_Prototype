@@ -405,18 +405,29 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now) {
       }
 
       if (type) {
-        // ✅ GPS位置が未取得ならスキップ
+        // ✅ GPS位置取得 & 鮮度・座標バリデーション
         let gps = window.lastKnownPosition;
-        if (!gps || !gps.latitude || !gps.longitude) {
-          // 直近のgpsLogBufferから拾う
-          if (window.gpsLogBuffer.length > 0) {
-            const last = window.gpsLogBuffer[window.gpsLogBuffer.length - 1];
-            gps = { latitude: last.latitude, longitude: last.longitude };
-            console.warn("📍 lastKnownPositionが未定義のためgpsLogBufferから補完:", gps);
-          } else {
-            console.warn("⚠️ 有効なGPS位置がないため、ブレーキイベントをスキップしました。");
-            return;
-          }
+        const FRESH_LIMIT_MS = 3000;
+        const isFresh = gps && gps.timestamp && (now - gps.timestamp <= FRESH_LIMIT_MS);
+        const isValidCoord = gps && typeof gps.latitude === 'number' && typeof gps.longitude === 'number' && !(gps.latitude === 0 && gps.longitude === 0);
+
+        if (!isFresh || !isValidCoord) {
+          // 直近のgpsLogBufferから鮮度・座標を満たすものを逆順探索
+            for (let i = window.gpsLogBuffer.length - 1; i >= 0; i--) {
+              const cand = window.gpsLogBuffer[i];
+              const ts = cand.timestamp;
+              if (!ts) continue;
+              if ((now - ts) > FRESH_LIMIT_MS) break; // これより前は鮮度なし
+              if (cand.latitude === 0 && cand.longitude === 0) continue;
+              gps = { latitude: cand.latitude, longitude: cand.longitude, timestamp: ts };
+              console.warn("📍 補完GPS採用 (鮮度/座標不足):", gps);
+              break;
+            }
+        }
+
+        if (!gps || !gps.latitude || !gps.longitude || gps.latitude === 0 && gps.longitude === 0) {
+          console.warn("⚠️ 有効かつ鮮度のあるGPSがないため、ブレーキイベントをスキップしました。");
+          return; // 保存しない
         }
 
         if (now - lastEventTime > COOLDOWN_MS) {

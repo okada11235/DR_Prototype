@@ -440,6 +440,8 @@
 /** ========= データ ========= */
 const gpsLogs = {{ gps_logs|tojson }};
 const gLogs   = {{ avg_g_logs|tojson }};
+// (0,0) の無効座標を描画から除外
+const displayGpsLogs = (gpsLogs || []).filter(l => !(Number(l.latitude) === 0 && Number(l.longitude) === 0));
 
 /** ========= カラー＆イベント軸 ========= */
 const colorMap = {
@@ -537,12 +539,12 @@ function renderGForceChart(canvasId, gpsLogs, gLogs){
   const gxData=align(gLogs,"g_x");
   const gyData=align(gLogs,"g_y");
   const gzData=align(gLogs,"g_z");
-  const speedData=align(gpsLogs,"speed");
+  const speedData=align(displayGpsLogs,"speed");
 
-  const gxPts=makeEventPoints(allTimestamps,gpsLogs,'gx');
-  const gyPts=makeEventPoints(allTimestamps,gpsLogs,'gy');
-  const gzPts=makeEventPoints(allTimestamps,gpsLogs,'gz');
-  const spPts=makeEventPoints(allTimestamps,gpsLogs,'speed');
+  const gxPts=makeEventPoints(allTimestamps,displayGpsLogs,'gx');
+  const gyPts=makeEventPoints(allTimestamps,displayGpsLogs,'gy');
+  const gzPts=makeEventPoints(allTimestamps,displayGpsLogs,'gz');
+  const spPts=makeEventPoints(allTimestamps,displayGpsLogs,'speed');
 
   const ctx=document.getElementById(canvasId).getContext('2d');
   const chart = new Chart(ctx,{
@@ -596,7 +598,7 @@ function renderGForceChart(canvasId, gpsLogs, gLogs){
               let unit= ctx.dataset.label.includes('速度') ? ' km/h' : ' G';
               let label=`${ctx.dataset.label}: ${val}${unit}`;
               const ts=allTimestamps[idx];
-              const log=gpsLogs.find(l => Number(l.timestamp_ms ?? l.timestamp)===ts);
+              const log=displayGpsLogs.find(l => Number(l.timestamp_ms ?? l.timestamp)===ts);
               if(log && log.event && log.event!=='normal'){
                 label += `  (イベント: ${String(log.event).replace(/_/g,' ')})`;
               }
@@ -715,11 +717,11 @@ function resetChartZoom(canvasId) {
 let mapInstance=null;
 function initMap(){
   const mapEl=document.getElementById('map');
-  if(!gpsLogs || gpsLogs.length===0){
+  if(!displayGpsLogs || displayGpsLogs.length===0){
     mapEl.insertAdjacentHTML('beforebegin', `<div class="warn">GPSデータがありません</div>`);
     return;
   }
-  const path=gpsLogs.map(l=>({lat:l.latitude,lng:l.longitude}));
+  const path=displayGpsLogs.map(l=>({lat:l.latitude,lng:l.longitude}));
   mapInstance = new google.maps.Map(mapEl,{ zoom:15, center:path[0] });
   const poly=new google.maps.Polyline({ path, geodesic:true, strokeColor:'#007bff', strokeOpacity:1.0, strokeWeight:4 });
   poly.setMap(mapInstance);
@@ -745,7 +747,7 @@ function initMap(){
   )).join('');
 
   // イベントマーカー
-  gpsLogs.forEach(log=>{
+  displayGpsLogs.forEach(log=>{
     if(log.event && log.event!=='normal'){
       const color=colorMap[log.event]||'gray';
       const marker=new google.maps.Marker({
@@ -772,7 +774,7 @@ function initMap(){
 /** ========= 起動 ========= */
 document.addEventListener('DOMContentLoaded', ()=>{
   initializeChart();
-  renderGForceChart('gForceChart-{{ session.id }}', gpsLogs, gLogs);
+  renderGForceChart('gForceChart-{{ session.id }}', displayGpsLogs, gLogs);
 });
 </script>
 

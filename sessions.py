@@ -182,6 +182,7 @@ def log_gps_bulk():
         batch = db.batch()
         gps_collection = session_ref.collection('gps_logs')
         saved_count = 0
+        skipped_zero_count = 0
         
         for log in gps_logs:
             print(f"Processing GPS log: {log}")  # 各ログを詳細に出力
@@ -196,10 +197,11 @@ def log_gps_bulk():
                 print(f"Skipping GPS log due to None values: lat={latitude}, lng={longitude}")
                 continue
                 
-            # 緯度経度が0の場合もログに出力するが保存はする
-            if latitude == 0 and longitude == 0:
-                print(f"Warning: GPS log has zero coordinates: lat={latitude}, lng={longitude}")
-                # 0座標でも保存を続行する
+            # 緯度経度が0,0の場合は保存しない（描画ワープ防止）
+            if float(latitude) == 0.0 and float(longitude) == 0.0:
+                print(f"Skip: GPS log has zero coordinates: lat={latitude}, lng={longitude}")
+                skipped_zero_count += 1
+                continue
             
             ts_ms = log.get('timestamp')  # 端末から送られてきたUNIX時間（ミリ秒）
             if ts_ms:
@@ -226,8 +228,8 @@ def log_gps_bulk():
         else:
             print(f"No valid GPS logs to save for session {session_id}")
             
-        print(f"=== GPS BULK SAVE COMPLETED: {saved_count} logs saved ===")
-        return jsonify({'status': 'ok', 'saved_count': saved_count})
+        print(f"=== GPS BULK SAVE COMPLETED: {saved_count} saved, {skipped_zero_count} skipped (0,0) ===")
+        return jsonify({'status': 'ok', 'saved_count': saved_count, 'skipped_zero_count': skipped_zero_count})
     except Exception as e:
         print(f"Error saving GPS logs: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
