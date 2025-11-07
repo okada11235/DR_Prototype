@@ -79,6 +79,19 @@ def get_focus_rating(stats, focus_type):
         else:
             rating = "わるい"
 
+    elif focus_type == "speed_consistency":
+        # 速度変動（標準偏差）で評価
+        speed_std = stats.get("std_speed", 0)
+
+        if speed_std < 2.0:
+            rating = "とてもいい"   # ほぼ一定速度を維持
+        elif speed_std < 4.0:
+            rating = "いい"        # 少し変動があるが安定
+        elif speed_std < 6.0:
+            rating = "ふつう"      # 変動がやや大きい
+        else:
+            rating = "わるい"      # アクセル操作にばらつきあり
+
     return rating
 
 
@@ -344,7 +357,8 @@ def analyze_focus_points_for_session(session_id: str, user_id: str) -> dict:
             "std_gx": statistics.pstdev(gx_vals) if len(gx_vals) > 1 else 0,
             "std_gz": statistics.pstdev(gz_vals) if len(gz_vals) > 1 else 0,
             "max_gx": max(gx_vals, default=0),
-            "max_gz": max(gz_vals, default=0)
+            "max_gz": max(gz_vals, default=0),
+            "std_speed": statistics.pstdev(speeds) if len(speeds) > 1 else 0
         }
 
         # --- 前回データ取得（比較用） ---
