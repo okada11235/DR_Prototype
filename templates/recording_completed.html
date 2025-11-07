@@ -175,11 +175,6 @@
         section.style.display = "block";
         listDiv.innerHTML = "";
 
-        if (snapshot.empty) {
-          listDiv.innerHTML = `<div style="text-align:center;color:#777;">🚧 重点ポイントが設定されていません。</div>`;
-          return;
-        }
-
         snapshot.forEach(doc => {
           const d = doc.data();
           d.id = doc.id;  // ✅ ← FirestoreのドキュメントIDを追加！

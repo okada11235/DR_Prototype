@@ -75,102 +75,62 @@ export function addEventMarker(lat, lng, type) {
 }
 
 export function watchPosition() {
-    console.log('Starting GPS position watch...');
-    if (!window.sessionId) {
-        console.error("No sessionId! GPS log will not be saved");
+  console.log('Starting GPS position watch...');
+  if (!window.sessionId) {
+    console.error("No sessionId! GPS log will not be saved");
+  }
+
+  window.watchId = navigator.geolocation.watchPosition(async position => {
+    const lat = position.coords.latitude;
+    const lng = position.coords.longitude;
+    const speed = position.coords.speed !== null ? position.coords.speed * 3.6 : 0; // km/h
+    const now = Date.now();
+
+    // ✅ ここを追加！
+    window.lastKnownPosition = {
+      latitude: lat,
+      longitude: lng,
+      speed: speed,
+      timestamp: now
+    };
+
+    const currentLatLng = { lat, lng };
+    console.log(`GPS position received: lat=${lat}, lng=${lng}, speed=${speed}, accuracy=${position.coords.accuracy}`);
+
+    // 地図上の位置更新
+    if (window.currentPositionMarker && typeof google !== 'undefined') {
+      window.currentPositionMarker.setPosition(currentLatLng);
+      if (window.map) window.map.setCenter(currentLatLng);
     }
-    window.watchId = navigator.geolocation.watchPosition(async position => {
-        const lat = position.coords.latitude;
-        const lng = position.coords.longitude;
-        const currentLatLng = { lat, lng };
-        const speed = position.coords.speed !== null ? position.coords.speed * 3.6 : 0; // km/h
-        const now = Date.now();
 
-        console.log(`GPS position received: lat=${lat}, lng=${lng}, speed=${speed}, accuracy=${position.coords.accuracy}, sessionId=${window.sessionId || 'none'}`);
+    // 速度・座標をUI表示
+    const speedElement = document.getElementById('speed');
+    if (speedElement) speedElement.textContent = speed.toFixed(1);
+    const positionElement = document.getElementById('position');
+    if (positionElement) positionElement.textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
 
-        const speedElement = document.getElementById('speed');
-        if (speedElement) speedElement.textContent = speed.toFixed(1);
-        const positionElement = document.getElementById('position');
-        if (positionElement) positionElement.textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    // 現在速度を sensors.js にも共有
+    window.currentSpeed = speed;
 
-        if (window.currentPositionMarker && typeof google !== 'undefined') {
-            window.currentPositionMarker.setPosition(currentLatLng);
-            if (window.map) window.map.setCenter(currentLatLng);
-        } else if (typeof google !== 'undefined' && window.map) {
-            window.currentPositionMarker = new google.maps.Marker({
-                position: currentLatLng,
-                map: window.map,
-                icon: {
-                    path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-                    scale: 6,
-                    fillColor: 'blue',
-                    fillOpacity: 0.8,
-                    strokeWeight: 1,
-                    strokeColor: '#fff',
-                    rotation: 0
-                }
-            });
-        }
+    // GPSログをバッファに保存
+    if (window.sessionId) {
+      const gpsData = {
+        timestamp: now,
+        latitude: lat,
+        longitude: lng,
+        speed,
+        g_x: window.latestGX || 0,
+        g_y: window.latestGY || 0,
+        g_z: window.latestGZ || 0,
+        event: window.currentDrivingEvent || 'normal'
+      };
+      window.gpsLogBuffer.push(gpsData);
+      console.log(`GPS data added to buffer:`, gpsData);
+    }
 
-        // 現在の速度をセンサーシステムに提供
-        window.latestSpeed = speed;
-        window.currentSpeed = speed;  // ★ sensors.js 判定用に追加
-        
-        // イベント情報はセンサーシステムから取得
-        let currentEvent = window.currentDrivingEvent || 'normal';
-        // イベントリセット
-        window.currentDrivingEvent = 'normal';
-
-        // 位置情報をパスに追加（Google Maps の有無に関係なく）
-        window.path.push({ lat, lng });
-        console.log(`Path updated: ${window.path.length} points, latest: lat=${lat.toFixed(5)}, lng=${lng.toFixed(5)}`);
-        
-        // Google Maps が利用可能な場合はポリラインも更新
-        if (typeof google !== 'undefined') {
-            if (window.polyline) window.polyline.setPath(window.path);
-        }
-
-        if (window.sessionId) {
-            const gpsData = {
-                timestamp: now,
-                latitude: lat,
-                longitude: lng,
-                speed: speed,
-                g_x: window.latestGX || 0,
-                g_y: window.latestGY || 0,
-                g_z: window.latestGZ || 0,
-                event: currentEvent || 'normal'
-            };
-            window.gpsLogBuffer.push(gpsData);
-            console.log(`GPS data added to buffer for session ${window.sessionId}:`, gpsData);
-            console.log(`Buffer sizes -> GPS: ${window.gpsLogBuffer.length}, G: ${window.gLogBuffer.length}`);
-        } else {
-            console.log(`GPS position received (display only): lat=${lat.toFixed(5)}, lng=${lng.toFixed(5)}, speed=${speed.toFixed(1)}`);
-        }
-
-        window.prevLatLng = currentLatLng;
-        window.prevSpeed = speed;
-        window.prevTime = now;
-
-    }, (error) => {
-        console.error('GPS position error:', error);
-        console.error('Error code:', error.code);
-        console.error('Error message:', error.message);
-        switch(error.code) {
-            case error.PERMISSION_DENIED:
-                console.error("GPS permission denied by user");
-                break;
-            case error.POSITION_UNAVAILABLE:
-                console.error("GPS position unavailable");
-                break;
-            case error.TIMEOUT:
-                console.error("GPS position timeout");
-                break;
-            default:
-                console.error("Unknown GPS error");
-                break;
-        }
-    }, { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 });
+  }, (error) => {
+    console.error('GPS position error:', error);
+  }, { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 });
 }
 
 export function calculateDistance(path) {

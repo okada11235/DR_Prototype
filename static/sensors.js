@@ -370,9 +370,9 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now) {
   }
 */
   // ===============================
-  // 🚗 停止直前ブレーキ評価ロジック（安定・上書き防止版）
+  // 🚗 停止直前ブレーキ評価ロジック（閾値調整版）
   // ===============================
-  if (!drivingState.brakeEvaluated && speed <= 12) { // 少し余裕をもたせる
+  if (!drivingState.brakeEvaluated && speed <= 12) {
     const windowMs = 3000; // 直前3秒を分析
     const recentSpeeds = speedHistory.filter(s => now - s.t <= windowMs);
     const recentGs = window.gLogBuffer.filter(g => now - g.timestamp <= windowMs);
@@ -387,31 +387,50 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now) {
       const avgG = recentGs.reduce((sum, g) => sum + g.g_z, 0) / recentGs.length;
       const maxAbsG = Math.max(...recentGs.map(g => Math.abs(g.g_z)));
 
-      let type = null;
+      // 🚦 閾値を緩和（急ブレーキ判定が厳しすぎないように）
+      let suddenBrakeThreshold = 0.40;  // 元0.30 → 緩めた
+      let decelThreshold = 7.5;         // 元6.0 → 緩めた
 
-      // ✅ 閾値は少しマイルドにして誤検知を防止
-      if (decelRate > 6.0 || maxAbsG >= 0.30) {
+      // 低速時（20km/h以下）はさらに緩める
+      if (speed < 20) {
+        suddenBrakeThreshold = 0.45;
+        decelThreshold = 9.0;
+      }
+
+      let type = null;
+      if (decelRate > decelThreshold || maxAbsG >= suddenBrakeThreshold) {
         type = 'sudden_brake'; // 急ブレーキ
-      } else if (decelRate > 2.0 || Math.abs(avgG) >= 0.15) {
-        type = 'smooth_brake'; // 良いブレーキ
+      } else if (decelRate > 2.5 || Math.abs(avgG) >= 0.12) {
+        type = 'smooth_brake'; // 良いブレーキ（やや緩く）
       }
 
       if (type) {
-        // ✅ ほかのイベント（加速や旋回）で上書きされないように「個別発火」
+        // ✅ GPS位置が未取得ならスキップ
+        let gps = window.lastKnownPosition;
+        if (!gps || !gps.latitude || !gps.longitude) {
+          // 直近のgpsLogBufferから拾う
+          if (window.gpsLogBuffer.length > 0) {
+            const last = window.gpsLogBuffer[window.gpsLogBuffer.length - 1];
+            gps = { latitude: last.latitude, longitude: last.longitude };
+            console.warn("📍 lastKnownPositionが未定義のためgpsLogBufferから補完:", gps);
+          } else {
+            console.warn("⚠️ 有効なGPS位置がないため、ブレーキイベントをスキップしました。");
+            return;
+          }
+        }
+
         if (now - lastEventTime > COOLDOWN_MS) {
-          console.log(`🚗 停止直前ブレーキ判定 → ${type} (Δv/s=${decelRate.toFixed(2)} km/h/s, avgG=${avgG.toFixed(2)})`);
+          console.log(`🚗 停止直前ブレーキ判定 → ${type} (decelRate=${decelRate.toFixed(2)}, maxG=${maxAbsG.toFixed(2)})`);
           playRandomAudio(type);
 
-          // ✅ Firestore送信バッファに即保存（GPS + G + 平均G）
-          const lastGps = window.lastKnownPosition || { latitude: 0, longitude: 0 };
           const gxs = window.latestGX ?? 0;
           const gys = window.latestGY ?? 0;
           const gzs = window.latestGZ ?? 0;
 
           const logData = {
             timestamp: now,
-            latitude: lastGps.latitude,
-            longitude: lastGps.longitude,
+            latitude: gps.latitude,
+            longitude: gps.longitude,
             g_x: gxs,
             g_y: gys,
             g_z: gzs,
@@ -419,54 +438,23 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now) {
             event: type
           };
 
-          // 🔹 各バッファに追加（sessions.pyのバルク保存で送られる）
-          if (!window.gLogBuffer) window.gLogBuffer = [];
-          if (!window.avgGLogBuffer) window.avgGLogBuffer = [];
-          if (!window.gpsLogBuffer) window.gpsLogBuffer = [];
-
+          // バッファ追加
           window.gLogBuffer.push(logData);
           window.avgGLogBuffer.push(logData);
           window.gpsLogBuffer.push(logData);
 
-          console.log("✅ Firestoreバッファに即保存:", type, logData);
-
-          lastEventTime = now; // クールダウン更新
+          console.log("✅ Firestoreバッファに保存:", type, logData);
+          lastEventTime = now;
         }
 
-        drivingState.brakeEvaluated = true; // 一度だけ判定
+        drivingState.brakeEvaluated = true;
       }
     }
   }
 
   // ✅ 再発動許可（走り出したら解除）
-  if (speed > 15) {
-    drivingState.brakeEvaluated = false;
-  }
-
-  // 再発動を許可（走り出したらリセット）
   if (speed > 15) drivingState.brakeEvaluated = false;
 
-  
-  // 直進判定
-  if (currentCondition !== 'straight') drivingState.straightStart = 0;
-  if (drivingState.straightStart > 0) {
-      duration = now - drivingState.straightStart;
-      if (duration >= 5000) { // 5秒継続
-          // 直進は褒めイベントのみ
-          type = 'stable_drive';
-          drivingState.straightStart = 0;
-
-          // 🎵 直進イベントの再生頻度を5回に1回に制限
-          window.straightCounter = (window.straightCounter || 0) + 1;
-          if (window.straightCounter % 5 !== 0) {
-              // 5回に1回以外は音を鳴らさない
-              console.log(`🚗 stable_drive 検知（${window.straightCounter}回目）→ 音声スキップ`);
-              type = null; // 音声なしで終了
-          } else {
-              console.log(`🎵 stable_drive 検知（${window.straightCounter}回目）→ 音声再生`);
-          }
-      }
-  }
 
   // 3. イベントの発火とクールダウン
   if (!type) return null;
