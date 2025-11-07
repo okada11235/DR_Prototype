@@ -331,7 +331,7 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now) {
              window.sharpTurns++;
           } else {
              type = 'smooth_turn';
-             window.sharpTurns = Math.max(0, window.sharpTurns - 1); // 褒めはスコアを減らす（スコアシステムに合わせて）
+             window.sharpTurns = Math.max(0, window.sharpTurns - 1); 
           }
           drivingState.turnStart = 0;
       }

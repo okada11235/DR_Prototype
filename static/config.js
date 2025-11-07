@@ -63,15 +63,12 @@ export const audioFiles = {
     // 🚘 褒め系
     smooth_turn: [
         "/static/audio/smooth_turn_1.wav",
-        "/static/audio/angular_velocity_low_2.wav"
     ],
     smooth_accel: [
         "/static/audio/smooth_accel_1.wav",
-        "/static/audio/acceleration_good_2.wav"
     ],
     smooth_brake: [
         "/static/audio/good_brake_1.wav",
-        "/static/audio/good_brake_2.wav"
     ],
     stable_drive: [
         "/static/audio/stable_drive_1.wav",
@@ -86,14 +83,12 @@ export const audioFiles = {
     ],
     sudden_accel: [
         "/static/audio/sudden_acceleration_1.wav",
-        "/static/audio/sudden_acceleration_2.wav"
     ],
     sudden_brake: [
         "/static/audio/sudden_brake_1.wav",
     ],
     unstable_drive: [
         "/static/audio/unstable_drive_1.wav",
-        "/static/audio/speed_jerkiness_2.wav"
     ]
 };
 
