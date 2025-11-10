@@ -816,3 +816,9 @@ def feedback_detail_completed(session_id, pin_id):
         feedback=feedback,
         session_id=session_id
     )
+
+# === フィードバックページ ===
+@views_bp.route("/feedback", endpoint="feedback")
+@login_required
+def feedback_page():
+    return render_template("user_feedback.html")
