@@ -509,7 +509,7 @@ window.playRandomAudio = playRandomAudio;
 const COOLDOWN_TIME = 8000;
 const lastPlayedTime = {};
 // 音声再生関数
-function playRandomAudio(type) {
+function playAudio(type) {
   const now = Date.now();
   // 🔹 クールタイム判定：同タイプを短時間で連続再生しない
   if (lastPlayedTime[type] && now - lastPlayedTime[type] < COOLDOWN_TIME) {
