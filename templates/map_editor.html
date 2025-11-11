@@ -70,6 +70,13 @@
   <!-- ✅ 地図エリアのみ -->
   <div id="map"></div>
 
+  <!-- ✅ クリック挙動制御＆現在地ボタン -->
+  <div id="mapControls" style="position:absolute; left:10px; bottom:60px; z-index:5; display:flex; flex-direction:column; gap:6px;">
+    <button id="gotoCurrentBtn" class="btn btn-sm btn-secondary">
+      現在地へ 📍
+    </button>
+  </div>
+
   <!-- ✅ 下部ナビ（home.htmlと同じ） -->
   <nav class="navbar navbar-expand custom-nav-bar fixed-bottom">
     <div class="container-fluid justify-content-center">
@@ -98,6 +105,49 @@
     const CURRENT_USER_ID = "{{ current_user.id }}";
   </script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    // 現在地へ移動する共通関数
+    window.recenterToCurrent = function(showMarker=false) {
+      if (!navigator.geolocation) return alert('位置情報が利用できません');
+      navigator.geolocation.getCurrentPosition(pos => {
+        const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        if (window.map) {
+          window.map.panTo(loc);
+          if (showMarker) {
+            new google.maps.Marker({
+              position: loc,
+              map: window.map,
+              icon: {
+                path: google.maps.SymbolPath.CIRCLE,
+                scale: 8,
+                fillColor: '#00aaff',
+                fillOpacity: 0.9,
+                strokeColor: '#fff',
+                strokeWeight: 2,
+              }
+            });
+          }
+        }
+      }, err => console.warn('geolocation error', err));
+    };
+
+    // ボタン初期化
+    document.addEventListener('DOMContentLoaded', () => {
+      const gotoBtn = document.getElementById('gotoCurrentBtn');
+      if (!gotoBtn) return;
+
+      gotoBtn.addEventListener('click', () => {
+        recenterToCurrent(false);
+        // パンだけでは分かりづらい場合があるのでズームを適度に調整
+        if (window.map) {
+          const currentZoom = window.map.getZoom();
+          if (!currentZoom || currentZoom < 16) {
+            window.map.setZoom(17);
+          }
+        }
+      });
+    });
+  </script>
   <script src="{{ url_for('static', filename='maps_pins.js') }}"></script>
   <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDU9txYivjPCIe66l6bPYsPifQKcQxjnrA&callback=initMap" async defer></script>
 </body>

@@ -443,6 +443,11 @@ def get_pins_all():
             d = doc.to_dict()
             d["id"] = doc.id
             uid = d.get("user_id", None)
+            # 既定値補完（後方互換）
+            if "priority_level" not in d:
+                d["priority_level"] = 1
+            if "speak_time_windows" not in d:
+                d["speak_time_windows"] = []
 
             # 🔹 user_id → user_name をキャッシュ経由で取得
             if uid:
@@ -489,10 +494,51 @@ def update_pin():
             update_data["label"] = data["label"]
         if "speak_enabled" in data:
             update_data["speak_enabled"] = bool(data["speak_enabled"])
-        
+        # --- priority_level (1..3) ---
+        if "priority_level" in data:
+            try:
+                lvl = int(data.get("priority_level"))
+                if lvl not in (1,2,3):
+                    return jsonify({"error": "priority_level must be 1,2,3"}), 400
+                update_data["priority_level"] = lvl
+            except (TypeError, ValueError):
+                return jsonify({"error": "priority_level invalid"}), 400
+        # --- speak_time_windows: list[{start:"HH:mm", end:"HH:mm", days?:[0-6]}] ---
+        if "speak_time_windows" in data:
+            stw = data.get("speak_time_windows") or []
+            if not isinstance(stw, list):
+                return jsonify({"error": "speak_time_windows must be list"}), 400
+            validated = []
+            for w in stw:
+                if not isinstance(w, dict):
+                    return jsonify({"error": "Each time window must be object"}), 400
+                start = w.get("start"); end = w.get("end")
+                if not (isinstance(start, str) and isinstance(end, str) and len(start)==5 and len(end)==5):
+                    return jsonify({"error": "time window start/end must be HH:mm"}), 400
+                # basic HH:mm format check
+                try:
+                    sh, sm = map(int, start.split(":")); eh, em = map(int, end.split(":"))
+                    if not (0<=sh<24 and 0<=sm<60 and 0<=eh<24 and 0<=em<60):
+                        raise ValueError
+                except Exception:
+                    return jsonify({"error": "Invalid HH:mm in time window"}), 400
+                days = w.get("days")
+                if days is not None:
+                    if not (isinstance(days, list) and all(isinstance(d, int) and 0<=d<=6 for d in days)):
+                        return jsonify({"error": "days must be [0-6]"}), 400
+                validated.append({k:v for k,v in (("start",start),("end",end),("days",days)) if v is not None})
+            update_data["speak_time_windows"] = validated
+        # (optional) speak_radius_m
+        if "speak_radius_m" in data:
+            try:
+                radius = int(data.get("speak_radius_m"))
+                if not (10 <= radius <= 300):
+                    return jsonify({"error": "speak_radius_m must be 10-300"}), 400
+                update_data["speak_radius_m"] = radius
+            except (TypeError, ValueError):
+                return jsonify({"error": "speak_radius_m invalid"}), 400
         # ピンが編集されたことを記録
         update_data["edited"] = True
-
         db.collection("pins").document(pin_id).update(update_data)
         return jsonify({"status": "success"})
     except Exception as e:
@@ -556,6 +602,8 @@ def add_voice_recording_pin():
             "created_at": datetime.now(JST),
             "source": source,
             "edited": False,  # 初期状態は未編集
+            "priority_level": int(data.get("priority_level", 1)),
+            "speak_time_windows": data.get("speak_time_windows", []),
         }
 
         # ✅ pinsコレクション直下に保存
@@ -589,6 +637,8 @@ def add_manual_pin():
             "speak_enabled": True,
             "created_at": datetime.now(JST),
             "source": "manual",
+            "priority_level": int(data.get("priority_level", 1)),
+            "speak_time_windows": data.get("speak_time_windows", []),
         }
 
         doc_ref = db.collection("pins").add(pin_data)[1]
@@ -682,7 +732,9 @@ def get_all_pins():
                 "lat": d.get("lat"),
                 "lng": d.get("lng"),
                 "label": d.get("label", ""),
-                "speak_enabled": d.get("speak_enabled", True)
+                "speak_enabled": d.get("speak_enabled", True),
+                "priority_level": d.get("priority_level", 1),
+                "speak_time_windows": d.get("speak_time_windows", []),
             })
         return jsonify({"status": "success", "pins": pins})
     except Exception as e:
