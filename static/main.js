@@ -30,6 +30,8 @@ function initActiveRecording() {
     if (savedSessionId && savedStartTime) {
         window.sessionId = savedSessionId;
         window.startTime = parseInt(savedStartTime);
+            // initialize pause accumulator
+            window.pauseAccumulatedMs = 0;
         console.log('Session ID set to:', window.sessionId);
         console.log('GPS buffer size:', window.gpsLogBuffer.length);
         console.log('G buffer size:', window.gLogBuffer.length);

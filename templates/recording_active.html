@@ -84,11 +84,122 @@ tailwind.config = {
     🎤 音声OFF
   </button>
 
+
+  <!-- 一時停止ボタン -->
+  <button id="pauseBtn"
+    class="bg-yellow-500 text-white text-xl font-bold py-3 px-10 rounded-xl shadow-lg hover:bg-yellow-400 transition mb-4">
+    ⏸ 一時停止
+  </button>
+  <!-- 一時停止中の表示（オーバーレイ内に再開ボタンを配置し、オーバーレイがクリックを妨げないようにする） -->
+  <div id="pausedOverlay" style="display:none;" class="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
+    <div class="bg-white rounded-xl p-8 shadow-lg text-center">
+      <div class="text-2xl font-bold text-primary-green mb-4">記録は一時停止中です</div>
+      <button id="resumeBtn" class="bg-primary-green text-white text-lg font-bold py-2 px-6 rounded-xl shadow-lg hover:bg-cyan-400 transition">
+        ▶️ 再開
+      </button>
+    </div>
+  </div>
+
   <!-- 終了ボタン -->
   <button id="end-button"
           class="bg-primary-green text-white text-xl font-bold py-3 px-10 rounded-xl shadow-lg hover:bg-cyan-400 transition">
     記録を終了する
   </button>
+  <!-- 一時停止・再開機能のJS -->
+  <script>
+    let isPaused = false;
+    function pauseRecording() {
+      if (isPaused) return;
+      isPaused = true;
+      // reflect globally for timer logic
+      try { window.isPaused = true; } catch (e) {}
+      // pause timer: record pause start
+      try {
+        const now = Date.now();
+        // set pauseStart to same reference time used to compute frozen to avoid timing drift
+        window.pauseStart = now;
+        try {
+          const pausedMsSoFar = window.pauseAccumulatedMs || 0;
+          const frozen = Math.max(0, now - (window.startTime || now) - pausedMsSoFar);
+          // freeze to integer seconds (floor)
+          window._frozenTimerMs = Math.floor(frozen/1000)*1000;
+          console.log('⏸ pause at ms:', now, ' frozenMs:', window._frozenTimerMs, ' pausedMsSoFar:', pausedMsSoFar);
+        } catch (e) { window._frozenTimerMs = null; }
+        if (window.stopTimer) window.stopTimer();
+        // immediately update DOM to frozen value
+        try { if (window.updateTimerDisplay) window.updateTimerDisplay(); } catch (e) {}
+      } catch (e) {}
+      // 停止対象: モーション検出と録音ボタンを無効化
+      if (window.stopMotionDetection) window.stopMotionDetection();
+      // 音声認識は停止しない（再開コマンドを受け取るため）
+      // if (window.voiceRecognition?.stop) window.voiceRecognition.stop();
+      document.getElementById('pausedOverlay').style.display = '';
+      document.getElementById('pauseBtn').style.display = 'none';
+      // 録音ボタン等も必要に応じて無効化
+      const recordBtn = document.getElementById('recordBtn');
+      if (recordBtn) recordBtn.disabled = true;
+    }
+    function resumeRecording() {
+      if (!isPaused) return;
+      isPaused = false;
+      try { window.isPaused = false; } catch (e) {}
+      // resume timer: accumulate paused duration and restart
+      try {
+        if (window.pauseStart) {
+          window.pauseAccumulatedMs = (window.pauseAccumulatedMs || 0) + (Date.now() - window.pauseStart);
+          window.pauseStart = null;
+        }
+        if (window.startTimer) window.startTimer();
+        // clear frozen display value and force immediate update to avoid short freeze
+        try { window._frozenTimerMs = null; } catch (e) {}
+        try { if (window.updateTimerDisplay) window.updateTimerDisplay(); } catch (e) {}
+      } catch (e) {}
+      if (window.startMotionDetection) window.startMotionDetection();
+      // 音声認識は既に動いているか、必要なら再起動
+      try { if (window.voiceRecognition?.start) window.voiceRecognition.start(); } catch(e){}
+      document.getElementById('pausedOverlay').style.display = 'none';
+      document.getElementById('pauseBtn').style.display = '';
+      const recordBtn = document.getElementById('recordBtn');
+      if (recordBtn) recordBtn.disabled = false;
+      // 自動一時停止フラグをリセット
+      try { window.autoPausedByVisibility = false; } catch(e){}
+    }
+    document.addEventListener('DOMContentLoaded', function() {
+      const pauseBtn = document.getElementById('pauseBtn');
+      const resumeBtn = document.getElementById('resumeBtn');
+      if (pauseBtn) pauseBtn.onclick = pauseRecording;
+      if (resumeBtn) resumeBtn.onclick = resumeRecording;
+    });
+    // 音声認識コマンド連携
+    window._origVoiceOnResult = window.voiceRecognition?.onresult;
+    function voicePauseResumeHandler(event) {
+      try {
+        const transcript = event.results[event.results.length - 1][0].transcript.trim();
+        if (transcript.includes('停止')) pauseRecording();
+        if (transcript.includes('再開')) resumeRecording();
+      } catch(e) {}
+      if (typeof window._origVoiceOnResult === 'function') window._origVoiceOnResult(event);
+    }
+    // If voiceRecognition already exists, attach handler; otherwise attach when DOM is ready
+    function attachVoiceHandlerIfAvailable() {
+      try {
+        if (window.voiceRecognition) {
+          window._origVoiceOnResult = window.voiceRecognition.onresult;
+          window.voiceRecognition.onresult = voicePauseResumeHandler;
+          console.log('🔊 voicePauseResumeHandler attached');
+          return true;
+        }
+      } catch (e) { console.warn(e); }
+      return false;
+    }
+    if (!attachVoiceHandlerIfAvailable()) {
+      document.addEventListener('DOMContentLoaded', () => {
+        attachVoiceHandlerIfAvailable();
+      });
+    }
+
+    
+  </script>
 
   <!-- Firebase -->
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
@@ -282,6 +393,114 @@ tailwind.config = {
           }
         });
       }
+    })();
+  </script>
+  <!-- 自動一時停止（visibility）とバッファ永続化 -->
+  <script>
+    (function(){
+      // バッファ保存キー
+      const G_BUFFER_KEY = 'drivebuddy_gLogBuffer_v1';
+      const AVG_G_BUFFER_KEY = 'drivebuddy_avgGLogBuffer_v1';
+      const SAVE_INTERVAL_MS = 5000;
+      let saveIntervalId = null;
+      let autoPausedByVisibility = false;
+
+      // 安全にバッファを取得/初期化
+      if (!window.gLogBuffer) window.gLogBuffer = [];
+      if (!window.avgGLogBuffer) window.avgGLogBuffer = [];
+
+      // JSONセーフ化（循環参照対策はここでは不要）
+      function safeStringify(obj, maxLen = 200000) {
+        try {
+          const s = JSON.stringify(obj);
+          return s.length > maxLen ? s.slice(s.length - maxLen) : s; // keep tail
+        } catch (e) {
+          try { return JSON.stringify([]); } catch (_) { return '[]'; }
+        }
+      }
+
+      function persistBuffers() {
+        try {
+          // 保存する量を制限（直近N件）
+          const tail = (arr, n) => arr.slice(Math.max(0, arr.length - n));
+          localStorage.setItem(G_BUFFER_KEY, safeStringify(tail(window.gLogBuffer || [], 2000)));
+          localStorage.setItem(AVG_G_BUFFER_KEY, safeStringify(tail(window.avgGLogBuffer || [], 2000)));
+          // console.log('🔐 buffers persisted', (window.gLogBuffer||[]).length, (window.avgGLogBuffer||[]).length);
+        } catch (e) {
+          console.warn('⚠️ persistBuffers failed', e);
+        }
+      }
+
+      function restoreBuffers() {
+        try {
+          const gJson = localStorage.getItem(G_BUFFER_KEY);
+          const avgJson = localStorage.getItem(AVG_G_BUFFER_KEY);
+          if (gJson) {
+            const parsed = JSON.parse(gJson);
+            if (Array.isArray(parsed) && parsed.length) {
+              window.gLogBuffer = (window.gLogBuffer || []).concat(parsed);
+              console.log('♻️ restored gLogBuffer items:', parsed.length);
+            }
+          }
+          if (avgJson) {
+            const parsed2 = JSON.parse(avgJson);
+            if (Array.isArray(parsed2) && parsed2.length) {
+              window.avgGLogBuffer = (window.avgGLogBuffer || []).concat(parsed2);
+              console.log('♻️ restored avgGLogBuffer items:', parsed2.length);
+            }
+          }
+        } catch (e) {
+          console.warn('⚠️ restoreBuffers failed', e);
+        }
+      }
+
+      // visibilitychange ハンドラ
+      function handleVisibilityChange() {
+        if (document.hidden) {
+          // 自動で一時停止する
+          try {
+            if (!isPaused) {
+              autoPausedByVisibility = true;
+              pauseRecording();
+              console.log('⏸ auto pause due to visibilityhidden');
+            }
+          } catch (e) { console.warn(e); }
+          // 即座にバッファを保存
+          persistBuffers();
+        } else {
+          // ページが再表示されたら、復帰はユーザーの操作に任せる
+          if (autoPausedByVisibility) {
+            // UI: resume ボタンを目立たせる
+            try {
+              document.getElementById('resumeBtn').style.display = '';
+              document.getElementById('pauseBtn').style.display = 'none';
+              document.getElementById('pausedOverlay').style.display = '';
+            } catch (e) {}
+            console.log('▶️ visible again - kept paused (autoPausedByVisibility=true)');
+          }
+          // 復元を試みる
+          restoreBuffers();
+        }
+      }
+
+      // ページが閉じられる/移動する前にバッファ保存
+      function handlePageHide() { persistBuffers(); }
+
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      window.addEventListener('pagehide', handlePageHide);
+      window.addEventListener('beforeunload', handlePageHide);
+
+      // 定期保存の開始
+      saveIntervalId = setInterval(persistBuffers, SAVE_INTERVAL_MS);
+
+      // restore on load
+      document.addEventListener('DOMContentLoaded', () => {
+        try { restoreBuffers(); } catch (e) {}
+      });
+
+      // expose for debugging
+      window._drivebuddy_persistBuffers = persistBuffers;
+      window._drivebuddy_restoreBuffers = restoreBuffers;
     })();
   </script>
   <!-- AudioContextのアンロック処理（これは残す） -->

@@ -25,20 +25,55 @@ export function calculateStability(accels, brakes, turns, distance) {
 
 // タイマー処理
 export function startTimer() {
-    window.timerInterval = setInterval(() => {
-        const elapsed = Date.now() - window.startTime;
+    // 防止的に既存の interval をクリア（多重起動防止）
+    try { clearInterval(window.timerInterval); } catch (e) {}
+
+    // 更新処理を即時実行して表示ラグを防ぐ
+    function update() {
+        // If a frozen timer value was set (when paused), use that so display doesn't advance
+        let elapsed;
+        if (window.isPaused && typeof window._frozenTimerMs === 'number') {
+            elapsed = window._frozenTimerMs;
+        } else {
+            const pausedMs = window.pauseAccumulatedMs || 0;
+            elapsed = Math.max(0, Date.now() - (window.startTime || Date.now()) - pausedMs);
+        }
         const mins = Math.floor(elapsed / 60000).toString().padStart(2, '0');
         const secs = Math.floor((elapsed % 60000) / 1000).toString().padStart(2, '0');
         const timerElement = document.getElementById('timer');
         if (timerElement) {
             timerElement.textContent = `${mins}:${secs}`;
         }
-    }, 1000);
+    }
+
+    // expose for other scripts to force update
+    window.updateTimerDisplay = update;
+
+    // run immediately then set interval
+    update();
+    window.timerInterval = setInterval(update, 1000);
 }
 
 export function stopTimer() {
     clearInterval(window.timerInterval);
 }
+
+// 小さなユーティリティ：即時タイマー表示更新（外部から呼べるよう window にも登録）
+export function updateTimerDisplay() {
+    if (typeof window.updateTimerDisplay === 'function') return window.updateTimerDisplay();
+    // フォールバック: 再計算してDOM更新
+    try {
+        const pausedMs = window.pauseAccumulatedMs || 0;
+        const elapsed = Math.max(0, Date.now() - (window.startTime || Date.now()) - pausedMs);
+        const mins = Math.floor(elapsed / 60000).toString().padStart(2, '0');
+        const secs = Math.floor((elapsed % 60000) / 1000).toString().padStart(2, '0');
+        const timerElement = document.getElementById('timer');
+        if (timerElement) timerElement.textContent = `${mins}:${secs}`;
+    } catch (e) {}
+}
+
+// 互換性: グローバルにも置いておく
+try { window.updateTimerDisplay = window.updateTimerDisplay || updateTimerDisplay; } catch (e) {}
 
 
 // === スコア管理機能 =====================================================
