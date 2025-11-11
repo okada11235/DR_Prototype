@@ -60,14 +60,6 @@ export function unlockAudio() {
   }
 }
 
-// ページ読込時にチェックして自動アンロック
-export function autoUnlockAudio() {
-  if (localStorage.getItem('audioUnlocked') === 'true') {
-    // FIX: autoUnlockでもunlockAudioを呼んでContext作成とresumeを試みる
-    unlockAudio();
-  }
-}
-
 export function relockAudio() {
   try {
     if (window.audioContext) {
@@ -129,53 +121,12 @@ function keepAudioAlive() {
   }
 }
 
-// iOS対策：より頻繁な維持間隔（iOS Safari対応）
-const keepAliveInterval = window.isIOSDevice ? 5000 : 30000; // iOS: 5秒, その他: 30秒
-setInterval(keepAudioAlive, keepAliveInterval);
-
-// === 強化されたユーザー操作イベント検出（Android対応） =================
-const userGestureEvents = ["touchstart", "touchend", "click", "keydown", "mousedown"];
-let gestureDetected = false;
-
-function handleUserGesture(event) {
-    if (!gestureDetected) {
-        gestureDetected = true;
-        console.log(`🤚 User gesture detected: ${event.type}`);
-        
-        const unlockResult = unlockAudio();
-        if (unlockResult) {
-            
-            setTimeout(() => {
-                if (/Android/.test(navigator.userAgent)) {
-                    testQuietAudioPlayback();
-                }
-            }, 500);
-            
-            // 一度成功したらイベントリスナーを削除（パフォーマンス向上）
-            userGestureEvents.forEach(eventType => {
-                document.removeEventListener(eventType, handleUserGesture);
-            });
-            console.log('🔓 Audio unlock listeners removed after success');
-        } else {
-             gestureDetected = false; // アンロックに失敗したらリトライ
-        }
-    }
-}
-
 // Android対応：静かな音声テスト再生
 function testQuietAudioPlayback() {
     // アンロック用のsilence.wav再生なので、playRandomAudio経由で実行
     console.log('🔇 Playing silence.wav for unlock (won\'t block other audio)');
     playRandomAudio('silence', true); // isUnlockAudio = true
 }
-
-// 複数のイベントタイプでユーザージェスチャーを検出
-userGestureEvents.forEach(eventType => {
-    document.addEventListener(eventType, handleUserGesture, { 
-        once: false, 
-        passive: true 
-    });
-});
 
 // ページ可視性変更時の対策（iOS Safari のタブ切り替え対応）
 document.addEventListener('visibilitychange', () => {
@@ -478,14 +429,6 @@ function handleAudioPlayFailure(category, error, isUnlockAudio = false) {
     if (window.isIOSDevice && error.name === 'NotAllowedError') {
         console.warn('🚫 iOS audio playback not allowed - user gesture may be required');
         window.audioUnlocked = false; // アンロック状態をリセット
-        
-        // 次回ユーザージェスチャーでアンロック再試行
-        userGestureEvents.forEach(eventType => {
-            document.addEventListener(eventType, handleUserGesture, { 
-                once: false, 
-                passive: true 
-            });
-        });
     } 
     // Android特有のエラー判定と対策
     else if (/Android/.test(navigator.userAgent)) {
@@ -559,6 +502,4 @@ window.showAudioStatus = function() {
 };
 
 // === audio.js の末尾に追加 ===
-window.unlockAudio = unlockAudio;
 window.playRandomAudio = playRandomAudio;
-window.relockAudio = relockAudio;

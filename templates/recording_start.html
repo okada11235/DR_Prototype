@@ -116,43 +116,6 @@
     .custom-nav-item:not(:last-child){border-right:1px solid #5a7d8d}
     .active-glow .custom-nav-link.active{color:rgb(0, 0, 0);background:rgba(255,255,255,.05)}
 
-    /* === iOS 音声アンロックバナー === */
-    #ios-audio-banner {
-      background-color: #fff8e1;
-      border: 2px solid #ffcc80;
-      border-radius: 10px;
-      padding: 12px;
-      width: 85%;
-      margin: 0 auto 20px auto;
-      text-align: center;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-      color: #6d4c41;
-      font-size: 0.95em;
-      line-height: 1.6em;
-    }
-
-    #ios-audio-banner p {
-      margin-bottom: 10px;
-    }
-
-    #ios-audio-unlock-btn {
-      background-color: #00bcd4;
-      color: #fff;
-      font-weight: bold;
-      border: none;
-      border-radius: 8px;
-      padding: 10px 25px;
-      font-size: 1em;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      box-shadow: 2px 4px 6px rgba(0, 0, 0, 0.15);
-    }
-
-    #ios-audio-unlock-btn:hover {
-      background-color: #0097a7;
-      transform: translateY(-2px);
-    }
-
     #priority-map {
       width: 100%;
       height: 400px !important;
@@ -164,40 +127,10 @@
 <body>
 
   <main class="main">
-  <!-- ✅ iOS専用バナー -->
-  <div id="ios-audio-banner" style="
-    display:none;
-    position:fixed;
-    bottom:80px;
-    left:0;
-    width:100%;
-    background:#007aff;
-    color:#fff;
-    text-align:center;
-    padding:12px;
-    font-size:1rem;
-    z-index:9999;
-    transition:opacity 0.4s ease;
-  ">
-    🔈 音声機能を有効にするにはタップしてください
-    <button id="ios-audio-enable" style="
-      background:#fff;
-      color:#007aff;
-      border:none;
-      border-radius:6px;
-      padding:6px 12px;
-      margin-left:10px;
-      font-weight:bold;
-      cursor:pointer;
-    ">
-      有効にする
-    </button>
-  </div>
-
     <div style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap;">
       <button id="start-button" class="start-button">運転開始</button>
       <button id="route-setup-button" class="start-button" style="background-color:#ffd54f;">ルート設定</button>
-  <button id="route-delete-button" class="start-button" style="background-color:#ef5350; color:#fff; font-size:1.1em; padding:10px 28px;">ルート削除</button>
+      <button id="route-delete-button" class="start-button" style="background-color:#ef5350; color:#fff; font-size:1.1em; padding:10px 28px;">ルート削除</button>
     </div>
 
     <div class="message-container">
@@ -274,49 +207,6 @@
   // 他ページでも使えるように保存
   try { localStorage.setItem('FIREBASE_CONFIG_JSON', JSON.stringify(firebaseConfig)); } catch(e) {}
     const db = firebase.firestore();
-
-    document.addEventListener('DOMContentLoaded', () => {
-      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-      const banner = document.getElementById('ios-audio-banner');
-      const enableBtn = document.getElementById('ios-audio-enable');
-
-      if (isIOS && banner && enableBtn) {
-        banner.style.display = 'block';
-
-        enableBtn.addEventListener('click', async () => {
-          try {
-            // AudioContextを作成して即時解放
-            if (!window.audioContext) {
-              window.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            }
-            const ctx = window.audioContext;
-            if (ctx.state === 'suspended') await ctx.resume();
-
-            // 無音バッファで再生
-            const buffer = ctx.createBuffer(1, 1, 22050);
-            const source = ctx.createBufferSource();
-            source.buffer = buffer;
-            source.connect(ctx.destination);
-            source.start(0);
-
-            // 保存して今後も自動アンロック
-            localStorage.setItem('audioUnlocked', 'true');
-            window.audioUnlocked = true;
-
-            // ✅ 成功アニメーション
-            banner.innerHTML = '✅ 音声機能が有効になりました';
-            banner.style.background = '#34c759';
-            setTimeout(() => { banner.style.opacity = '0'; }, 800);
-            setTimeout(() => { banner.style.display = 'none'; }, 1600);
-
-            console.log('🔓 Audio unlocked successfully on iOS');
-          } catch (err) {
-            console.error('❌ Audio unlock failed:', err);
-            alert('音声の有効化に失敗しました。もう一度お試しください。');
-          }
-        });
-      }
-    });
   </script>
   <!-- ✅ ルート記録（優先ルート用、助言なし） -->
   <script src="{{ url_for('static', filename='route_recorder.js') }}"></script>

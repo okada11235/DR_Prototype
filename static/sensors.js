@@ -432,7 +432,28 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now) {
 
         if (now - lastEventTime > COOLDOWN_MS) {
           console.log(`🚗 停止直前ブレーキ判定 → ${type} (decelRate=${decelRate.toFixed(2)}, maxG=${maxAbsG.toFixed(2)})`);
-          playRandomAudio(type);
+          // ✅ ここに iOSフォールバックブロックを追加
+          if (window.isIOS && window.playEventAudioSegment) {
+            const segments = {
+              "good_brake": [0, 2.592],
+              "sharp_turn": [2.593, 2.869],
+              "smooth_accel": [5.463, 2.635],
+              "smooth_turn": [8.099, 2.72],
+              "stable_drive": [10.82, 2.197],
+              "sudden_accel": [13.017, 2.464],
+              "sudden_brake": [15.482, 1.579],
+              "unstable_drive": [17.062, 1.938]
+            };
+            const seg = segments[type];
+            if (seg) {
+              console.log("🎵 iOS fallback playback:", type, seg);
+              window.playEventAudioSegment(seg[0], seg[1]);
+            } else {
+              console.warn("⚠️ 未定義イベント:", type);
+            }
+          } else {
+            playRandomAudio(type); // ← Android/PCは従来通り
+          }
 
           const gxs = window.latestGX ?? 0;
           const gys = window.latestGY ?? 0;
@@ -481,8 +502,33 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now) {
 
   // === 音声再生（重複防止） ===
   if (now - lastAudioTime > AUDIO_COOLDOWN_MS) {
-    playRandomAudio(type);
-    lastAudioTime = now;
+    // 🚫 ブレーキ系イベントは、すでに上で再生済みなのでスキップ
+    if (!type.includes("brake")) {
+      if (window.isIOS && window.playEventAudioSegment) {
+        const segments = {
+          "good_brake": [0, 2.592],
+          "sharp_turn": [2.593, 2.869],
+          "smooth_accel": [5.463, 2.635],
+          "smooth_turn": [8.099, 2.72],
+          "stable_drive": [10.82, 2.197],
+          "sudden_accel": [13.017, 2.464],
+          "sudden_brake": [15.482, 1.579],
+          "unstable_drive": [17.062, 1.938]
+        };
+        const seg = segments[type];
+        if (seg) {
+          console.log("🎵 iOS fallback playback:", type, seg);
+          window.playEventAudioSegment(seg[0], seg[1]);
+        } else {
+          console.warn("⚠️ 未定義イベント:", type);
+        }
+      } else {
+        playRandomAudio(type);
+      }
+      lastAudioTime = now;
+    } else {
+      console.log("🧠 brake event skipped duplicate audio");
+    }
   }
 
   // ✅ GPSログの末尾にもイベントを同期反映

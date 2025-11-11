@@ -105,6 +105,39 @@ tailwind.config = {
           class="bg-primary-green text-white text-xl font-bold py-3 px-10 rounded-xl shadow-lg hover:bg-cyan-400 transition">
     記録を終了する
   </button>
+
+  <!-- 🟡 iOS専用: 音声アンロック案内 -->
+  <div id="ios-audio-banner-active" 
+       class="hidden fixed bottom-6 left-1/2 transform -translate-x-1/2 w-11/12 max-w-md
+              bg-yellow-50 border-2 border-yellow-300 rounded-xl p-4 text-center text-yellow-800 shadow-lg z-[9999]">
+    🎵 <b>音声を有効化するには画面を一度タップしてください</b><br>
+    （iPhone・iPadをご利用の方のみ）
+  </div>
+
+  <!-- iOSバナーの動作 -->
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const isiOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      if (!isiOS) return;
+
+      const banner = document.getElementById("ios-audio-banner-active");
+      banner.classList.remove("hidden");
+
+      const unlockAudio = () => {
+        if (window.initIOSAudioUnlock) window.initIOSAudioUnlock();
+        banner.innerHTML = "✅ 音声が有効になりました";
+        banner.style.backgroundColor = "#c8e6c9";
+        banner.style.borderColor = "#81c784";
+        setTimeout(() => banner.remove(), 1800);
+        document.removeEventListener("click", unlockAudio);
+        document.removeEventListener("touchstart", unlockAudio);
+      };
+
+      document.addEventListener("click", unlockAudio, { once: true });
+      document.addEventListener("touchstart", unlockAudio, { once: true });
+    });
+  </script>
+
   <!-- 一時停止・再開機能のJS -->
   <script>
     let isPaused = false;
@@ -337,6 +370,8 @@ tailwind.config = {
   <script src="{{ url_for('static', filename='session.js') }}"></script>
   <script src="{{ url_for('static', filename='pin_utils.js') }}"></script>
   <script src="{{ url_for('static', filename='record_voice_unified.js') }}"></script>
+  <!-- iOS向けフォールバック音声再生 -->
+  <script type="module" src="{{ url_for('static', filename='audio_ios_fallback.js') }}"></script>
   <script>
     // 手動録音ボタン / 手動ピンボタンの配線
     (function(){
@@ -502,11 +537,6 @@ tailwind.config = {
       window._drivebuddy_persistBuffers = persistBuffers;
       window._drivebuddy_restoreBuffers = restoreBuffers;
     })();
-  </script>
-  <!-- AudioContextのアンロック処理（これは残す） -->
-  <script type="module">
-    import { autoUnlockAudio } from "./audio.js";
-    autoUnlockAudio();
   </script>
   <script>
     // 🎤 トグルボタンで音声認識をON/OFF
