@@ -1,6 +1,14 @@
 console.log("=== maps_pins.js (map editor: editable pins) loaded ===");
 
-let map;
+// === Priority colored marker utilities (Google Maps standard pin shape) ===
+function getPriorityIconUrl(level) {
+  const lvl = Number(level || 1);
+  if (lvl === 3) return "http://maps.google.com/mapfiles/ms/icons/red-dot.png";     // 赤
+  if (lvl === 2) return "http://maps.google.com/mapfiles/ms/icons/purple-dot.png";  // 紫
+  return "http://maps.google.com/mapfiles/ms/icons/orange-dot.png";                 // オレンジ(level1)
+}
+
+let map; // 公開用は後で window.map に設定
 
 async function initMap() {
   console.log("✅ initMap called");
@@ -9,26 +17,10 @@ async function initMap() {
     center: { lat: 35.681236, lng: 139.767125 },
     zoom: 15,
   });
+  // 他スクリプトからも参照できるように公開
+  window.map = map;
 
-  // === 現在地中心に移動 ===
-  if (navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition((pos) => {
-      const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-      map.setCenter(loc);
-      new google.maps.Marker({
-        position: loc,
-        map,
-        icon: {
-          path: google.maps.SymbolPath.CIRCLE,
-          scale: 8,
-          fillColor: "#00aaff",
-          fillOpacity: 0.9,
-          strokeColor: "#fff",
-          strokeWeight: 2,
-        },
-      });
-    });
-  }
+  // 初期表示の現在地パンは、ピン読み込み後に行う（fitBoundsの上書きを避けるため）
 
   // === Firestoreから既存ピンを取得 ===
   window.currentMarkers = [];
@@ -39,6 +31,7 @@ async function initMap() {
     const data = await res.json();
 
     if (data.status === "success" && data.pins) {
+      const bounds = new google.maps.LatLngBounds();
       data.pins.forEach((pin) => {
         const isTemporary = !pin.label || pin.label.trim() === "";
         const isVoiceRecording = pin.source === "voice_recording";
@@ -56,15 +49,22 @@ async function initMap() {
           iconUrl = "http://maps.google.com/mapfiles/ms/icons/red-dot.png"; // 赤：編集済み
         }
 
+        // 先に優先度などを決定（参照順序バグ修正）
+        const priorityLevel = Number(pin.priority_level || 1);
+        const timeWindows = Array.isArray(pin.speak_time_windows) ? pin.speak_time_windows : [];
+        const firstWin = timeWindows[0] || null;
+
         const marker = new google.maps.Marker({
           position: { lat: pin.lat, lng: pin.lng },
           map,
-          icon: iconUrl,
+          icon: getPriorityIconUrl(priorityLevel),
           title: pin.label || "(未入力ピン)",
         });
         marker.id = pin.id;
         window.currentMarkers.push(marker);
-
+        if (pin.lat && pin.lng) {
+          try { bounds.extend(new google.maps.LatLng(pin.lat, pin.lng)); } catch (_) {}
+        }
         const isOwner = pin.user_id === CURRENT_USER_ID; // ← 現在ログイン中ユーザーID（下で定義）
 
         let infoContent = `
@@ -82,6 +82,18 @@ async function initMap() {
                 ${isOwner ? "" : "disabled"}>
               読み上げる
             </label><br>
+
+            <label>注意レベル:</label><br>
+            <select id="priority_${pin.id}" style="width:160px; margin-bottom:4px;" ${isOwner ? '' : 'disabled'}>
+              <option value="1" ${priorityLevel===1?'selected':''}>1 (オレンジ)</option>
+              <option value="2" ${priorityLevel===2?'selected':''}>2 (紫)</option>
+              <option value="3" ${priorityLevel===3?'selected':''}>3 (赤)</option>
+            </select><br>
+
+            <label>読み上げ時間帯(任意):</label><br>
+            <input type="time" id="tw_start_${pin.id}" value="${firstWin?.start || ''}" ${isOwner ? '' : 'disabled'}>
+            〜
+            <input type="time" id="tw_end_${pin.id}" value="${firstWin?.end || ''}" ${isOwner ? '' : 'disabled'}><br>
         `;
 
         if (isOwner) {
@@ -116,9 +128,26 @@ async function initMap() {
       });
 
       console.log("📍 Firestoreピン読込完了:", data.pins.length);
+      // 1つ以上あれば自動フィット
+      try {
+        if (!bounds.isEmpty()) {
+          map.fitBounds(bounds);
+        }
+      } catch(e) { /* ignore */ }
     }
   } catch (err) {
     console.error("❌ /api/get_pins_all error:", err);
+  }
+
+  // === 初期表示で現在地へ（現在地へボタンと同挙動） ===
+  if (typeof window.recenterToCurrent === 'function') {
+    window.recenterToCurrent(false);
+    if (window.map) {
+      const currentZoom = window.map.getZoom();
+      if (!currentZoom || currentZoom < 16) {
+        window.map.setZoom(17);
+      }
+    }
   }
 
   // === 🖱️ マップクリックで新しいピンを追加 ===
@@ -145,7 +174,7 @@ async function initMap() {
         const marker = new google.maps.Marker({
           position: { lat, lng },
           map,
-          icon: "http://maps.google.com/mapfiles/ms/icons/blue-dot.png",
+          icon: getPriorityIconUrl(1),
           title: "(未入力ピン)",
         });
 
@@ -164,6 +193,18 @@ async function initMap() {
               <input type="checkbox" id="speak_${pinId}" checked ${isOwner ? "" : "disabled"}>
               読み上げる
             </label><br>
+
+            <label>注意レベル:</label><br>
+            <select id="priority_${pinId}" style="width:160px; margin-bottom:4px;" ${isOwner ? '' : 'disabled'}>
+              <option value="1" selected>1 (オレンジ)</option>
+              <option value="2">2 (紫)</option>
+              <option value="3">3 (赤)</option>
+            </select><br>
+
+            <label>読み上げ時間帯(任意):</label><br>
+            <input type="time" id="tw_start_${pinId}" ${isOwner ? '' : 'disabled'}>
+            〜
+            <input type="time" id="tw_end_${pinId}" ${isOwner ? '' : 'disabled'}><br>
         `;
 
         if (isOwner) {
@@ -209,21 +250,40 @@ async function initMap() {
 async function updatePinLabel(pinId) {
   const memo = document.getElementById(`memo_${pinId}`).value.trim();
   const speakEnabled = document.getElementById(`speak_${pinId}`).checked; // ✅ チェック状態取得
+  const priorityEl = document.getElementById(`priority_${pinId}`);
+  const twStartEl = document.getElementById(`tw_start_${pinId}`);
+  const twEndEl = document.getElementById(`tw_end_${pinId}`);
 
   if (!memo) return alert("メモを入力してください。");
 
   try {
+    const body = { id: pinId, label: memo, speak_enabled: speakEnabled };
+    if (priorityEl) {
+      const lvl = parseInt(priorityEl.value || '1', 10);
+      body.priority_level = isNaN(lvl) ? 1 : Math.min(3, Math.max(1, lvl));
+    }
+    if (twStartEl && twEndEl) {
+      const s = twStartEl.value || '';
+      const e = twEndEl.value || '';
+      if (s && e) {
+        body.speak_time_windows = [{ start: s, end: e }];
+      } else {
+        body.speak_time_windows = [];
+      }
+    }
     const res = await fetch("/api/update_pin", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: pinId, label: memo, speak_enabled: speakEnabled }),
+      body: JSON.stringify(body),
     });
     const result = await res.json();
     if (result.status === "success") {
       alert("✅ ピンを更新しました！");
       const marker = window.currentMarkers.find((m) => m.id === pinId);
       if (marker) {
-        marker.setIcon("http://maps.google.com/mapfiles/ms/icons/red-dot.png");
+        // アイコンを注意レベルに応じて更新
+        const lvl = priorityEl ? parseInt(priorityEl.value || '1', 10) : 1;
+        marker.setIcon(getPriorityIconUrl(lvl));
         marker.setTitle(memo);
       }
       window.currentInfoWindows[pinId]?.close();

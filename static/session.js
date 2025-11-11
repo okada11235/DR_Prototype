@@ -555,7 +555,72 @@ function calcDistance(lat1, lng1, lat2, lng2) {
   return R * c;
 }
 
-// ピンとの距離を監視して30m以内なら読み上げ
+// レベル別半径（既定）
+// 距離判定はレベルに関係なく固定30m
+function getPinSpeakRadius(_pin) {
+  return 30;
+}
+
+function minutesOfDay(date) {
+  return date.getHours() * 60 + date.getMinutes();
+}
+
+function matchDay(days, dayIdx) {
+  if (!Array.isArray(days) || days.length === 0) return true; // 指定なし→毎日
+  return days.includes(dayIdx);
+}
+
+// 時間帯判定（空なら常に可）
+function shouldSpeakNow(pin, now = new Date()) {
+  const windows = Array.isArray(pin.speak_time_windows) ? pin.speak_time_windows : [];
+  if (!windows.length) return true;
+  const nowMin = minutesOfDay(now);
+  const dayIdx = now.getDay(); // 0=Sun
+  for (const w of windows) {
+    const s = w?.start; const e = w?.end;
+    if (typeof s !== 'string' || typeof e !== 'string' || s.length !== 5 || e.length !== 5) continue;
+    const [sh, sm] = s.split(':').map((n) => parseInt(n, 10));
+    const [eh, em] = e.split(':').map((n) => parseInt(n, 10));
+    if ([sh, sm, eh, em].some((v) => Number.isNaN(v))) continue;
+    if (!matchDay(w.days, dayIdx)) continue;
+    const startMin = sh * 60 + sm;
+    const endMin = eh * 60 + em;
+    if (startMin === endMin) return true; // 24h指定として扱う
+    if (startMin < endMin) {
+      if (nowMin >= startMin && nowMin < endMin) return true;
+    } else {
+      // 日跨ぎ 例: 22:00-02:00
+      if (nowMin >= startMin || nowMin < endMin) return true;
+    }
+  }
+  return false;
+}
+
+// === レベル別読み上げ文言生成 ===
+function buildSpeakText(pin) {
+  const label = (pin.label || 'ピン地点です').trim();
+  const lvl = Number(pin.priority_level || 1);
+  if (lvl === 3) return `重要地点、${label}`;
+  if (lvl === 2) return `注意、${label}`;
+  return `${label} 付近です`;
+}
+
+// === レベル別音声オプション適用 ===
+function applyVoiceOptions(utter, pin) {
+  const lvl = Number(pin.priority_level || 1);
+  if (lvl === 3) { // 重要
+    utter.rate = 0.95;
+    utter.pitch = 1.0;
+  } else if (lvl === 2) { // 注意
+    utter.rate = 1.0;
+    utter.pitch = 1.0;
+  } else { // 付近 (軽め)
+    utter.rate = 1.05;
+    utter.pitch = 1.05;
+  }
+}
+
+// ピンとの距離を監視してレベル別半径以内なら読み上げ
 function monitorProximity() {
   if (!navigator.geolocation) {
     console.warn("⚠️ 位置情報が利用できません");
@@ -568,15 +633,16 @@ function monitorProximity() {
       if (!pinsData.length) return;
 
       for (const pin of pinsData) {
-        const distance = calcDistance(latitude, longitude, pin.lat, pin.lng);
-        if (distance <= 30 && !notifiedPins.has(pin.id)) {
+  const distance = calcDistance(latitude, longitude, pin.lat, pin.lng);
+  if (distance <= 30 && !notifiedPins.has(pin.id) && shouldSpeakNow(pin)) {
           console.log(`📢 ピン「${pin.label || "名前なし"}」に接近 (${Math.round(distance)}m)`);
 
           // 🔊 speak_enabled が true の場合のみ読み上げ
           if (speakEnabled && pin.speak_enabled && "speechSynthesis" in window) {
-            const utter = new SpeechSynthesisUtterance(pin.label || "ピン地点です");
+            const text = buildSpeakText(pin);
+            const utter = new SpeechSynthesisUtterance(text);
             utter.lang = "ja-JP";
-            utter.rate = 1.0;
+            applyVoiceOptions(utter, pin);
             speechSynthesis.speak(utter);
           } else {
             console.log(`🔇 ピン「${pin.label || "名前なし"}」は読み上げOFF設定です`);
