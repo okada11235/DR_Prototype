@@ -388,6 +388,61 @@ def replay_active(session_id):
 def map_editor():
     return render_template('map_editor.html')
 
+# === 🗣 ユーザー別読み上げレベル設定 取得API ===
+@views_bp.route('/api/user_speak_settings')
+@login_required
+def get_user_speak_settings():
+    try:
+        doc_ref = db.collection('user_settings').document(str(current_user.id))
+        snap = doc_ref.get()
+        if not snap.exists:
+            # デフォルト作成
+            default_settings = {
+                'speak_levels': {
+                    '1': True,
+                    '2': True,
+                    '3': True
+                },
+                'updated_at': datetime.now(JST)
+            }
+            doc_ref.set(default_settings)
+            return jsonify({'status': 'success', 'settings': default_settings})
+        data = snap.to_dict()
+        # フィールド欠損時補完
+        if 'speak_levels' not in data or not isinstance(data['speak_levels'], dict):
+            data['speak_levels'] = {'1': True, '2': True, '3': True}
+        for lvl in ['1','2','3']:
+            if lvl not in data['speak_levels']:
+                data['speak_levels'][lvl] = True
+        return jsonify({'status': 'success', 'settings': data})
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+# === 🗣 ユーザー別読み上げレベル設定 更新API ===
+@views_bp.route('/api/user_speak_settings/update', methods=['POST'])
+@login_required
+def update_user_speak_settings():
+    try:
+        payload = request.get_json(force=True) or {}
+        speak_levels = payload.get('speak_levels')
+        if not isinstance(speak_levels, dict):
+            return jsonify({'status':'error','error':'speak_levels must be object'}), 400
+        cleaned = {}
+        for lvl in ['1','2','3']:
+            val = speak_levels.get(lvl)
+            if isinstance(val, bool):
+                cleaned[lvl] = val
+            else:
+                return jsonify({'status':'error','error':f'invalid value for level {lvl}'}), 400
+        doc_ref = db.collection('user_settings').document(str(current_user.id))
+        doc_ref.set({
+            'speak_levels': cleaned,
+            'updated_at': datetime.now(JST)
+        }, merge=True)
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
 
 # === Firestore API: ピン保存 ===
 from flask import jsonify

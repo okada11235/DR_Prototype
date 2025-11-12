@@ -525,6 +525,23 @@ let speakEnabled = true;
 // ピンデータキャッシュ
 let pinsData = [];
 let notifiedPins = new Set(); // 一度読み上げたピンを記録
+// ユーザー別読み上げ設定キャッシュ（{ speak_levels: { '1':true, '2':true, '3':true } }）
+window.userSpeakSettings = window.userSpeakSettings || null;
+
+async function loadUserSpeakSettings() {
+  try {
+    const res = await fetch('/api/user_speak_settings');
+    const data = await res.json();
+    if (data.status === 'success') {
+      window.userSpeakSettings = data.settings;
+      console.log('✅ userSpeakSettings loaded:', window.userSpeakSettings);
+    } else {
+      console.warn('⚠️ userSpeakSettings取得失敗 (status!=success)');
+    }
+  } catch (e) {
+    console.warn('⚠️ userSpeakSettings取得エラー:', e);
+  }
+}
 
 // Firestoreからピン情報を取得
 async function loadPinsFromFirestore() {
@@ -639,6 +656,13 @@ function monitorProximity() {
 
           // 🔊 speak_enabled が true の場合のみ読み上げ
           if (speakEnabled && pin.speak_enabled && "speechSynthesis" in window) {
+            // ユーザー別設定チェック
+            const lvlKey = String(pin.priority_level || '1');
+            const speakLevels = window.userSpeakSettings?.speak_levels;
+            if (speakLevels && speakLevels[lvlKey] === false) {
+              console.log(`🔇 ユーザー設定によりレベル${lvlKey}は読み上げ無効`);
+              continue; // 次のピンへ
+            }
             const text = buildSpeakText(pin);
             const utter = new SpeechSynthesisUtterance(text);
             utter.lang = "ja-JP";
@@ -670,6 +694,7 @@ window.addEventListener("load", async () => {
   if (isActive) {
     console.log("✅ ピン監視・読み上げ機能を起動");
     await loadPinsFromFirestore();
+    await loadUserSpeakSettings();
     monitorProximity();
   } else {
     console.log("🚫 recording_active 以外のページでは読み上げ機能をスキップ");

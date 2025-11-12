@@ -64,11 +64,48 @@
       }
     }
   </style>
+  <style>
+    /* 読み上げ設定ボタン: hoverで文字色が反転して消えるのを防止 */
+    #openSpeechSettings.speech-settings-btn {
+      color:#222;
+    }
+    #openSpeechSettings.speech-settings-btn:hover,
+    #openSpeechSettings.speech-settings-btn:focus,
+    #openSpeechSettings.speech-settings-btn:active {
+      background:#fff !important; /* 白背景維持 */
+      color:#222 !important;      /* 文字色維持 */
+      border-color:#444 !important;
+      box-shadow:none;
+    }
+  </style>
 </head>
 
 <body>
   <!-- ✅ 地図エリアのみ -->
   <div id="map"></div>
+  <!-- ✅ 右上：ピン凡例 + 読み上げ設定ボタン -->
+  <div id="topRightControls" style="position:absolute; top:10px; right:10px; z-index:6; display:flex; gap:8px; align-items:flex-start;">
+    <!-- 凡例 -->
+    <div id="pinLegend" style="background:#fff; border:1px solid #ccc; padding:6px 10px; border-radius:8px; box-shadow:0 2px 4px rgba(0,0,0,.15); font-size:12px; line-height:1.4;">
+      <div style="font-weight:bold; margin-bottom:4px;">ピン一覧</div>
+      <div class="legend-item" style="display:flex; align-items:center; gap:6px; margin-bottom:2px;">
+        <span class="legend-dot" style="display:inline-block; width:12px; height:12px; border-radius:50%; background:#ff9800; border:2px solid #fff; box-shadow:0 0 0 1px #ff9800;"></span>
+        <span>レベル1: 軽い注意</span>
+      </div>
+      <div class="legend-item" style="display:flex; align-items:center; gap:6px; margin-bottom:2px;">
+        <span class="legend-dot" style="display:inline-block; width:12px; height:12px; border-radius:50%; background:#7e57c2; border:2px solid #fff; box-shadow:0 0 0 1px #7e57c2;"></span>
+        <span>レベル2: 中程度</span>
+      </div>
+      <div class="legend-item" style="display:flex; align-items:center; gap:6px;">
+        <span class="legend-dot" style="display:inline-block; width:12px; height:12px; border-radius:50%; background:#e53935; border:2px solid #fff; box-shadow:0 0 0 1px #e53935;"></span>
+        <span>レベル3: 重要地点</span>
+      </div>
+    </div>
+    <!-- 読み上げ設定ボタン -->
+    <div id="speechSettingBtnWrapper">
+      <button id="openSpeechSettings" class="btn btn-sm btn-outline-dark speech-settings-btn" style="background:#fff; font-weight:bold;">読み上げ設定 ⚙</button>
+    </div>
+  </div>
 
   <!-- ✅ クリック挙動制御＆現在地ボタン -->
   <div id="mapControls" style="position:absolute; left:10px; bottom:60px; z-index:5; display:flex; flex-direction:column; gap:6px;">
@@ -134,6 +171,7 @@
     // ボタン初期化
     document.addEventListener('DOMContentLoaded', () => {
       const gotoBtn = document.getElementById('gotoCurrentBtn');
+      const openSettingsBtn = document.getElementById('openSpeechSettings');
       if (!gotoBtn) return;
 
       gotoBtn.addEventListener('click', () => {
@@ -146,6 +184,97 @@
           }
         }
       });
+      // === 読み上げ設定UI生成 ===
+      if (openSettingsBtn) {
+        openSettingsBtn.addEventListener('click', () => {
+          let panel = document.getElementById('speechSettingsPanel');
+          if (!panel) {
+            panel = document.createElement('div');
+            panel.id = 'speechSettingsPanel';
+            panel.style.position = 'absolute';
+            panel.style.top = '50px';
+            panel.style.right = '10px';
+            panel.style.zIndex = '7';
+            panel.style.background = '#ffffff';
+            panel.style.border = '1px solid #ccc';
+            panel.style.padding = '10px 14px';
+            panel.style.borderRadius = '8px';
+            panel.style.boxShadow = '0 2px 6px rgba(0,0,0,0.2)';
+            panel.style.width = '200px';
+            panel.innerHTML = `
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <strong style="font-size:14px;">読み上げ設定</strong>
+                <button id="closeSpeechSettings" class="btn btn-sm btn-light" style="padding:2px 6px;">×</button>
+              </div>
+              <div style="font-size:12px; color:#555; margin-top:4px;">レベル毎に読み上げON/OFFを設定</div>
+              <div style="margin-top:8px;">
+                <label style="display:block; font-size:13px;">
+                  <input type="checkbox" data-speak-level="1" checked> レベル1 (オレンジ)
+                </label>
+                <label style="display:block; font-size:13px;">
+                  <input type="checkbox" data-speak-level="2" checked> レベル2 (紫)
+                </label>
+                <label style="display:block; font-size:13px;">
+                  <input type="checkbox" data-speak-level="3" checked> レベル3 (赤)
+                </label>
+              </div>
+              <button id="saveSpeechSettings" class="btn btn-sm btn-primary" style="margin-top:10px; width:100%;">保存</button>
+              <div id="speechSettingStatus" style="margin-top:6px; font-size:11px; color:#007bff;"></div>
+            `;
+            document.body.appendChild(panel);
+
+            // 閉じる
+            panel.querySelector('#closeSpeechSettings').addEventListener('click', () => {
+              panel.remove();
+            });
+
+            // 初期値ロード
+            fetch('/api/user_speak_settings')
+              .then(r => r.json())
+              .then(data => {
+                if (data.status === 'success') {
+                  const lvls = data.settings?.speak_levels || {}; 
+                  panel.querySelectorAll('input[data-speak-level]').forEach(cb => {
+                    const lvl = cb.getAttribute('data-speak-level');
+                    cb.checked = lvls[lvl] !== false; // デフォルトtrue
+                  });
+                } else {
+                  panel.querySelector('#speechSettingStatus').textContent = '設定取得失敗';
+                }
+              })
+              .catch(() => {
+                panel.querySelector('#speechSettingStatus').textContent = '通信エラー';
+              });
+
+            // 保存
+            panel.querySelector('#saveSpeechSettings').addEventListener('click', () => {
+              const speakLevels = {};
+              panel.querySelectorAll('input[data-speak-level]').forEach(cb => {
+                speakLevels[cb.getAttribute('data-speak-level')] = cb.checked;
+              });
+              fetch('/api/user_speak_settings/update', {
+                method:'POST',
+                headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({ speak_levels: speakLevels })
+              })
+                .then(r => r.json())
+                .then(res => {
+                  if (res.status === 'success') {
+                    panel.querySelector('#speechSettingStatus').textContent = '✅ 保存しました';
+                    window.userSpeakSettings = { speak_levels: speakLevels }; // セッション画面側参照用
+                  } else {
+                    panel.querySelector('#speechSettingStatus').textContent = '❌ 保存失敗';
+                  }
+                })
+                .catch(() => {
+                  panel.querySelector('#speechSettingStatus').textContent = '❌ エラー';
+                });
+            });
+          } else {
+            panel.remove(); // 2度押しで閉じるトグル動作
+          }
+        });
+      }
     });
   </script>
   <script src="{{ url_for('static', filename='maps_pins.js') }}"></script>
