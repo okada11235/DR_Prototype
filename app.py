@@ -1,4 +1,4 @@
-# app.py - メインアプリケーションファイル
+# app.py
 from config import create_app, init_firebase, init_login_manager, init_bcrypt
 from models import User
 from auth import auth_bp, init_auth
