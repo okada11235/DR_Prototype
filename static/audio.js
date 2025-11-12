@@ -503,3 +503,26 @@ window.showAudioStatus = function() {
 
 // === audio.js の末尾に追加 ===
 window.playRandomAudio = playRandomAudio;
+
+// === audio.js ===
+// 各タイプごとのクールタイム（ミリ秒）
+const COOLDOWN_TIME = 8000;
+const lastPlayedTime = {};
+// 音声再生関数
+function playAudio(type) {
+  const now = Date.now();
+  // 🔹 クールタイム判定：同タイプを短時間で連続再生しない
+  if (lastPlayedTime[type] && now - lastPlayedTime[type] < COOLDOWN_TIME) {
+    console.log(`⏸️ ${type} はクールタイム中（再生スキップ）`);
+    return;
+  }
+  lastPlayedTime[type] = now;
+  // 🔹 audioファイル選択と再生処理（既存の処理）
+  const folder = `/static/audio/${type}/`;
+  const files = audioFiles[type]; // 既存で定義されているリストを使う
+
+  if (!files || files.length === 0) return;
+  const randomFile = files[Math.floor(Math.random() * files.length)];
+  const audio = new Audio(folder + randomFile);
+  audio.play();
+}
