@@ -103,6 +103,14 @@ export function watchPosition() {
       if (window.map) window.map.setCenter(currentLatLng);
     }
 
+    // 軌跡の更新（Polyline）
+    if (window.path) {
+      window.path.push(currentLatLng);
+      if (window.polyline) {
+        window.polyline.setPath(window.path);
+      }
+    }
+
     // 速度・座標をUI表示
     const speedElement = document.getElementById('speed');
     if (speedElement) speedElement.textContent = speed.toFixed(1);

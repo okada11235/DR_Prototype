@@ -184,10 +184,6 @@ export function startSession() {
         window.gpsLogBuffer = window.gpsLogBuffer || [];
         window.gpsLogBuffer.push(log);
 
-        // 🔹 経路データ更新
-        window.path = window.path || [];
-        window.path.push({ lat: latitude, lng: longitude });
-
         // 🔹 sensors.js 側で速度参照用
         window.currentSpeed = kmh;
 
