@@ -424,7 +424,7 @@ export function startLogFlush() {
             .catch(err => console.error('GPSログ送信エラー:', err));
         }
 
-    }, 10000); // 🔹10秒ごと
+    }, 60000); // 🔹60秒ごと
 }
 
 // 褒めチェック開始
