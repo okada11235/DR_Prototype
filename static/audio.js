@@ -4,7 +4,7 @@ import { audioFiles, AUDIO_COOLDOWN_MS } from './config.js';
 console.log('=== audio.js LOADED (iOS Enhanced + KeepAlive Version) [FIXED] ===');
 
 // --- iOS対策用のグローバル状態管理 ---
-window.audioCtx = null;
+window.audioContext = null;
 window.audioUnlocked = false;
 window.audioPreloadedFiles = new Map();
 window.isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
@@ -90,7 +90,7 @@ export function stopAudioSystem() {
     }
     // FIX: close() の代わりに relockAudio() を使用
     relockAudio();
-    // window.audioCtx = null; // インスタンスは保持する
+    // window.audioContext = null; // インスタンスは保持する
     window.audioUnlocked = false;
 }
 
@@ -233,8 +233,18 @@ function executeAudioPlayback(category, timestamp, isUnlockAudio = false) {
         console.log('🔒 Regular audio playback started, blocking other regular audio');
     }
     
+    window.lastPlayedFile = window.lastPlayedFile || {}; // グローバルで保持
+
     const files = audioFiles[category];
-    const file = files[Math.floor(Math.random() * files.length)];
+    let file;
+
+    // 🔹 前回と同じ音を避ける処理
+    do {
+        file = files[Math.floor(Math.random() * files.length)];
+    } while (files.length > 1 && file === window.lastPlayedFile[category]);
+
+    window.lastPlayedFile[category] = file;
+
     console.log(`🔊 Playing audio: ${category} -> ${file} (unlock: ${isUnlockAudio})`);
 
     // Android対策：プリロードを使わずシンプルな音声再生
@@ -504,25 +514,4 @@ window.showAudioStatus = function() {
 // === audio.js の末尾に追加 ===
 window.playRandomAudio = playRandomAudio;
 
-// === audio.js ===
-// 各タイプごとのクールタイム（ミリ秒）
-const COOLDOWN_TIME = 8000;
-const lastPlayedTime = {};
-// 音声再生関数
-function playAudio(type) {
-  const now = Date.now();
-  // 🔹 クールタイム判定：同タイプを短時間で連続再生しない
-  if (lastPlayedTime[type] && now - lastPlayedTime[type] < COOLDOWN_TIME) {
-    console.log(`⏸️ ${type} はクールタイム中（再生スキップ）`);
-    return;
-  }
-  lastPlayedTime[type] = now;
-  // 🔹 audioファイル選択と再生処理（既存の処理）
-  const folder = `/static/audio/${type}/`;
-  const files = audioFiles[type]; // 既存で定義されているリストを使う
 
-  if (!files || files.length === 0) return;
-  const randomFile = files[Math.floor(Math.random() * files.length)];
-  const audio = new Audio(folder + randomFile);
-  audio.play();
-}
