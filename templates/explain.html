@@ -60,8 +60,39 @@
         <li>音声メモ（5秒録音）と文字起こし（Whisper）</li>
         <li>走行中のリアルタイム指摘・褒めのフィードバック（音声/画面表示）</li>
         <li>走行後の運転フィードバック生成とリザルトへの反映</li>
-        <li>ピンの管理（一覧、追加・編集・削除）</li>
+          <li>ピンの管理（一覧、追加・編集・削除）＋ 優先度(1/2/3)と読み上げ時間帯</li>
+          <li>ユーザー別レベル読み上げ設定（レベル1/2/3のON/OFFを切替）</li>
         <li>走行後の結果閲覧（イベント、音声、ルートなど）</li>
+      </ul>
+    </section>
+
+    <section id="pins-spec" class="section">
+      <h5 class="mb-2">ピン読み上げのルール</h5>
+      <ul class="mb-2">
+        <li><strong>色とレベル</strong>: 1=オレンジ, 2=紫, 3=赤（色で重要度を判別しやすくしています）</li>
+        <li><strong>読み上げタイミング</strong>: ピンの近く（約30m以内）に近づいた時、もっとも近い1件だけを読み上げます</li>
+        <li><strong>ラベルの優先</strong>: ラベルが付いたピンを優先的に読み上げます。未設定でも自然な文言で案内します</li>
+        <li><strong>時間帯の指定</strong>: ピンごとに「何時から何時まで読み上げるか」を設定できます（未設定なら終日）</li>
+        <li><strong>自分の設定を反映</strong>: レベル1/2/3ごとに読み上げのON/OFFを切り替えでき、無効にしたレベルのピンは読み上げません</li>
+      </ul>
+      <div class="small text-muted">ヒント: よく使う注意ポイントには短いラベルを付けると、走行時の案内がわかりやすくなります。</div>
+    </section>
+
+    <section id="audio-policy" class="section">
+      <h5 class="mb-2">音声の挙動（コーチングが優先）</h5>
+      <ul class="mb-2">
+        <li><strong>コーチング（褒め・指摘）が最優先</strong>: コーチング音声が流れ始めたら、その時点でピンの読み上げは自動で止まります。</li>
+        <li><strong>同時再生を防止</strong>: コーチングの再生中は新しいピンの読み上げは行いません。</li>
+        <li><strong>iOSでも同様</strong>: iOS端末でも同じ挙動になるように最適化しています。</li>
+      </ul>
+    </section>
+
+    <section id="user-settings" class="section">
+      <h5 class="mb-2">読み上げのカスタマイズ</h5>
+      <p class="mb-2">マップ画面の右上にある「読み上げ設定」から、レベル1/2/3ごとの読み上げのON/OFFを切り替えできます。設定は自動で保存され、運転中の読み上げにすぐ反映されます。</p>
+      <ul class="mb-2">
+        <li>通知が多いと感じる場合は、低いレベルをOFFにするなど調整してください。</li>
+        <li>重要な場所は高いレベル（赤）に設定すると気づきやすくなります。</li>
       </ul>
     </section>
 
@@ -92,9 +123,19 @@
         <li>「運転」から記録開始。位置と加速度の取得をバックグラウンドで継続します。</li>
         <li>音声コマンド「録音」「ピン」でハンズフリー操作。</li>
         <li>走行中、運転状況に応じてリアルタイムに指摘や褒めのフィードバックが提示されます（安全運転を促す軽微な音声/UI）。</li>
-        <li>録音はFirebase Storageへ保存され、/transcribeにより文字起こしが行われます。</li>
+        <li>録音はクラウドに保存され、自動で文字起こしが行われます。</li>
         <li>走行終了後、運転の振り返りフィードバックが生成され、リザルトに反映されます。記録を確認し、必要に応じてピンやメモを整理します。</li>
       </ol>
+    </section>
+
+    <section id="map-ux" class="section">
+      <h5 class="mb-2">マップ編集のポイント</h5>
+      <ul class="mb-2">
+        <li>ピンの色: 1=オレンジ, 2=紫, 3=赤（右上に凡例表示）</li>
+        <li>読み上げ時間帯: ピンのInfoWindowで <code>開始〜終了</code> を設定（空なら終日）</li>
+        <li>現在地へ: 右上の「現在地へ 📍」ボタン（初期表示はピン読み込み後に現在地へ移動）</li>
+        <li>マップクリック: 新規ピンの追加（未入力ピンは青点で表示）</li>
+      </ul>
     </section>
 
     <section id="feedback" class="section">
@@ -122,6 +163,9 @@
         <strong>iOSの注意</strong>: Safariで初回に「モーションと向き」の許可が必要です。設定→Safari→モーションと向きを許可、もしくはWebページのダイアログを許可してください。
       </div>
       <div class="small">
+        <strong>音声アンロック（iOS）</strong>: 初回タップで音声を有効化する案内が表示されます。バナーの指示に従って画面をタップしてください。
+      </div>
+      <div class="small">
         <strong>HTTPS必須</strong>: センサー・位置・マイクは原則HTTPS環境でのみ動作します。アプリはHTTPSでご利用ください。
       </div>
     </section>
@@ -129,10 +173,11 @@
     <section id="data" class="section">
       <h5 class="mb-2">データの保存先と扱い</h5>
       <ul class="mb-2">
-        <li>録音音声: Firebase Storage（パス例: <code>audio_records/...</code>）</li>
-        <li>文字起こし: サーバの <code>/transcribe</code> を経由してFirestoreのセッション関連ドキュメントに保存</li>
-        <li>走行ログ: Firestore（<code>sessions/{id}/gps_logs</code>, <code>g_logs</code>, <code>avg_g_logs</code>）</li>
-        <li>ピン: Firestore（<code>pins</code> コレクション）</li>
+        <li>録音音声: クラウドに安全に保存されます。</li>
+        <li>文字起こし: アップロード後に自動処理され、リザルトから確認できます。</li>
+        <li>走行ログ: 走行ルートや傾向の振り返りにのみ使用します。</li>
+        <li>ピン: 地図上で追加・編集・削除できます。読み上げ設定はいつでも変更可能です。</li>
+        <li>個人設定: 読み上げの好みはアカウントごとに保存されます。</li>
       </ul>
       <div class="small text-muted">取り扱いはプロジェクトのプライバシーポリシーに従います。共有が必要な場合はユーザーの同意を前提とします。</div>
     </section>
