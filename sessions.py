@@ -61,17 +61,59 @@ def start():
         print(f"Error starting session: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+from math import radians, sin, cos, sqrt, atan2
+
+# --- 距離計算用：ハバースイン ---
+def haversine(lat1, lon1, lat2, lon2):
+    R = 6371.0  # 地球の半径(km)
+    dlat = radians(lat2 - lat1)
+    dlon = radians(lon2 - lon1)
+    a = sin(dlat / 2)**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2)**2
+    c = 2 * atan2(sqrt(a), sqrt(1 - a))
+    return R * c
+
+
+# --- FirestoreからGPSログを取得して距離計算 ---
+def calculate_distance_from_firestore(session_id):
+    gps_ref = db.collection('sessions').document(session_id).collection('gps_logs')
+    docs = gps_ref.order_by('timestamp').stream()
+
+    coords = []
+    for d in docs:
+        data = d.to_dict()
+        lat = data.get("latitude")
+        lng = data.get("longitude")
+
+        # 無効値排除
+        if lat is None or lng is None:
+            continue
+        if abs(lat) < 0.0001 and abs(lng) < 0.0001:
+            continue
+
+        coords.append((lat, lng))
+
+    if len(coords) < 2:
+        return 0.0
+
+    total_km = 0.0
+    for i in range(1, len(coords)):
+        total_km += haversine(coords[i-1][0], coords[i-1][1], coords[i][0], coords[i][1])
+
+    return round(total_km, 3)
+
+
 # セッション終了
 @sessions_bp.route('/end', methods=['POST'])
 @login_required
 def end():
     data = request.get_json()
     session_id = data.get('session_id')
+
     if not session_id:
         return jsonify({'status': 'error', 'message': 'Missing session_id'}), 400
 
     try:
-        # トランザクションを使用してセッション終了
+
         @firestore.transactional
         def end_session(transaction):
             session_ref = db.collection('sessions').document(session_id)
@@ -83,37 +125,44 @@ def end():
             session_data = session_doc.to_dict()
             if session_data.get('user_id') != current_user.id:
                 return {'status': 'error', 'message': 'Permission denied'}
-            
+
             if session_data.get('status') != 'active':
-                print(f"Session {session_id} is already ended (status: {session_data.get('status')})")
+                print(f"Session {session_id} already ended: {session_data.get('status')}")
                 return {'status': 'ok', 'message': 'Session already ended'}
 
-            # ステータスをcompletedに更新
+            # 🔥 ここでサーバー側で距離計算！
+            distance_km = calculate_distance_from_firestore(session_id)
+            print(f"🚗 Firestore-based distance = {distance_km} km")
+
+            # Firestore更新
             print(f"Ending session {session_id} for user {current_user.id}")
             transaction.update(session_ref, {
                 'end_time': firestore.SERVER_TIMESTAMP,
                 'status': 'completed',
-                'distance': float(data.get('distance', 0.0)),
+
+                # 🚀 距離はサーバー計算値を使用
+                'distance': distance_km,
+
+                # 既存の統計値はクライアントから
                 'sudden_accels': int(data.get('sudden_accels', 0)),
                 'sudden_brakes': int(data.get('sudden_brakes', 0)),
                 'sharp_turns': int(data.get('sharp_turns', 0)),
                 'stability': float(data.get('stability', 0.0)),
                 'speed_violations': int(data.get('speed_violations', 0)),
-                'focus_point': data.get('focus_point', '')  # 重点ポイントを保存
+                'focus_point': data.get('focus_point', '')
             })
-            
+
             print(f"Session {session_id} ended successfully")
             return {'status': 'ok'}
-        
-        # トランザクションを実行
+
         transaction = db.transaction()
         result = end_session(transaction)
-        
         return jsonify(result)
-        
+
     except Exception as e:
         print(f"DB update error: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
 
 # GPSログ（単発：既存）
 @sessions_bp.route('/log_gps', methods=['POST'])
@@ -325,6 +374,7 @@ def log_avg_g_bulk():
                 'g_x': float(log.get('g_x', 0.0)),
                 'g_y': float(log.get('g_y', 0.0)),
                 'g_z': float(log.get('g_z', 0.0)),
+                'rot_z': float(log.get('rot_z', 0.0)),
                 'speed': float(log.get('speed', 0.0)),
                 'event': log.get('event', 'normal'),
                 'timestamp': ts_dt,
@@ -680,4 +730,3 @@ def get_avg_g_logs_for_session(session_id):
         logs.append(data)
     logs.sort(key=lambda x: x.get("timestamp_ms", 0))
     return logs
-

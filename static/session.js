@@ -184,10 +184,6 @@ export function startSession() {
         window.gpsLogBuffer = window.gpsLogBuffer || [];
         window.gpsLogBuffer.push(log);
 
-        // 🔹 経路データ更新
-        window.path = window.path || [];
-        window.path.push({ lat: latitude, lng: longitude });
-
         // 🔹 sensors.js 側で速度参照用
         window.currentSpeed = kmh;
 
@@ -424,7 +420,7 @@ export function startLogFlush() {
             .catch(err => console.error('GPSログ送信エラー:', err));
         }
 
-    }, 10000); // 🔹10秒ごと
+    }, 60000); // 🔹60秒ごと
 }
 
 // 褒めチェック開始
