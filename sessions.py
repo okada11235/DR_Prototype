@@ -325,6 +325,7 @@ def log_avg_g_bulk():
                 'g_x': float(log.get('g_x', 0.0)),
                 'g_y': float(log.get('g_y', 0.0)),
                 'g_z': float(log.get('g_z', 0.0)),
+                'rot_z': float(log.get('rot_z', 0.0)),
                 'speed': float(log.get('speed', 0.0)),
                 'event': log.get('event', 'normal'),
                 'timestamp': ts_dt,
