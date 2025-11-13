@@ -250,7 +250,15 @@ export function handleDeviceMotion(event) {
   // FIX: Gログは生のG値を使用 (軸補正後だが平滑化前)
   window.gLogBuffer.push({ timestamp: now, g_x: gx, g_y: gy, g_z: gz, speed, event: eventType || 'normal' });
   // FIX: AVG Gログは平滑化後のG値を使用 (軸補正後かつ平滑化後)
-  window.avgGLogBuffer.push({ timestamp: now, g_x: gxs, g_y: gys, g_z: gzs, speed, event: eventType || 'normal' });
+  window.avgGLogBuffer.push({
+    timestamp: now,
+    g_x: smoothedG.x,  // ← 補正＆平滑化済み
+    g_y: smoothedG.y,
+    g_z: smoothedG.z,
+    rot_z: avgRotZ,
+    speed,
+    event: eventType || 'normal'
+  });
 
   const gxElem = document.getElementById('g-x');
   const gyElem = document.getElementById('g-y');
@@ -278,38 +286,51 @@ export function handleDeviceMotion(event) {
  * @returns {string|null} 検出されたイベントタイプ ('smooth_turn', 'sharp_turn', 'stable_drive'など)
  */
 function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now) {
-  const absSide = Math.abs(gx); 
+  const absSide = Math.abs(gx);
   const absFwd = Math.abs(gz);
+  const absRot = Math.abs(rotZ);
   
   let currentCondition = null;
   const isBraking = gz <= -0.13;
   const isAccelerating = gz >= 0.13;
-  const isTurning = absSide >= 0.18;
-  const isStable = speed >= 30 && absFwd < 0.15 && absSide < 0.15 && Math.abs(rotZ) < 2;
+  const isTurning =
+    speed >= 13 &&                // 右左折は必ず10km/h以上
+    absSide >= 0.10 &&            // 横Gが出始めたら（蛇行は除外）
+    absRot >= 4;                  // rotZ 4deg/s以上で明確な方向転換
+  const isStable =
+    speed >= 20 &&
+    absFwd < 0.12 &&
+    absSide < 0.18 &&
+    Math.abs(rotZ) < 3;
 
   // 1. 条件判定とステート更新
-  if (isTurning && absFwd < 0.2 && speed >= 15) {
-      // 旋回条件が満たされている
+  if (isTurning && absFwd < 0.25) {
+
+      // ---- 旋回判定（右左折開始） ----
       if (drivingState.turnStart === 0) drivingState.turnStart = now;
       currentCondition = 'turn';
-      
+
   } else if (isAccelerating && deltaSpeed > 5 && absSide < 0.2 && speed >= 5) {
-      // 加速条件が満たされている
+
+      // ---- 加速 ----
       if (drivingState.accelStart === 0) drivingState.accelStart = now;
       currentCondition = 'accel';
 
   } else if (isBraking && deltaSpeed < -5 && absSide < 0.2 && speed >= 10) {
-      // 減速条件が満たされている
+
+      // ---- 減速 ----
       if (drivingState.brakeStart === 0) drivingState.brakeStart = now;
       currentCondition = 'brake';
 
   } else if (isStable) {
-      // 直進条件が満たされている
+
+      // ---- 直進 ----
       if (drivingState.straightStart === 0) drivingState.straightStart = now;
       currentCondition = 'straight';
 
   } else {
-      // どの継続条件も満たされていない場合は、すべての継続タイマーをリセット
+
+      // ---- どの条件にも該当しない場合はリセット ----
       drivingState.turnStart = 0;
       drivingState.accelStart = 0;
       drivingState.brakeStart = 0;
@@ -320,23 +341,67 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now) {
   let type = null;
   let duration = 0;
 
-  // 旋回判定
-  //if (currentCondition !== 'turn') drivingState.turnStart = 0; // 他のイベントが検知されたらリセット
-  if (drivingState.turnStart > 0) {
-      duration = now - drivingState.turnStart;
-      if (duration >= 750) { // 0.75秒継続
-          // G値の大きさでスムーズ/シャープを判定
-          if (absSide >= SHARP_TURN_G_THRESHOLD) {
-             type = 'sharp_turn';
-             window.sharpTurns++;
-          } else {
-             type = 'smooth_turn';
-             window.sharpTurns = Math.max(0, window.sharpTurns - 1); 
-          }
-          drivingState.turnStart = 0;
+  // --- ★ stable_drive の継続時間処理  直進判定---
+  if (currentCondition === 'straight') {
+
+      // すでに straightStart がセット済みなら継続時間を計算
+      const straightDuration = now - drivingState.straightStart;
+
+      if (straightDuration >= 1500) {  // 1.5秒以上
+          type = "stable_drive";
+
+          drivingState.straightStart = 0;  // 直進フラグをリセット
+          lastEventTime = now;
+          drivingState.lastDetectedType = type;
+
+          console.log(
+            `🎯 stable_drive (Duration: ${straightDuration}ms) | gx=${gx.toFixed(2)}, rotZ=${rotZ.toFixed(2)}`
+          );
+
+          return type;  // 他イベントより優先
       }
   }
-  
+
+  //------------------------------------------------------
+  // 旋回継続時間チェック（0.75秒）
+  //------------------------------------------------------
+  if (drivingState.turnStart > 0) {
+    const duration = now - drivingState.turnStart;
+    
+    if (duration >= 750) {  // 0.75秒継続で「右左折確定」
+      
+      //--------------------------------------------------
+      // 一般道向け sharp/smooth 判定ロジック
+      //--------------------------------------------------
+      
+      // 基本値（一般道の右左折に最適化）
+      let sharpG = 0.32;      // ← 0.40 だと強すぎるので下げた
+      let sharpRot = 10;      // ← rotZ 10deg/s 以上なら急な右左折
+
+      // 速度帯でG閾値を微調整（自然な判定になる）
+      if (speed < 15) {
+        sharpG -= 0.03;       // 極低速はGが出にくい → 少し緩め
+      } else if (speed >= 30) {
+        sharpG += 0.03;       // 速度があるとGが出やすい → 少し厳しく
+      }
+
+      //--------------------------------------------------
+      // 分類（sharp / smooth）
+      //--------------------------------------------------
+      if (absSide >= sharpG && absRot >= sharpRot) {
+        type = 'sharp_turn';         // 急な右左折
+        window.sharpTurns = (window.sharpTurns || 0) + 1;
+      } else if (absSide >= 0.12 && absRot >= 4) {
+        type = 'smooth_turn';        // 丁寧な右左折
+        window.sharpTurns = Math.max(0, (window.sharpTurns || 0) - 1);
+      } else {
+        type = null;                 // 旋回はしてるけど弱い（無視）
+      }
+
+      drivingState.turnStart = 0;    // リセット（次の判定へ）
+    }
+  }
+
   // 加速判定
   //if (currentCondition !== 'accel') drivingState.accelStart = 0;
   if (drivingState.accelStart > 0) {
