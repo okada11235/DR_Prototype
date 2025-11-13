@@ -232,6 +232,20 @@ function executeAudioPlayback(category, timestamp, isUnlockAudio = false) {
         window.isAudioPlaying = true;
         console.log('🔒 Regular audio playback started, blocking other regular audio');
     }
+
+    // 🎯 プリエンプト: coaching開始時に進行中のTTS（ピン読み上げ等）を停止
+    try {
+        if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+            if (speechSynthesis.speaking) {
+                console.debug('🛑 coaching開始: 進行中のTTSをcancel');
+                speechSynthesis.cancel();
+            }
+        }
+        // 発話中フラグも明示的にリセット
+        if (window.isPinSpeaking) window.isPinSpeaking = false;
+    } catch (e) {
+        console.warn('⚠️ TTS cancel during coaching start failed:', e);
+    }
     
     window.lastPlayedFile = window.lastPlayedFile || {}; // グローバルで保持
 

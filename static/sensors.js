@@ -434,6 +434,16 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now) {
           console.log(`🚗 停止直前ブレーキ判定 → ${type} (decelRate=${decelRate.toFixed(2)}, maxG=${maxAbsG.toFixed(2)})`);
           // ✅ ここに iOSフォールバックブロックを追加
           if (window.isIOS && window.playEventAudioSegment) {
+            // 🎯 coaching音声開始前に進行中のTTS（ピン読み上げ等）を停止
+            try {
+              if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                if (speechSynthesis.speaking) {
+                  console.debug('🛑 coaching(iOS seg)開始: 進行中のTTSをcancel');
+                  speechSynthesis.cancel();
+                }
+              }
+              if (window.isPinSpeaking) window.isPinSpeaking = false;
+            } catch (e) { console.warn('⚠️ TTS cancel failed before iOS segment playback', e); }
             const segments = {
               "good_brake": [0, 2.592],
               "sharp_turn": [2.593, 2.869],
@@ -452,6 +462,16 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now) {
               console.warn("⚠️ 未定義イベント:", type);
             }
           } else {
+            // 🎯 coaching音声開始前に進行中のTTS（ピン読み上げ等）を停止
+            try {
+              if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                if (speechSynthesis.speaking) {
+                  console.debug('🛑 coaching開始: 進行中のTTSをcancel');
+                  speechSynthesis.cancel();
+                }
+              }
+              if (window.isPinSpeaking) window.isPinSpeaking = false;
+            } catch (e) { console.warn('⚠️ TTS cancel failed before coaching playback', e); }
             playRandomAudio(type); // ← Android/PCは従来通り
           }
 
@@ -505,6 +525,16 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now) {
     // 🚫 ブレーキ系イベントは、すでに上で再生済みなのでスキップ
     if (!type.includes("brake")) {
       if (window.isIOS && window.playEventAudioSegment) {
+        // 🎯 coaching音声開始前に進行中のTTS（ピン読み上げ等）を停止
+        try {
+          if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+            if (speechSynthesis.speaking) {
+              console.debug('🛑 coaching(iOS seg)開始: 進行中のTTSをcancel');
+              speechSynthesis.cancel();
+            }
+          }
+          if (window.isPinSpeaking) window.isPinSpeaking = false;
+        } catch (e) { console.warn('⚠️ TTS cancel failed before iOS segment playback', e); }
         const segments = {
           "good_brake": [0, 2.592],
           "sharp_turn": [2.593, 2.869],
@@ -523,6 +553,16 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now) {
           console.warn("⚠️ 未定義イベント:", type);
         }
       } else {
+        // 🎯 coaching音声開始前に進行中のTTS（ピン読み上げ等）を停止
+        try {
+          if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+            if (speechSynthesis.speaking) {
+              console.debug('🛑 coaching開始: 進行中のTTSをcancel');
+              speechSynthesis.cancel();
+            }
+          }
+          if (window.isPinSpeaking) window.isPinSpeaking = false;
+        } catch (e) { console.warn('⚠️ TTS cancel failed before coaching playback', e); }
         playRandomAudio(type);
       }
       lastAudioTime = now;

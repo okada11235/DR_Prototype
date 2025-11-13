@@ -615,11 +615,17 @@ function shouldSpeakNow(pin, now = new Date()) {
 
 // === レベル別読み上げ文言生成 ===
 function buildSpeakText(pin) {
-  const label = (pin.label || 'ピン地点です').trim();
+  const label = (pin.label || '').trim();
   const lvl = Number(pin.priority_level || 1);
-  if (lvl === 3) return `重要地点、${label}`;
-  if (lvl === 2) return `注意、${label}`;
-  return `${label} 付近です`;
+  if (label) {
+    if (lvl === 3) return `重要地点、${label}`;
+    if (lvl === 2) return `注意、${label}`;
+    return `${label} 付近です`;
+  }
+  // ラベル未設定時は汎用フレーズ（不自然な「ピン地点です 付近です」を回避）
+  if (lvl === 3) return `重要地点の付近です`;
+  if (lvl === 2) return `注意ポイントの付近です`;
+  return `ポイントの付近です`;
 }
 
 // === レベル別音声オプション適用 ===
@@ -649,34 +655,55 @@ function monitorProximity() {
       const { latitude, longitude } = pos.coords;
       if (!pinsData.length) return;
 
+      // 条件を満たす候補を収集し、ラベルありを優先して最短距離を1件だけ読み上げ
+      const candidates = [];
       for (const pin of pinsData) {
-  const distance = calcDistance(latitude, longitude, pin.lat, pin.lng);
-  if (distance <= 30 && !notifiedPins.has(pin.id) && shouldSpeakNow(pin)) {
-          console.log(`📢 ピン「${pin.label || "名前なし"}」に接近 (${Math.round(distance)}m)`);
-
-          // 🔊 speak_enabled が true の場合のみ読み上げ
-          if (speakEnabled && pin.speak_enabled && "speechSynthesis" in window) {
-            // ユーザー別設定チェック
-            const lvlKey = String(pin.priority_level || '1');
-            const speakLevels = window.userSpeakSettings?.speak_levels;
-            if (speakLevels && speakLevels[lvlKey] === false) {
-              console.log(`🔇 ユーザー設定によりレベル${lvlKey}は読み上げ無効`);
-              continue; // 次のピンへ
-            }
-            const text = buildSpeakText(pin);
-            const utter = new SpeechSynthesisUtterance(text);
-            utter.lang = "ja-JP";
-            applyVoiceOptions(utter, pin);
-            speechSynthesis.speak(utter);
-          } else {
-            console.log(`🔇 ピン「${pin.label || "名前なし"}」は読み上げOFF設定です`);
-          }
-
-          // 一定時間再読み上げしない
-          notifiedPins.add(pin.id);
-          setTimeout(() => notifiedPins.delete(pin.id), 60000);
+        const distance = calcDistance(latitude, longitude, pin.lat, pin.lng);
+        if (distance <= 30 && !notifiedPins.has(pin.id) && shouldSpeakNow(pin)) {
+          candidates.push({ pin, distance, labelTrim: (pin.label || '').trim() });
         }
       }
+
+      if (!candidates.length) return;
+
+      // ユーザー設定・speak_enabled・coaching再生中などの条件を事前フィルタ
+      const allowed = candidates.filter(({ pin }) => {
+        if (!speakEnabled || !pin.speak_enabled || !("speechSynthesis" in window)) return false;
+        if (window.isAudioPlaying) return false; // coaching優先
+        const lvlKey = String(pin.priority_level || '1');
+        const speakLevels = window.userSpeakSettings?.speak_levels;
+        if (speakLevels && speakLevels[lvlKey] === false) return false;
+        return true;
+      });
+      if (!allowed.length) return;
+
+      // ラベルありを優先して最短距離を選ぶ
+      const withLabel = allowed.filter(c => c.labelTrim.length > 0);
+      const pool = withLabel.length ? withLabel : allowed; // ラベル無ししかなければそれで選ぶ
+      pool.sort((a, b) => a.distance - b.distance);
+      const { pin: chosen, distance: dist } = pool[0];
+
+      console.log(`📢 ピンに接近: label="${(chosen.label||'').trim() || '（未入力）'}" 距離=${Math.round(dist)}m lvl=${chosen.priority_level||1}`);
+
+      try {
+        const text = buildSpeakText(chosen);
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.lang = "ja-JP";
+        applyVoiceOptions(utter, chosen);
+        if (speechSynthesis.speaking) speechSynthesis.cancel();
+        window.isPinSpeaking = true;
+        utter.onend = () => { window.isPinSpeaking = false; };
+        utter.onerror = () => { window.isPinSpeaking = false; };
+        speechSynthesis.speak(utter);
+        console.debug("🗣️ ピン読み上げ開始", { id: chosen.id, text });
+      } catch (e) {
+        window.isPinSpeaking = false;
+        console.warn("⚠️ ピン読み上げ開始に失敗", e);
+      }
+
+      // 一定時間再読み上げしない
+      notifiedPins.add(chosen.id);
+      setTimeout(() => notifiedPins.delete(chosen.id), 60000);
     },
     (err) => console.error("❌ 位置監視エラー:", err),
     { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }

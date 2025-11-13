@@ -91,7 +91,7 @@
               {% endif %}
             </div>
             <div>
-              距離: {{ "%.2f"|format(s.distance) if s.distance is not none else "N/A" }} km
+              距離: {% if s.distance is number %}{{ '%.2f' % s.distance }}{% else %}N/A{% endif %} km
               <br>
               <a href="{{ url_for('sessions.detail_result_page', session_id=s.id) }}">詳細へ ▶</a>
               <!-- 🔸削除ボタン（fetch版） -->
