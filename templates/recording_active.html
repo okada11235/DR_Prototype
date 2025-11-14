@@ -369,7 +369,9 @@ tailwind.config = {
   <script src="{{ url_for('static', filename='maps.js') }}"></script>
   <script src="{{ url_for('static', filename='session.js') }}"></script>
   <script src="{{ url_for('static', filename='pin_utils.js') }}"></script>
+  <!-- 音声認識機能を無効化（記録中の誤動作防止）
   <script src="{{ url_for('static', filename='record_voice_unified.js') }}"></script>
+  -->
   <!-- iOS向けフォールバック音声再生 -->
   <script type="module" src="{{ url_for('static', filename='audio_ios_fallback.js') }}"></script>
   <script>
@@ -539,9 +541,11 @@ tailwind.config = {
     })();
   </script>
   <script>
-    // 🎤 トグルボタンで音声認識をON/OFF
+    // 🎤 トグルボタンで音声認識をON/OFF - 記録中は無効化
     (function(){
       const btn = document.getElementById('voiceToggleBtn');
+      
+      /* === 音声認識機能を無効化（記録中の誤動作防止） ===
       if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
         btn.style.display = 'none'; // 非対応ブラウザ
         return;
@@ -571,10 +575,24 @@ tailwind.config = {
       window.addEventListener('click', startOnFirstTap, { once: true });
       // 初期表示
       update();
+      === 音声認識機能を無効化（記録中の誤動作防止） === */
+      
+      // 音声認識機能を無効化 - ボタンを無効状態で表示
+      if (btn) {
+        btn.textContent = '🚫 音声無効';
+        btn.style.backgroundColor = '#9ca3af';
+        btn.style.cursor = 'not-allowed';
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          console.log('🚫 音声認識機能は記録中無効化されています');
+          alert('音声認識機能は記録中は無効化されています');
+        });
+      }
     })();
   </script>
-  <!-- 記録中ページに遷移しただけでマイク許可→音声起動を試みる（Android向け） -->
+  <!-- 記録中ページに遷移しただけでマイク許可→音声起動を試みる（Android向け） - 無効化 -->
   <script type="module">
+    /* === 音声認識自動開始機能を無効化（記録中の誤動作防止） ===
     import { requestMicrophone } from "{{ url_for('static', filename='permissions.js') }}";
     (async () => {
       try {
@@ -588,6 +606,8 @@ tailwind.config = {
         window.voiceRecognition?.start?.();
       } catch (e) { console.warn('voiceRecognition.start failed:', e); }
     })();
+    === 音声認識自動開始機能を無効化（記録中の誤動作防止） === */
+    console.log('🚫 音声認識自動開始機能は記録中無効化されています');
   </script>
   <!-- iOS用: 初回タップでモーション許可をリクエストし、許可後にセンサー起動 -->
   <script>

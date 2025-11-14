@@ -1,6 +1,6 @@
 // session.js - セッション管理機能
 
-import { stopMotionDetection, startMotionDetection, startAutoCalibration } from './sensors.js';
+import { stopMotionDetection, startMotionDetection, startAutoCalibration, performInitialCalibration } from './sensors.js';
 import { watchPosition, calculateDistance } from './maps.js';
 import { startTimer, stopTimer, formatTime, calculateStability } from './utils.js';
 import { unlockAudio, stopAudioSystem } from './audio.js'; // FIX: stopAudioSystemをimport
@@ -99,7 +99,13 @@ export function startSession() {
     
     requestMotionPermission(() => {
         console.log('Motion permission granted');
-        startMotionDetection();
+        
+        // ★新機能：記録開始時の強制初期キャリブレーション（静止時前提）
+        console.log('🔧 Starting initial calibration for session start...');
+        performInitialCalibration(() => {
+            console.log('✅ Initial calibration completed, starting motion detection');
+            startMotionDetection();
+        });
 
         console.log('Sending session start request...');
         fetch('/start', { method: 'POST' })

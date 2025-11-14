@@ -190,7 +190,8 @@ if (isIOS) {
     }
   }
 
-  // ✅ 音声認識で「録音」を検出したら呼び出す
+  // ✅ 音声認識で「録音」を検出したら呼び出す - 記録中は無効化
+  /* === 音声認識機能を無効化（記録中の誤動作防止） ===
   window.SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;       
   if (window.SpeechRecognition) {
     let iosRecognition = null;
@@ -250,9 +251,19 @@ if (isIOS) {
       isActive(){ return true; }
     };
   }
+  === 音声認識機能を無効化（記録中の誤動作防止） === */
+  
+  // 音声認識無効化中 - ダミーAPIを提供
+  console.log("🚫 iOS音声認識機能は無効化されています");
+  window.voiceRecognition = {
+    start(){ console.log("🚫 音声認識は無効化されています"); },
+    stop(){ console.log("🚫 音声認識は無効化されています"); },
+    isActive(){ return false; }
+  };
 }
 
-// === Android / PC 音声認識トリガー ===
+// === Android / PC 音声認識トリガー - 記録中は無効化 ===
+/* === 音声認識機能を無効化（記録中の誤動作防止） ===
 else if (window.SpeechRecognition || window.webkitSpeechRecognition) {
   // 常時リッスン: 認識終了時は自動再起動して聞き逃しを防止
   const QUIET_SPEECH_START = false;
@@ -349,12 +360,22 @@ else if (window.SpeechRecognition || window.webkitSpeechRecognition) {
     isActive(){ return true; }
   };
 }
+=== 音声認識機能を無効化（記録中の誤動作防止） === */
+else {
+  // 音声認識無効化中 - ダミーAPIを提供
+  console.log("🚫 Android/PC音声認識機能は無効化されています");
+  window.voiceRecognition = {
+    start(){ console.log("🚫 音声認識は無効化されています"); },
+    stop(){ console.log("🚫 音声認識は無効化されています"); },
+    isActive(){ return false; }
+  };
+}
 
 // フォールバック: どの分岐でも voiceRecognition が未定義なら no-op を用意
 if (!window.voiceRecognition) {
   window.voiceRecognition = {
-    start(){},
-    stop(){},
+    start(){ console.log("🚫 音声認識は無効化されています"); },
+    stop(){ console.log("🚫 音声認識は無効化されています"); },
     isActive(){ return false; }
   };
 }

@@ -30,7 +30,7 @@ let sampleCount = 0;
 let isCalibrating = false;
 let isCalibrated = false;
 let speedZeroStart = 0;   // 速度0が始まった時刻
-const CALIBRATION_DELAY_MS = 3000; // 3秒間停車を待つ
+const CALIBRATION_DELAY_MS = 1000; // 1秒間停車を待つ（3秒→1秒に短縮）
 const CALIBRATION_DURATION_MS = 2000; // 2秒間サンプリング
 let calibrationSamples = [];
 let gravityOffset = { x: 0, y: 0, z: 0 };   // 3秒平均で決める重力ベクトル (FIX: 静的に使用)
@@ -65,16 +65,86 @@ if (!window.gLogBuffer) window.gLogBuffer = [];
 if (!window.avgGLogBuffer) window.avgGLogBuffer = [];
 
 // =======================
+// 未補正データ記録（キャリブレーション中）
+// =======================
+
+/** キャリブレーション中でも基本データを記録する関数 */
+function recordRawDataDuringCalibration(gx, gy, gz, now) {
+  const speed = window.currentSpeed ?? 0;
+  
+  // 生Gログ（未補正）- 品質レベル 'raw' を付与
+  window.gLogBuffer.push({
+    timestamp: now,
+    g_x: gx, g_y: gy, g_z: gz,
+    speed,
+    event: 'normal',
+    quality: 'raw' // 品質レベル情報を追加
+  });
+
+  // AVG Gログも同様に記録（平滑化なしの生データ）
+  window.avgGLogBuffer.push({
+    timestamp: now,
+    g_x: gx,
+    g_y: gy,
+    g_z: gz,
+    rot_z: 0, // 回転データは無効
+    speed,
+    event: 'normal',
+    quality: 'raw'
+  });
+
+  // UI更新（未補正でも表示）
+  const gxElem = document.getElementById('g-x');
+  const gyElem = document.getElementById('g-y');
+  const gzElem = document.getElementById('g-z');
+
+  if (gxElem) gxElem.textContent = gx.toFixed(2);
+  if (gyElem) gyElem.textContent = gy.toFixed(2);
+  if (gzElem) gzElem.textContent = gz.toFixed(2);
+  
+  console.log(`📊 Raw data recorded (calibrating): G(${gx.toFixed(2)}, ${gy.toFixed(2)}, ${gz.toFixed(2)}) speed=${speed.toFixed(1)}km/h`);
+}
+
+/** 既存の未補正データの品質レベルを更新 */
+function updateExistingDataQuality(newQuality) {
+  // gLogBufferの品質レベルを更新
+  if (window.gLogBuffer) {
+    window.gLogBuffer.forEach(log => {
+      if (log.quality === 'raw') {
+        log.quality = newQuality;
+      }
+    });
+  }
+  
+  // avgGLogBufferの品質レベルを更新
+  if (window.avgGLogBuffer) {
+    window.avgGLogBuffer.forEach(log => {
+      if (log.quality === 'raw') {
+        log.quality = newQuality;
+      }
+    });
+  }
+  
+  console.log(`🔄 既存データの品質レベルを '${newQuality}' に更新`);
+}
+
+// =======================
 // キャリブレーション (FIX: 静的オフセットとして機能させる)
 // =======================
 
-/** 起動時3秒の自動キャリブレーション開始 現在使用してない*/
-export function startAutoCalibration() {
+/** 記録開始時の強制初期キャリブレーション（静止時前提） */
+export function performInitialCalibration(callback) {
+  if (isCalibrating || isCalibrated) {
+    console.log('📱 キャリブレーション既に完了済み or 実行中');
+    if (callback) callback();
+    return;
+  }
+
   isCalibrating = true;
   calibrationSamples = [];
-  console.log('📱 自動キャリブレーション開始（3秒間）');
+  console.log('📱 初期キャリブレーション開始（3秒間・静止時前提）');
   
-  // FIX: 重力オフセットを初期値に戻す（動的追従を削除するため）
+  // 重力オフセットを初期値に戻す
   gravityOffset = { x: 0, y: 0, z: 0 }; 
 
   setTimeout(() => {
@@ -83,14 +153,29 @@ export function startAutoCalibration() {
       const avg = meanVector(calibrationSamples);
       gravityOffset = { ...avg };
       orientationMode = detectOrientation(avg).mode;
-      console.log('✅ キャリブ完了: gravityOffset=', gravityOffset, ' / orientation=', orientationMode);
+      isCalibrated = true; // 初期キャリブレーション完了
+      console.log('✅ 初期キャリブ完了: gravityOffset=', gravityOffset, ' / orientation=', orientationMode);
+      
+      // 既存の未補正データの品質レベルを更新
+      updateExistingDataQuality('initial');
     } else {
-      console.warn('⚠️ キャリブ失敗: サンプル不足。重力補正が無効です。');
-      gravityOffset = { x: 0, y: 0, z: 0 };
-      orientationMode = 'unknown';
+      console.warn('⚠️ 初期キャリブ失敗: サンプル不足。簡易補正を適用します。');
+      // サンプル不足でも最低限の補正を適用
+      gravityOffset = { x: 0, y: 0, z: -9.8 }; // 標準重力を仮定
+      orientationMode = 'flat';
+      isCalibrated = true;
+      updateExistingDataQuality('basic');
     }
+    
     isCalibrating = false;
+    if (callback) callback();
   }, 3000);
+}
+
+/** 起動時3秒の自動キャリブレーション開始 現在使用してない*/
+export function startAutoCalibration() {
+  // 後方互換性のため残す（performInitialCalibrationを推奨）
+  performInitialCalibration();
 }
 
 /** サンプルの平均ベクトル */
@@ -279,6 +364,9 @@ export function handleDeviceMotion(event) {
               'gravityOffset=', gravityOffset,
               '/ orientation=', orientationMode
             );
+            
+            // 既存データの品質レベルを 'calibrated' に更新
+            updateExistingDataQuality('calibrated');
 
           } else {
             console.warn('⚠️ 停車時キャリブ失敗: サンプル不足。重力補正が無効です。');
@@ -297,8 +385,12 @@ export function handleDeviceMotion(event) {
     }
   }
 
-  // --- 修正箇所 3/3: キャリブ未完了ならすべてスキップ ---
-  if (!isCalibrated) return;
+  // --- 修正箇所 3/3: キャリブ未完了でも基本データは記録 ---
+  if (!isCalibrated) {
+    // 未補正データとして記録（品質レベル='raw'）
+    recordRawDataDuringCalibration(gx, gy, gz, now);
+    return; // 評価処理はスキップ
+  }
 
   // === 平滑化処理 & Firestoreバッファ ===
   gWindow.push({ t: now, x: gx, y: gy, z: gz });
@@ -340,7 +432,8 @@ export function handleDeviceMotion(event) {
     timestamp: now,
     g_x: gx, g_y: gy, g_z: gz,
     speed,
-    event: eventType || 'normal'
+    event: eventType || 'normal',
+    quality: 'calibrated' // 完全キャリブレーション済み
   });
 
   // AVG Gログ（補正＋平滑化済み）
@@ -351,7 +444,8 @@ export function handleDeviceMotion(event) {
     g_z: smoothedG.z,
     rot_z: avgRotZ,
     speed,
-    event: eventType || 'normal'
+    event: eventType || 'normal',
+    quality: 'calibrated' // 完全キャリブレーション済み
   });
 
   // UI更新

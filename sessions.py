@@ -264,6 +264,7 @@ def log_gps_bulk():
                 'longitude': float(longitude),
                 'speed': float(log.get('speed', 0.0)),
                 'event': log.get('event', 'normal'),
+                'quality': log.get('quality', 'unknown'),  # データ品質レベルを保存
                 'timestamp': ts_dt,       # Firestore標準のTimestamp型
                 'timestamp_ms': ts_ms     # スマホ内部のミリ秒値をそのまま保存
             })
@@ -323,6 +324,7 @@ def log_g_only():
                 'g_z': float(log.get('g_z', 0.0)),
                 'speed': float(log.get('speed', 0.0)),
                 'event': log.get('event', 'normal'),
+                'quality': log.get('quality', 'unknown'),  # データ品質レベルを保存
                 'timestamp': ts_dt,       # Firestore標準のTimestamp型
                 'timestamp_ms': ts_ms     # スマホ内部のミリ秒値をそのまま保存
             })
@@ -377,6 +379,7 @@ def log_avg_g_bulk():
                 'rot_z': float(log.get('rot_z', 0.0)),
                 'speed': float(log.get('speed', 0.0)),
                 'event': log.get('event', 'normal'),
+                'quality': log.get('quality', 'unknown'),  # データ品質レベルを保存
                 'timestamp': ts_dt,
                 'timestamp_ms': ts_ms
             })
