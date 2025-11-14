@@ -245,6 +245,7 @@ export function handleDeviceMotion(event) {
   const deltaSpeed = calcDeltaSpeed();
   const avgRotZ = calcAvgRotZ();
 
+  // ★ ライブモードの呼び出しは引数7つ。recentLogsは渡さない（undefinedになる）
   const eventType = detectDrivingPattern(gxs, gys, gzs, speed, deltaSpeed, avgRotZ, now);
 
   // FIX: Gログは生のG値を使用 (軸補正後だが平滑化前)
@@ -283,9 +284,10 @@ export function handleDeviceMotion(event) {
  * @param {number} deltaSpeed - 速度変化 (km/h/s)
  * @param {number} rotZ - Z軸角速度 (deg/s)
  * @param {number} now - 現在時刻 (ms)
+ * @param {Array<Object>} [recentLogs] - (再生時のみ使用) 直近のログデータ配列 ★オプション引数として追加★
  * @returns {string|null} 検出されたイベントタイプ ('smooth_turn', 'sharp_turn', 'stable_drive'など)
  */
-function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now) {
+function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now, recentLogs) {
   const absSide = Math.abs(gx);
   const absFwd = Math.abs(gz);
   const absRot = Math.abs(rotZ);
@@ -435,29 +437,64 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now) {
   }
 */
   // ===============================
-  // 🚗 停止直前ブレーキ評価ロジック（閾値調整版）
+  // 🚗 停止直前ブレーキ評価ロジック（シミュレーション対応）
   // ===============================
-  if (!drivingState.brakeEvaluated && speed <= 12) {
+  // ★ ライブ時と再生時でデータソースを切り替える
+  const isReplayMode = Array.isArray(recentLogs); 
+  
+  let currentSpeed = speed;
+  if (isReplayMode) {
+      // 再生モードの場合、currentSpeedはログから取得済み
+      currentSpeed = speed; 
+  } else {
+      // ライブモードの場合、window.currentSpeedを参照
+      currentSpeed = window.currentSpeed ?? 0;
+  }
+  
+  // ブレーキ判定のトリガー条件（速度が低い、かつまだ評価されていない）
+  if (!drivingState.brakeEvaluated && currentSpeed <= 12) {
     const windowMs = 3000; // 直前3秒を分析
-    const recentSpeeds = speedHistory.filter(s => now - s.t <= windowMs);
-    const recentGs = window.gLogBuffer.filter(g => now - g.timestamp <= windowMs);
 
-    if (recentSpeeds.length > 2) {
-      const firstSpeed = recentSpeeds[0].speed;
-      const lastSpeed = recentSpeeds[recentSpeeds.length - 1].speed;
-      const deltaSpeed = firstSpeed - lastSpeed;
-      const durationSec = (recentSpeeds[recentSpeeds.length - 1].t - recentSpeeds[0].t) / 1000;
-      const decelRate = deltaSpeed / durationSec; // km/h/s
+    let recentData = [];
+    if (isReplayMode) {
+        // ★ 再生モード: 引数 recentLogs (avg_g_logs形式) を使用
+        recentData = recentLogs; 
+    } else {
+        // ★ ライブモード: グローバルバッファ (window.gLogBuffer) を使用
+        recentData = window.gLogBuffer.filter(g => now - (g.timestamp || 0) <= windowMs);
+    }
+    
+    // データが少ない場合は評価しない
+    if (recentData.length > 2) {
+      
+      // 速度とG値を分離して計算
+      const recentGs = recentData; // Gログとして扱う (g_x, g_y, g_z を含む)
+      const recentSpeeds = recentData.map(d => ({ t: d.timestamp || d.timestamp_ms, speed: d.speed || 0 }));
 
-      const avgG = recentGs.reduce((sum, g) => sum + g.g_z, 0) / recentGs.length;
-      const maxAbsG = Math.max(...recentGs.map(g => Math.abs(g.g_z)));
+      // 速度変化率の計算 (直近3秒の初速と終速)
+      const firstSpeed = recentSpeeds[0]?.speed || 0;
+      const lastSpeed = recentSpeeds[recentSpeeds.length - 1]?.speed || 0;
+      const startTime = recentSpeeds[0]?.t || now - windowMs;
+      const endTime = recentSpeeds[recentSpeeds.length - 1]?.t || now;
+      
+      const deltaSpeedTotal = firstSpeed - lastSpeed;
+      const durationSec = (endTime - startTime) / 1000;
+      
+      let decelRate = 0;
+      if (durationSec > 0.5) { // 少なくとも0.5秒以上の時間が必要
+          decelRate = deltaSpeedTotal / durationSec; // km/h/s
+      }
 
-      // 🚦 閾値を緩和（急ブレーキ判定が厳しすぎないように）
-      let suddenBrakeThreshold = 0.40;  // 元0.30 → 緩めた
-      let decelThreshold = 7.5;         // 元6.0 → 緩めた
+      // G値の分析 (前後Gの平均と最大絶対値)
+      const avgG = recentGs.reduce((sum, g) => sum + (g.g_z || 0), 0) / recentGs.length;
+      const maxAbsG = Math.max(...recentGs.map(g => Math.abs(g.g_z || 0)));
 
-      // 低速時（20km/h以下）はさらに緩める
-      if (speed < 20) {
+      // 🚦 閾値（変更なし）
+      let suddenBrakeThreshold = 0.40;
+      let decelThreshold = 7.5; 
+
+      // 低速時（20km/h以下）はさらに緩める（変更なし）
+      if (currentSpeed < 20) {
         suddenBrakeThreshold = 0.45;
         decelThreshold = 9.0;
       }
@@ -470,101 +507,111 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now) {
       }
 
       if (type) {
-        // ✅ GPS位置取得 & 鮮度・座標バリデーション
-        let gps = window.lastKnownPosition;
-        const FRESH_LIMIT_MS = 3000;
-        const isFresh = gps && gps.timestamp && (now - gps.timestamp <= FRESH_LIMIT_MS);
-        const isValidCoord = gps && typeof gps.latitude === 'number' && typeof gps.longitude === 'number' && !(gps.latitude === 0 && gps.longitude === 0);
-
-        if (!isFresh || !isValidCoord) {
-          // 直近のgpsLogBufferから鮮度・座標を満たすものを逆順探索
-            for (let i = window.gpsLogBuffer.length - 1; i >= 0; i--) {
-              const cand = window.gpsLogBuffer[i];
-              const ts = cand.timestamp;
-              if (!ts) continue;
-              if ((now - ts) > FRESH_LIMIT_MS) break; // これより前は鮮度なし
-              if (cand.latitude === 0 && cand.longitude === 0) continue;
-              gps = { latitude: cand.latitude, longitude: cand.longitude, timestamp: ts };
-              console.warn("📍 補完GPS採用 (鮮度/座標不足):", gps);
-              break;
+        // ⚠️ シミュレーション時は、このブロックはイベントを返すだけで、
+        //    GPSログの保存や音声再生は replay.js 側のコンソール出力に任せる
+        if (isReplayMode) {
+            if (type) {
+                drivingState.brakeEvaluated = true; // 次の判定が speed > 15 までスキップされるようにする
+                return type; // ここで判定を確定し、replay.js に結果を返す
             }
-        }
+        } else {
+            // ★ ライブモードの既存処理開始
+            // ✅ GPS位置取得 & 鮮度・座標バリデーション
+            let gps = window.lastKnownPosition;
+            const FRESH_LIMIT_MS = 3000;
+            const isFresh = gps && gps.timestamp && (now - gps.timestamp <= FRESH_LIMIT_MS);
+            const isValidCoord = gps && typeof gps.latitude === 'number' && typeof gps.longitude === 'number' && !(gps.latitude === 0 && gps.longitude === 0);
 
-        if (!gps || !gps.latitude || !gps.longitude || gps.latitude === 0 && gps.longitude === 0) {
-          console.warn("⚠️ 有効かつ鮮度のあるGPSがないため、ブレーキイベントをスキップしました。");
-          return; // 保存しない
-        }
-
-        if (now - lastEventTime > COOLDOWN_MS) {
-          console.log(`🚗 停止直前ブレーキ判定 → ${type} (decelRate=${decelRate.toFixed(2)}, maxG=${maxAbsG.toFixed(2)})`);
-          // ✅ ここに iOSフォールバックブロックを追加
-          if (window.isIOS && window.playEventAudioSegment) {
-            // 🎯 coaching音声開始前に進行中のTTS（ピン読み上げ等）を停止
-            try {
-              if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-                if (speechSynthesis.speaking) {
-                  console.debug('🛑 coaching(iOS seg)開始: 進行中のTTSをcancel');
-                  speechSynthesis.cancel();
+            if (!isFresh || !isValidCoord) {
+              // 直近のgpsLogBufferから鮮度・座標を満たすものを逆順探索
+                for (let i = window.gpsLogBuffer.length - 1; i >= 0; i--) {
+                  const cand = window.gpsLogBuffer[i];
+                  const ts = cand.timestamp;
+                  if (!ts) continue;
+                  if ((now - ts) > FRESH_LIMIT_MS) break; // これより前は鮮度なし
+                  if (cand.latitude === 0 && cand.longitude === 0) continue;
+                  gps = { latitude: cand.latitude, longitude: cand.longitude, timestamp: ts };
+                  console.warn("📍 補完GPS採用 (鮮度/座標不足):", gps);
+                  break;
                 }
-              }
-              if (window.isPinSpeaking) window.isPinSpeaking = false;
-            } catch (e) { console.warn('⚠️ TTS cancel failed before iOS segment playback', e); }
-            const segments = {
-              "good_brake": [0, 2.592],
-              "sharp_turn": [2.593, 2.869],
-              "smooth_accel": [5.463, 2.635],
-              "smooth_turn": [8.099, 2.72],
-              "stable_drive": [10.82, 2.197],
-              "sudden_accel": [13.017, 2.464],
-              "sudden_brake": [15.482, 1.579],
-              "unstable_drive": [17.062, 1.938]
-            };
-            const seg = segments[type];
-            if (seg) {
-              console.log("🎵 iOS fallback playback:", type, seg);
-              window.playEventAudioSegment(seg[0], seg[1]);
-            } else {
-              console.warn("⚠️ 未定義イベント:", type);
             }
-          } else {
-            // 🎯 coaching音声開始前に進行中のTTS（ピン読み上げ等）を停止
-            try {
-              if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-                if (speechSynthesis.speaking) {
-                  console.debug('🛑 coaching開始: 進行中のTTSをcancel');
-                  speechSynthesis.cancel();
+
+            if (!gps || !gps.latitude || !gps.longitude || gps.latitude === 0 && gps.longitude === 0) {
+              console.warn("⚠️ 有効かつ鮮度のあるGPSがないため、ブレーキイベントをスキップしました。");
+              return; // 保存しない
+            }
+
+            if (now - lastEventTime > COOLDOWN_MS) {
+              console.log(`🚗 停止直前ブレーキ判定 → ${type} (decelRate=${decelRate.toFixed(2)}, maxG=${maxAbsG.toFixed(2)})`);
+              // ✅ ここに iOSフォールバックブロックを追加
+              if (window.isIOS && window.playEventAudioSegment) {
+                // 🎯 coaching音声開始前に進行中のTTS（ピン読み上げ等）を停止
+                try {
+                  if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                    if (speechSynthesis.speaking) {
+                      console.debug('🛑 coaching(iOS seg)開始: 進行中のTTSをcancel');
+                      speechSynthesis.cancel();
+                    }
+                  }
+                  if (window.isPinSpeaking) window.isPinSpeaking = false;
+                } catch (e) { console.warn('⚠️ TTS cancel failed before iOS segment playback', e); }
+                const segments = {
+                  "smooth_brake": [0, 2.592],
+                  "sharp_turn": [2.593, 2.869],
+                  "smooth_accel": [5.463, 2.635],
+                  "smooth_turn": [8.099, 2.72],
+                  "stable_drive": [10.82, 2.197],
+                  "sudden_accel": [13.017, 2.464],
+                  "sudden_brake": [15.482, 1.579],
+                  "unstable_drive": [17.062, 1.938]
+                };
+                const seg = segments[type];
+                if (seg) {
+                  console.log("🎵 iOS fallback playback:", type, seg);
+                  window.playEventAudioSegment(seg[0], seg[1]);
+                } else {
+                  console.warn("⚠️ 未定義イベント:", type);
                 }
+              } else {
+                // 🎯 coaching音声開始前に進行中のTTS（ピン読み上げ等）を停止
+                try {
+                  if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                    if (speechSynthesis.speaking) {
+                      console.debug('🛑 coaching開始: 進行中のTTSをcancel');
+                      speechSynthesis.cancel();
+                    }
+                  }
+                  if (window.isPinSpeaking) window.isPinSpeaking = false;
+                } catch (e) { console.warn('⚠️ TTS cancel failed before coaching playback', e); }
+                playRandomAudio(type); // ← Android/PCは従来通り
               }
-              if (window.isPinSpeaking) window.isPinSpeaking = false;
-            } catch (e) { console.warn('⚠️ TTS cancel failed before coaching playback', e); }
-            playRandomAudio(type); // ← Android/PCは従来通り
-          }
 
-          const gxs = window.latestGX ?? 0;
-          const gys = window.latestGY ?? 0;
-          const gzs = window.latestGZ ?? 0;
+              const gxs = window.latestGX ?? 0;
+              const gys = window.latestGY ?? 0;
+              const gzs = window.latestGZ ?? 0;
 
-          const logData = {
-            timestamp: now,
-            latitude: gps.latitude,
-            longitude: gps.longitude,
-            g_x: gxs,
-            g_y: gys,
-            g_z: gzs,
-            speed,
-            event: type
-          };
+              const logData = {
+                timestamp: now,
+                latitude: gps.latitude,
+                longitude: gps.longitude,
+                g_x: gxs,
+                g_y: gys,
+                g_z: gzs,
+                speed,
+                event: type
+              };
 
-          // バッファ追加
-          window.gLogBuffer.push(logData);
-          window.avgGLogBuffer.push(logData);
-          window.gpsLogBuffer.push(logData);
+              // バッファ追加
+              window.gLogBuffer.push(logData);
+              window.avgGLogBuffer.push(logData);
+              window.gpsLogBuffer.push(logData);
 
-          console.log("✅ Firestoreバッファに保存:", type, logData);
-          lastEventTime = now;
+              console.log("✅ Firestoreバッファに保存:", type, logData);
+              lastEventTime = now;
+            }
+
+            drivingState.brakeEvaluated = true;
         }
-
-        drivingState.brakeEvaluated = true;
       }
     }
   }
@@ -601,7 +648,7 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now) {
           if (window.isPinSpeaking) window.isPinSpeaking = false;
         } catch (e) { console.warn('⚠️ TTS cancel failed before iOS segment playback', e); }
         const segments = {
-          "good_brake": [0, 2.592],
+          "smooth_brake": [0, 2.592],
           "sharp_turn": [2.593, 2.869],
           "smooth_accel": [5.463, 2.635],
           "smooth_turn": [8.099, 2.72],
@@ -666,7 +713,8 @@ export function getCurrentG() {
   return smoothedG;
 }
 
-export function resetMotion() {
+// ★ 修正点1: export キーワードを削除
+function resetMotion() {
   motionInitialized = false;
   sampleCount = 0;
 
@@ -714,3 +762,6 @@ export function stopMotionDetection() {
   window.isMotionDetectionActive = false;
   console.log('⏹️ stopMotionDetection()');
 }
+
+// ★ 修正点2: detectDrivingPattern, resetMotion をまとめてエクスポート
+export { detectDrivingPattern, resetMotion };

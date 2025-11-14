@@ -1,11 +1,9 @@
 console.log("🎙 record_voice_unified.js (統合改良版) loaded");
-console.log("🎙 record_voice_unified.js (統合改良版) loaded");
 
 const storageRef = firebase.storage();
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
 console.log("📱 iOS Mode:", isIOS);
 
-// === ビープ音（開始・終了） ===
 // === ビープ音（開始・終了） ===
 function playStartBeep() {
   // 2連ビープ: 880Hz(150ms) → 1200Hz(120ms)

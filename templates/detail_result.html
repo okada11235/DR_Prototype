@@ -401,12 +401,12 @@
     </div>
   {% endif %}
 
-  <!-- <div class="text-center mt-3">
+  <div class="text-center mt-3">
     <a class="btn btn-primary btn-lg"
       href="{{ url_for('views.detail_result_play', session_id=session.id) }}">
       🚗 この走行を“イベント音声つき”で再生
     </a>
-  </div> -->
+  </div>
 
     <nav class="navbar navbar-expand custom-nav-bar fixed-bottom">
     <div class="container-fluid justify-content-center">
@@ -446,13 +446,13 @@ const displayGpsLogs = (gpsLogs || []).filter(l => !(Number(l.latitude) === 0 &&
 /** ========= カラー＆イベント軸 ========= */
 const colorMap = {
   sudden_brake:'#ff3b30',  // 赤
-  sudden_accel:'#34c759',  // 緑
+  sudden_accel:'#189900',  // 緑
   sharp_turn  :'#ff9500',  // オレンジ
   unstable_drive:'#ffcc00',// 黄
   smooth_turn :'#007aff',  // 青
   smooth_accel:'#5ac8fa',  // 水色
-  smooth_brake:'#4cd964',  // 明るい緑
-  stable_drive:'#5856d6',  // 紫
+  smooth_brake:'#a0efa5',  // 明るい緑
+  stable_drive:'#a88ee5',  // 紫
 };
 const eventAxisMap = { sudden_brake:'gz', sudden_accel:'gz', sharp_turn:'gx', speed_violation:'speed' };
 

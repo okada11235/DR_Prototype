@@ -43,7 +43,6 @@ tailwind.config = {
       <p class="text-sm text-gray-700">速度</p>
       <p class="text-2xl font-bold"><span id="speed">0.0</span> km/h</p>
     </div>
-    <!-- 記録時間ボックス -->
     <div class="bg-card-light rounded-lg px-6 py-3 shadow text-center">
       <p class="text-sm text-gray-700">記録時間</p>
       <p class="text-2xl font-bold" id="timer">00:00</p>
@@ -59,143 +58,20 @@ tailwind.config = {
 
   <!-- 停止ボタン -->
   <button id="StopBtn"
-          class="bg-danger-red text-white text-xl font-bold py-3 px-10 rounded-xl shadow-lg hover:bg-red-500 transition"
-          href="{{ url_for('views.detail_result_play', session_id=session.id) }}">
+          class="bg-danger-red text-white text-xl font-bold py-3 px-10 rounded-xl shadow-lg hover:bg-red-500 transition">
     記録を終了する
   </button>
 
   <script>
-    window.isReplayMode = true; // 🔹 再生モードであることを明示
+    window.isReplayMode = true;
     window.replaySessionId = "{{ session_id }}";
     window.replayStart = "{{ start }}";
     window.replayEnd = "{{ end }}";
     window.replaySessionStart = "{{ session_start or 0 }}";
   </script>
 
-  <!-- 🔊 再生ロジック -->
-  <script type="module">
-    import { playRandomAudio, autoUnlockAudio } from "{{ url_for('static', filename='audio.js') }}";
-    autoUnlockAudio(); // iOS用アンロック
-
-    async function fetchLogs(sessionId, start, end) {
-      const res = await fetch(`/api/replay_data/${sessionId}?start=${start}&end=${end}`);
-      const json = await res.json();
-      return (json.avg_g_logs || []).sort((a,b)=>a.timestamp_ms-b.timestamp_ms);
-    }
-
-    function formatTime(ms) {
-      const s = Math.floor(ms / 1000);
-      return `${String(Math.floor(s/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`;
-    }
-
-    let logs = [], idx = 0, timer = null, playing = false;
-    let startReal = 0, t0 = 0, t1 = 0, sessionStart = 0;
-
-    function updateUI(log) {
-      document.getElementById("speed").textContent = (log.speed || 0).toFixed(1);
-      document.getElementById("g-x").textContent = (log.g_x || 0).toFixed(2);
-      document.getElementById("g-z").textContent = (log.g_z || 0).toFixed(2);
-      document.getElementById("g-y").textContent = (log.g_y || 0).toFixed(2);
-    }
-
-    function step() {
-      if (!playing) return;
-      const now = Date.now();
-      const virtualT = t0 + (now - startReal);
-
-      // ✅ 実走開始時刻からの経過時間を反映
-      const driveElapsedMs = Math.max(0, virtualT - sessionStart);
-      document.getElementById("timer").textContent = formatTime(driveElapsedMs);
-
-      while (idx < logs.length && logs[idx].timestamp_ms <= virtualT) {
-        const log = logs[idx];
-        updateUI(log);
-        if (log.event && log.event !== "normal") playRandomAudio(log.event);
-        idx++;
-      }
-
-      if (idx >= logs.length || virtualT >= t1) stop();
-    }
-
-    function start(sessionId, startMs, endMs, sessionStartMs) {
-      t0 = startMs;
-      t1 = endMs;
-      sessionStart = sessionStartMs;
-      startReal = Date.now();
-      playing = true;
-      /*
-      // 🎵 10秒後に録音開始音（ポン）
-      setTimeout(() => {
-        if (typeof playStartBeep === "function") {
-          playStartBeep();
-          console.log("🔊 録音開始音を再生しました（10秒後）");
-        }
-      }, 20000);
-
-      // 🎵 さらに5秒後に録音終了音（ピッ）
-      setTimeout(() => {
-        if (typeof playEndBeep === "function") {
-          playEndBeep();
-          console.log("🔇 録音終了音を再生しました（15秒後）");
-        }
-      }, 25000);
-      */
-        // 🎵 再生開始10秒後 → 「急発進」イベント音を再生
-      setTimeout(() => {
-        playRandomAudio("stable_drive"); // ← イベント音カテゴリを使用
-        console.log("🔊 イベント音（安定した走行）を再生しました（5秒後）");
-      }, 5000);
-
-      // 🎵 再生開始15秒後 → 「急ブレーキ」イベント音を再生
-      setTimeout(() => {
-        playRandomAudio("sudden_brake");
-        console.log("🔊 イベント音（急ブレーキ）を再生しました（10秒後）");
-      }, 20000);
-      timer = setInterval(step, 100);
-    }
-
-    // ✅ 記録終了ボタン処理
-    document.getElementById("StopBtn").onclick = () => {
-      const confirmEnd = confirm("記録を終了してよろしいですか？");
-      if (!confirmEnd) {
-        console.log("再生終了がキャンセルされました。");
-        return;
-      }
-
-      playing = false;
-      if (timer) clearInterval(timer);
-      document.getElementById("timer").textContent = "00:00";
-
-      // ✅ 再生した範囲（start / end）を含めてサーバへ送信
-      const sessionId = window.replaySessionId;
-      const startMs = parseInt(window.replayStart);
-      const endMs = parseInt(window.replayEnd);
-
-      fetch(`/replay_completed/${sessionId}?start=${startMs}&end=${endMs}`)
-        .then(() => {
-          window.location.href = `/recording/completed_re/${sessionId}?start=${startMs}&end=${endMs}`;
-        })
-        .catch(err => {
-          console.error("再生完了ページへの遷移エラー:", err);
-          window.location.href = `/recording/completed_re/${sessionId}?start=${startMs}&end=${endMs}`;
-        });
-    };
-
-    // 🔸 初期化
-    window.addEventListener("DOMContentLoaded", async () => {
-      const sessionId = window.replaySessionId;
-      const startMs = parseInt(window.replayStart);
-      const endMs = parseInt(window.replayEnd);
-      const sessionStartMs = parseInt(window.replaySessionStart); // ✅ 追加
-      logs = await fetchLogs(sessionId, startMs, endMs);
-      if (logs.length === 0) {
-        alert("この範囲にはデータがありません。");
-        return;
-      }
-      start(sessionId, startMs, endMs, sessionStartMs); // ✅ 追加
-    });
-  </script>
   <script src="{{ url_for('static', filename='pin_utils.js') }}"></script>
-  <script src="{{ url_for('static', filename='record_voice_unified.js') }}"></script>
+  <script type="module" src="{{ url_for('static', filename='replay.js') }}"></script>
+
 </body>
 </html>

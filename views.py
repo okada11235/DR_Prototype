@@ -348,11 +348,25 @@ from flask import jsonify
 def api_replay_data(session_id):
     start = request.args.get("start", type=int)
     end   = request.args.get("end", type=int)
-    logs = get_avg_g_logs_for_session(session_id)  # 既存ヘルパで取得
+
+    # avg_g_logs を取得
+    logs = get_avg_g_logs_for_session(session_id)
     if start and end:
         logs = [l for l in logs if (l.get("timestamp_ms") or 0) >= start and (l.get("timestamp_ms") or 0) <= end]
-    # event / g_x / g_y / g_z / speed / timestamp_ms をそのまま返す
-    return jsonify({"avg_g_logs": logs})
+
+    # gps_logs も取得
+    gps = get_gps_logs_for_session(session_id)
+    if start and end:
+        gps = [g for g in gps if (g.get("timestamp") or 0) >= start and (g.get("timestamp") or 0) <= end]
+
+    # timestamp を揃える
+    gps_sorted = sorted(gps, key=lambda g: g.get("timestamp", 0))
+    avg_sorted = sorted(logs, key=lambda l: l.get("timestamp_ms", 0))
+
+    return jsonify({
+        "avg_g_logs": avg_sorted,
+        "gps_logs": gps_sorted
+    })
 
 @views_bp.route('/replay_active/<session_id>')
 @login_required
@@ -445,8 +459,6 @@ def update_user_speak_settings():
 
 
 # === Firestore API: ピン保存 ===
-from flask import jsonify
-
 @views_bp.route('/api/save_pin', methods=['POST'])
 @login_required
 def save_pin():
