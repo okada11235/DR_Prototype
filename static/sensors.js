@@ -556,7 +556,7 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now, recentLo
                   if (window.isPinSpeaking) window.isPinSpeaking = false;
                 } catch (e) { console.warn('⚠️ TTS cancel failed before iOS segment playback', e); }
                 const segments = {
-                  "good_brake": [0, 2.592],
+                  "smooth_brake": [0, 2.592],
                   "sharp_turn": [2.593, 2.869],
                   "smooth_accel": [5.463, 2.635],
                   "smooth_turn": [8.099, 2.72],
