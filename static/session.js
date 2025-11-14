@@ -101,9 +101,6 @@ export function startSession() {
         console.log('Motion permission granted');
         startMotionDetection();
 
-        // ★FIX: 起動時オートキャリブレーションを実行
-        startAutoCalibration();
-
         console.log('Sending session start request...');
         fetch('/start', { method: 'POST' })
             .then(res => {

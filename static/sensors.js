@@ -28,6 +28,10 @@ let motionInitialized = false;
 let sampleCount = 0;
 
 let isCalibrating = false;
+let isCalibrated = false;
+let speedZeroStart = 0;   // 速度0が始まった時刻
+const CALIBRATION_DELAY_MS = 3000; // 3秒間停車を待つ
+const CALIBRATION_DURATION_MS = 2000; // 2秒間サンプリング
 let calibrationSamples = [];
 let gravityOffset = { x: 0, y: 0, z: 0 };   // 3秒平均で決める重力ベクトル (FIX: 静的に使用)
 let orientationMode = 'unknown';            // 姿勢（portrait/landscape/flat など）
@@ -64,7 +68,7 @@ if (!window.avgGLogBuffer) window.avgGLogBuffer = [];
 // キャリブレーション (FIX: 静的オフセットとして機能させる)
 // =======================
 
-/** 起動時3秒の自動キャリブレーション開始 */
+/** 起動時3秒の自動キャリブレーション開始 現在使用してない*/
 export function startAutoCalibration() {
   isCalibrating = true;
   calibrationSamples = [];
@@ -110,44 +114,66 @@ function detectOrientation(avg) {
 
 /** FIX: 重力オフセット除去 ＋ 姿勢による軸の整列（左右G=+X、前後G=+Z を意識） */
 function applyOrientationCorrection(gx, gy, gz) {
+  // ★ 仮定: iOS判定フラグがグローバルスコープにあるとする (例: window.isIOS)
+  const isIOS = window.isIOS || false;
+
   // 1) 重力オフセットを引く（静止時に ~0 付近になる）
   gx -= gravityOffset.x;
   gy -= gravityOffset.y;
   gz -= gravityOffset.z;
 
+  // ----------------------------------------------------
+  // ★ iOS/Android 符号の統一処理
+  // ----------------------------------------------------
+  if (isIOS) {
+    // iOSはAndroidと全ての軸の符号が逆と仮定し、反転させてAndroid基準に統一する
+    gx = -gx;
+    gy = -gy;
+    gz = -gz;
+  }
+  // ----------------------------------------------------
+
   let finalGx, finalGy, finalGz;
-  
+
   // 2) 端末姿勢に合わせて「左右G=X」「前後G=Z」を揃える
   switch (orientationMode) {
     case 'landscape_left':   // 端末左側が上 (X軸が重力方向)
       finalGx = -gy; // 横G
-      finalGy = gz;  // 上下G
-      finalGz = -gx; // 前後G
+      finalGy = gx;  // 上下G
+      finalGz = -gz; // 前後G
       break;
     case 'landscape_right':  // 端末右側が上 (X軸が重力方向)
       finalGx = gy;  // 横G
-      finalGy = gz;  // 上下G
-      finalGz = gx;  // 前後G
+      finalGy = -gx; // 上下G
+      finalGz = -gz; // 前後G
       break;
     case 'portrait_up':      // 端末上が上 (Y軸が重力方向)
       finalGx = gx;  // 横G
-      finalGy = gz;  // 上下G
-      finalGz = -gy; // 前後G
+      finalGy = -gy; // 上下G
+      finalGz = -gz; // 前後G
       break;
     case 'portrait_down':    // 端末下が上 (Y軸が重力方向)
       finalGx = -gx; // 横G
-      finalGy = gz;  // 上下G
-      finalGz = gy;  // 前後G
+      finalGy = gy;  // 上下G
+      finalGz = -gz; // 前後G
       break;
     case 'flat':             // 画面が上 (Z軸が重力方向)
     default:
+      // FIX: flat/default のロジックを修正
+      // finalGx = gx;
+      // finalGy = gz;
+      // finalGz = -gy; 
+      
+      // flat/default は原則として軸の入れ替えは不要
+      // ただし、上下G(Y)と前後G(Z)が入れ替わっている可能性を考慮
+      // Androidの標準軸定義に基づき、Z軸を前後G (finalGz)に割り当てる
       finalGx = gx;
       finalGy = gy;
       finalGz = gz;
       break;
   }
   // finalGx: 左右G (旋回G), finalGz: 前後G (加減速G)
-  return { gx: finalGx, gy: finalGy, gz: finalGz }; 
+  return { gx: finalGx, gy: finalGy, gz: finalGz };
 }
 
 // =======================
@@ -199,17 +225,17 @@ export function handleDeviceMotion(event) {
   let gy = acc.y || 0;
   let gz = acc.z || 0;
 
-  // ✅ m/s² → G（1G ≈ 9.80665 m/s²）
+  // m/s² → G（1G ≈ 9.80665 m/s²）
   gx /= 9.80665;
   gy /= 9.80665;
   gz /= 9.80665;
 
-  // FIX: 連続的な重力追従ロジックを削除し、キャリブレーション時のみサンプリング
+  // キャリブレーション中はサンプルを貯めるだけ
   if (isCalibrating) {
     calibrationSamples.push({ x: gx, y: gy, z: gz });
     return;
   }
-  
+
   if (!motionInitialized) {
     motionInitialized = true;
     console.log('DeviceMotion initialized');
@@ -217,43 +243,110 @@ export function handleDeviceMotion(event) {
 
   if (++sampleCount % MOTION_FRAME_SKIP !== 0) return;
 
-  // FIX: キャリブレーション値に基づき、重力除去と軸補正を適用
-  ({ gx, gy, gz } = applyOrientationCorrection(gx, gy, gz));
+  // --- 修正箇所 1/3: 重力補正（キャリブ済みのときのみ） ---
+  if (isCalibrated) {
+    ({ gx, gy, gz } = applyOrientationCorrection(gx, gy, gz));
+  }
+  // 未キャリブ時は生の値
 
-  // === 以下、平滑化処理・Firestoreバッファ処理はそのまま ===
+  // --- 修正箇所 2/3: 停車検出によるキャリブレーション起動 ---
+  if (!isCalibrated && !isCalibrating) {
+    const currentSpeed = window.currentSpeed ?? 0;
+
+    if (currentSpeed < 1.0) { // 停車
+      if (speedZeroStart === 0) {
+        speedZeroStart = now;
+      }
+
+      // 3秒停車したらキャリブ開始
+      if (now - speedZeroStart >= CALIBRATION_DELAY_MS) {
+        console.log('🚗 停車状態を検知。自動キャリブレーションを実行します。');
+        speedZeroStart = 0;
+
+        isCalibrating = true;
+        calibrationSamples = [];
+        gravityOffset = { x: 0, y: 0, z: 0 };
+
+        setTimeout(() => {
+          if (calibrationSamples.length >= 10) {
+            const avg = meanVector(calibrationSamples);
+            gravityOffset = { ...avg };
+            orientationMode = detectOrientation(avg).mode;
+            isCalibrated = true;
+
+            console.log(
+              '✅ 停車時キャリブ完了:',
+              'gravityOffset=', gravityOffset,
+              '/ orientation=', orientationMode
+            );
+
+          } else {
+            console.warn('⚠️ 停車時キャリブ失敗: サンプル不足。重力補正が無効です。');
+            gravityOffset = { x: 0, y: 0, z: 0 };
+            orientationMode = 'unknown';
+          }
+
+          isCalibrating = false;
+        }, CALIBRATION_DURATION_MS);
+
+        return;
+      }
+
+    } else {
+      speedZeroStart = 0; // 走行中はリセット
+    }
+  }
+
+  // --- 修正箇所 3/3: キャリブ未完了ならすべてスキップ ---
+  if (!isCalibrated) return;
+
+  // === 平滑化処理 & Firestoreバッファ ===
   gWindow.push({ t: now, x: gx, y: gy, z: gz });
   updateSmoothedG(now);
-  // FIX: 軸補正後のG値を参照
-  const gxs = smoothedG.x; // 左右G (Lateral)
-  const gys = smoothedG.y; // 上下G (Vertical)
-  const gzs = smoothedG.z; // 前後G (Longitudinal)
+
+  const gxs = smoothedG.x;
+  const gys = smoothedG.y;
+  const gzs = smoothedG.z;
 
   window.latestGX = gxs;
   window.latestGY = gys;
   window.latestGZ = gzs;
-  
+
   const speed = window.currentSpeed ?? 0;
+
   speedHistory.push({ t: now, speed });
-  while (speedHistory.length && speedHistory[0].t < now - SPEED_WINDOW_MS) speedHistory.shift();
+  while (speedHistory.length && speedHistory[0].t < now - SPEED_WINDOW_MS) {
+    speedHistory.shift();
+  }
 
   const rot = event.rotationRate || {};
-  const rotZ = (rot.alpha ?? rot.z ?? 0); // iOS: alpha=Z、Android: z
-  
+  const rotZ = (rot.alpha ?? rot.z ?? 0);
+
   rotationHistory.push({ t: now, rotZ });
-  while (rotationHistory.length && rotationHistory[0].t < now - ROT_WINDOW_MS) rotationHistory.shift();
+  while (rotationHistory.length && rotationHistory[0].t < now - ROT_WINDOW_MS) {
+    rotationHistory.shift();
+  }
 
   const deltaSpeed = calcDeltaSpeed();
   const avgRotZ = calcAvgRotZ();
 
-  // ★ ライブモードの呼び出しは引数7つ。recentLogsは渡さない（undefinedになる）
-  const eventType = detectDrivingPattern(gxs, gys, gzs, speed, deltaSpeed, avgRotZ, now);
+  // ライブモード: recentLogs は渡さない
+  const eventType = detectDrivingPattern(
+    gxs, gys, gzs, speed, deltaSpeed, avgRotZ, now
+  );
 
-  // FIX: Gログは生のG値を使用 (軸補正後だが平滑化前)
-  window.gLogBuffer.push({ timestamp: now, g_x: gx, g_y: gy, g_z: gz, speed, event: eventType || 'normal' });
-  // FIX: AVG Gログは平滑化後のG値を使用 (軸補正後かつ平滑化後)
+  // 生Gログ（補正あり / 平滑化なし）
+  window.gLogBuffer.push({
+    timestamp: now,
+    g_x: gx, g_y: gy, g_z: gz,
+    speed,
+    event: eventType || 'normal'
+  });
+
+  // AVG Gログ（補正＋平滑化済み）
   window.avgGLogBuffer.push({
     timestamp: now,
-    g_x: smoothedG.x,  // ← 補正＆平滑化済み
+    g_x: smoothedG.x,
     g_y: smoothedG.y,
     g_z: smoothedG.z,
     rot_z: avgRotZ,
@@ -261,6 +354,7 @@ export function handleDeviceMotion(event) {
     event: eventType || 'normal'
   });
 
+  // UI更新
   const gxElem = document.getElementById('g-x');
   const gyElem = document.getElementById('g-y');
   const gzElem = document.getElementById('g-z');
@@ -269,7 +363,6 @@ export function handleDeviceMotion(event) {
   if (gyElem) gyElem.textContent = gys.toFixed(2);
   if (gzElem) gzElem.textContent = gzs.toFixed(2);
 }
-
 
 // =======================
 // FIX: 継続時間判定ロジック
@@ -296,7 +389,7 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now, recentLo
   const isBraking = gz <= -0.13;
   const isAccelerating = gz >= 0.13;
   const isTurning =
-    speed >= 13 &&                // 右左折は必ず10km/h以上
+    speed >= 13 &&                // 右左折は必ず13km/h以上
     absSide >= 0.10 &&            // 横Gが出始めたら（蛇行は除外）
     absRot >= 4;                  // rotZ 4deg/s以上で明確な方向転換
   const isStable =
@@ -728,6 +821,8 @@ function resetMotion() {
   calibrationSamples = [];
   gravityOffset = { x: 0, y: 0, z: 0 }; 
   orientationMode = 'unknown';
+  isCalibrated = false;
+  speedZeroStart = 0;
   
   // FIX: 継続時間判定ステートをリセット
   drivingState = {
@@ -749,9 +844,6 @@ export function startMotionDetection() {
   if (window.isMotionDetectionActive) return;
   window.isMotionDetectionActive = true;
 
-  // 起動時キャリブ（3秒）
-  startAutoCalibration();
-
   window.addEventListener('devicemotion', handleDeviceMotion);
   console.log('▶️ startMotionDetection()');
 }
@@ -765,3 +857,26 @@ export function stopMotionDetection() {
 
 // ★ 修正点2: detectDrivingPattern, resetMotion をまとめてエクスポート
 export { detectDrivingPattern, resetMotion };
+
+// =======================
+// ★ 追加: iOS判定フラグの設定ロジック
+// =======================
+
+(function() {
+  // ブラウザのUser AgentをチェックしてiOSかどうかを判定
+  const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+
+  // iOSデバイスの判定（iPhone, iPad, iPod）
+  // または、最近のiPadOS (MacのようなUser Agentを持つもの)
+  const isIOS = /iPhone|iPad|iPod/i.test(userAgent) || 
+                (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  
+  // windowオブジェクトにフラグを設定（applyOrientationCorrection関数で使用）
+  window.isIOS = isIOS;
+  
+  if (isIOS) {
+    console.log("✅ Platform detected: iOS");
+  } else {
+    console.log("✅ Platform detected: Android/Other");
+  }
+})();
