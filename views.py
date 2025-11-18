@@ -1075,16 +1075,31 @@ def feedback_page():
 @login_required
 def feedback_log():
     from collections import Counter
+    from datetime import datetime, timedelta
     try:
+        # 日付フィルターパラメータ取得
+        filter_date = request.args.get('date', '')
+        
         # Firestoreから全フィードバック取得
         feedbacks_ref = db.collection('user_feedback').order_by('created_at', direction=firestore.Query.DESCENDING).stream()
         feedbacks = []
+        date_counts = Counter()  # 日付ごとの件数
+        
         for doc in feedbacks_ref:
             data = doc.to_dict()
             data['id'] = doc.id
             # created_atをJSTに変換
             if 'created_at' in data and data['created_at']:
                 data['created_at'] = data['created_at'].astimezone(JST)
+                # 日付をキーにしてカウント
+                date_key = data['created_at'].strftime('%Y-%m-%d')
+                date_counts[date_key] += 1
+                
+                # 日付フィルター適用
+                if filter_date:
+                    if date_key != filter_date:
+                        continue
+            
             feedbacks.append(data)
         
         # 集計処理
@@ -1137,7 +1152,9 @@ def feedback_log():
             post_fb_summary=post_fb_summary,
             focus_summary=focus_summary,
             pin_summary=pin_summary,
-            solution_summary=solution_summary
+            solution_summary=solution_summary,
+            date_counts=date_counts,
+            filter_date=filter_date
         )
     except Exception as e:
         print(f"Error in feedback_log: {e}")
