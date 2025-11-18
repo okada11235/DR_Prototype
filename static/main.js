@@ -155,7 +155,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             // 🧭 終了後にセッション一覧ページへ遷移
-            window.location.href = '/recording/completed';
+            window.location.href = `/recording/completed?session_id=${window.sessionId}`;
         });
 
         endButton.hasEventListener = true;

@@ -257,26 +257,41 @@ export function endSession(showAlert = true) {
     // FIX: サーバーに終了リクエストを送信する前に、残りのログをすべて送信
     const flushFinalLogs = () => {
         // FIX: ローカルバッファを強制フラッシュする関数
-        const flushOneBuffer = (buffer, endpoint) => {
-            if (buffer.length === 0) return Promise.resolve({ status: 'ok', saved_count: 0 });
-            
-            const logsToSend = buffer.splice(0, buffer.length); // すべて取り出す
-            console.log(`Sending final ${logsToSend.length} logs to ${endpoint}`);
-            
-            return fetch(endpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ session_id: window.sessionId, [endpoint.includes('gps') ? 'gps_logs' : endpoint.includes('avg') ? 'avg_g_logs' : 'g_logs']: logsToSend })
-            })
-            .then(r => r.json())
-            .then(data => {
-                console.log(`${endpoint} final save response:`, data);
-                return data;
-            })
-            .catch(err => {
-                console.error(`ERROR: Final ${endpoint} save failed:`, err);
-                return { status: 'error', message: err.message };
-            });
+        const flushOneBuffer = async (buffer, endpoint) => {
+            if (!buffer || buffer.length === 0) {
+                return { ok: true, saved: 0 };
+            }
+
+            const logsToSend = buffer.splice(0, buffer.length);
+
+            try {
+                const res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: window.sessionId,
+                        gps_logs: endpoint.includes('gps') ? logsToSend : undefined,
+                        avg_g_logs: endpoint.includes('avg') ? logsToSend : undefined,
+                        g_logs: (!endpoint.includes('gps') && !endpoint.includes('avg')) ? logsToSend : undefined
+                    })
+                });
+
+                if (!res.ok) {
+                    throw new Error(`HTTP ${res.status}`);
+                }
+
+                const json = await res.json();
+
+                if (json.status !== 'ok') {
+                    throw new Error(`Server error: ${json.message || "unknown"}`);
+                }
+
+                return { ok: true, saved: logsToSend.length };
+
+            } catch (err) {
+                console.error(`❌ ERROR sending logs to ${endpoint}:`, err);
+                return { ok: false, error: err };
+            }
         };
         
         // ログの保存順序: GPSログがセッションの座標の主となるため、先に送る
