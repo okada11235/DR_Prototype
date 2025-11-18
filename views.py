@@ -180,30 +180,51 @@ def recording_active():
 @views_bp.route('/recording/completed')
 @login_required
 def recording_completed():
-    db_ref = firestore.client()
-    # 直近のセッション（最新の start_time を持つ completed 状態）
-    latest_session = (
-        db_ref.collection('sessions')
-        .where('user_id', '==', current_user.id)
-        .where('status', '==', 'completed')
-        .order_by('end_time', direction=firestore.Query.DESCENDING)
-        .limit(1)
-        .stream()
-    )
+    session_id = request.args.get("session_id")
 
-    session_obj = None
-    for doc in latest_session:
-        data = doc.to_dict()
-        data['id'] = doc.id
-        session_obj = data
-        break
+    # --- ① session_id が指定されている場合はそれを最優先で読む ---
+    if session_id:
+        doc_ref = db.collection("sessions").document(session_id)
+        doc = doc_ref.get()
 
-    if not session_obj:
-        # セッションが見つからない場合のフォールバック
-        return render_template('recording_completed.html', session=None)
+        if doc.exists:
+            session = doc.to_dict()
+            session["id"] = doc.id  # テンプレート用にIDを付ける
+            print(f"📘 recording_completed: using session_id={session_id}")
+            return render_template("recording_completed.html", session=session)
 
-    return render_template('recording_completed.html', session=session_obj)
+        else:
+            print(f"⚠ session_id={session_id} not found. Falling back to latest completed.")
 
+    # --- ② fallback（従来どおり最新 completed を探す） ---
+    user_id = current_user.id
+    print(f"📘 recording_completed: searching latest completed for user {user_id}")
+
+    try:
+        query = (
+            db.collection("sessions")
+            .where("user_id", "==", user_id)
+            .where("status", "==", "completed")
+            .order_by("end_time", direction=firestore.Query.DESCENDING)
+            .limit(1)
+            .stream()
+        )
+
+        docs = list(query)
+        if not docs:
+            print("⚠ No completed sessions found.")
+            return render_template("recording_completed.html", session=None)
+
+        doc = docs[0]
+        session = doc.to_dict()
+        session["id"] = doc.id
+
+        print(f"📘 recording_completed: loaded latest completed session {doc.id}")
+        return render_template("recording_completed.html", session=session)
+
+    except Exception as e:
+        print("❌ recording_completed ERROR:", e)
+        return render_template("recording_completed.html", session=None)
 
 # セッション一覧
 @views_bp.route('/sessions')
