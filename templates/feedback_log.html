@@ -31,6 +31,28 @@
       <a href="{{ url_for('views.home') }}" class="btn btn-outline-secondary btn-sm">ホームへ戻る</a>
     </div>
 
+    <!-- 日付フィルター -->
+    <div class="summary-card mb-3">
+      <div class="row align-items-center">
+        <div class="col-md-6">
+          <h6 class="mb-2">日付で絞り込み</h6>
+          <select id="dateFilter" class="form-select" onchange="filterByDate(this.value)">
+            <option value="">全期間</option>
+            {% for date, count in date_counts.most_common() %}
+              <option value="{{ date }}" {% if filter_date == date %}selected{% endif %}>
+                {{ date }} ({{ count }}件)
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6 text-end">
+          {% if filter_date %}
+            <a href="{{ url_for('views.feedback_log') }}" class="btn btn-sm btn-outline-secondary mt-3">フィルターをクリア</a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
     {% if error %}
       <div class="alert alert-danger">エラー: {{ error }}</div>
     {% endif %}
@@ -320,6 +342,15 @@
 
   </div>
 
+  <script>
+    function filterByDate(date) {
+      if (date) {
+        window.location.href = "{{ url_for('views.feedback_log') }}?date=" + date;
+      } else {
+        window.location.href = "{{ url_for('views.feedback_log') }}";
+      }
+    }
+  </script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
