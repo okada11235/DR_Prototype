@@ -285,7 +285,7 @@ tailwind.config = {
         window.audioContext = new (window.AudioContext || window.webkitAudioContext)();
       }
       audioCtx = window.audioContext;
-      const url = "{{ url_for('static', filename='audio/focus_near.mp3') }}"; // あなたが用意する音声ファイル
+      const url = "{{ url_for('static', filename='audio/focus_near.wav') }}"; // あなたが用意する音声ファイル
       const res = await fetch(url);
       const arrayBuffer = await res.arrayBuffer();
       voiceBuffer = await audioCtx.decodeAudioData(arrayBuffer);
@@ -354,10 +354,6 @@ tailwind.config = {
       console.log("🚗 重点ポイント通知システム起動完了");
     });
   </script>
-
-  <script type="module" src="{{ url_for('static', filename='main.js') }}"></script>
-  <!-- ルート記録（優先ルート）を継続するために読み込み -->
-  <script src="{{ url_for('static', filename='route_recorder.js') }}"></script>
   <!--録音内容-->
   <script>
     // 例：FlaskからJinja2経由でsession_idを埋め込む
@@ -366,9 +362,6 @@ tailwind.config = {
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
   <!--<script src="{{ url_for('static', filename='record.js') }}"></script>-->
   <!--<script src="{{ url_for('static', filename='record_voice.js') }}"></script>-->
-  <script src="{{ url_for('static', filename='maps.js') }}"></script>
-  <script src="{{ url_for('static', filename='session.js') }}"></script>
-  <script src="{{ url_for('static', filename='pin_utils.js') }}"></script>
   <!-- 音声認識機能を無効化（記録中の誤動作防止）
   <script src="{{ url_for('static', filename='record_voice_unified.js') }}"></script>
   -->
@@ -637,5 +630,14 @@ tailwind.config = {
       window.addEventListener('click', ask, { once: true });
     })();
   </script>
+  <script src="{{ url_for('static', filename='state.js') }}"></script>
+  <script src="{{ url_for('static', filename='sensors.js') }}"></script>
+  <script src="{{ url_for('static', filename='session.js') }}"></script>
+  <script src="{{ url_for('static', filename='maps.js') }}"></script>
+  <script src="{{ url_for('static', filename='pin_utils.js') }}"></script>
+  <script src="{{ url_for('static', filename='route_recorder.js') }}"></script>
+
+  <!-- これが一番最後 -->
+  <script type="module" src="{{ url_for('static', filename='main.js') }}"></script>
 </body>
 </html>

@@ -22,37 +22,60 @@ window.stopMotionDetection = stopMotionDetection;
 
 // 記録中画面の初期化処理
 function initActiveRecording() {
+
+    window.gpsLogBuffer = window.gpsLogBuffer || [];
+    window.gLogBuffer = window.gLogBuffer || [];
+    window.avgGLogBuffer = window.avgGLogBuffer || [];
+
     if (typeof initMap === 'function') {
         initMap();
     }
+
     const savedSessionId = localStorage.getItem('activeSessionId');
     const savedStartTime = localStorage.getItem('sessionStartTime');
+
     if (savedSessionId && savedStartTime) {
+
         window.sessionId = savedSessionId;
         window.startTime = parseInt(savedStartTime);
-            // initialize pause accumulator
-            window.pauseAccumulatedMs = 0;
+
+        // pause初期化
+        window.pauseAccumulatedMs = 0;
+
         console.log('Session ID set to:', window.sessionId);
         console.log('GPS buffer size:', window.gpsLogBuffer.length);
         console.log('G buffer size:', window.gLogBuffer.length);
+
+        // ★ audio OK
         console.log('🔊 Audio playback enabled (recording active)');
+
         const sessionIdElement = document.getElementById('session_id');
         if (sessionIdElement) sessionIdElement.textContent = window.sessionId;
+
+        // タイマー開始
         startTimer();
+
+        // GPS 監視開始（maps.js）
         watchPosition();
+
+        // 加速度センサー開始
         if (!window.isMotionDetectionActive) {
             startMotionDetection();
         } else {
             console.log('Motion detection already active, skipping startup');
         }
 
-        // ★スコア初期化（走行開始時にリセット）
+        // 初期スコアリセット
         initScores();
-        // ★FIX: active画面でもキャリブレーションを念のため実行
+
+        // 自動キャリブレーション開始
         startAutoCalibration();
+
+        // ログフラッシュ開始
         startLogFlush();
-        //startPraiseCheck();
+
         console.log('Active recording initialized with session:', window.sessionId);
+
     } else {
         console.error('No active session found');
         window.location.href = '/recording/start';
