@@ -156,10 +156,10 @@ def end():
         result = end_session(transaction)
 
         # ★ AI フィードバック生成（失敗してもセッション完了は続行）
-        try:
-            analyze_focus_points_for_session(session_id, current_user.id)
-        except Exception as e:
-            print("AI evaluation error:", e)
+        # try:
+        #     analyze_focus_points_for_session(session_id, current_user.id)
+        # except Exception as e:
+        #     print("AI evaluation error:", e)
 
         # ★★★ 最重要：必ず session_id を返す ★★★
         return jsonify({
@@ -400,27 +400,27 @@ def log_avg_g_bulk():
         print(f"Error saving avg G logs: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
-# 反省文保存
-@sessions_bp.route('/save_reflection', methods=['POST'])
-@login_required
-def save_reflection():
-    data = request.get_json()
-    session_id = data.get('session_id')
-    reflection_text = data.get('reflection_text', '')
+# # 反省文保存
+# @sessions_bp.route('/save_reflection', methods=['POST'])
+# @login_required
+# def save_reflection():
+#     data = request.get_json()
+#     session_id = data.get('session_id')
+#     reflection_text = data.get('reflection_text', '')
 
-    if not session_id:
-        return jsonify({'status': 'error', 'message': 'Missing session_id'}), 400
+#     if not session_id:
+#         return jsonify({'status': 'error', 'message': 'Missing session_id'}), 400
 
-    session_ref = db.collection('sessions').document(session_id)
-    session_doc = session_ref.get()
-    if not session_doc.exists or session_doc.to_dict().get('user_id') != current_user.id:
-        return jsonify({'status': 'error', 'message': 'Permission denied'}), 403
+#     session_ref = db.collection('sessions').document(session_id)
+#     session_doc = session_ref.get()
+#     if not session_doc.exists or session_doc.to_dict().get('user_id') != current_user.id:
+#         return jsonify({'status': 'error', 'message': 'Permission denied'}), 403
 
-    try:
-        session_ref.update({'reflection': reflection_text})
-        return jsonify({'status': 'ok', 'message': '反省文が保存されました'})
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+#     try:
+#         session_ref.update({'reflection': reflection_text})
+#         return jsonify({'status': 'ok', 'message': '反省文が保存されました'})
+#     except Exception as e:
+#         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 # デバッグ用：セッションデータ確認エンドポイント
 @sessions_bp.route('/debug_session/<session_id>')
