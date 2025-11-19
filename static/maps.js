@@ -141,6 +141,14 @@ export function watchPosition() {
   }, { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 });
 }
 
+export function stopGPSWatch() {
+    if (window.watchId != null) {
+        console.log("Stopping GPS watch:", window.watchId);
+        navigator.geolocation.clearWatch(window.watchId);
+        window.watchId = null;
+    }
+}
+
 export function calculateDistance(path) {
     const R = 6371;
     let dist = 0;
