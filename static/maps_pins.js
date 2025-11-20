@@ -237,6 +237,19 @@ async function initMap() {
         marker.id = pinId;
         window.currentMarkers.push(marker);
         window.currentInfoWindows[pinId] = info;
+
+        // 3. ⭐ 追加：情報ウィンドウを直ちに開く
+        // 他のInfoWindowを閉じる処理を入れます
+        for (const key in window.currentInfoWindows) {
+            if (key !== pinId) { // 今開いたばかりのものは除く
+                window.currentInfoWindows[key].close();
+            }
+        }
+        info.open(map, marker);
+        // メモ入力欄にフォーカスを当てる（ユーザー体験の向上）
+        google.maps.event.addListener(info, 'domready', function() {
+            document.getElementById(`memo_${pinId}`)?.focus();
+        });
       }else {
         console.warn("⚠️ Firestore保存失敗:", result.error);
       }

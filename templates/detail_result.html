@@ -208,15 +208,6 @@
 <!-- === 重点ポイントフィードバック === -->
 <div class="section" id="feedback-section">
   <h2><img src="{{ url_for('static', filename='img/robot_side.png') }}" alt="ドライボ" class="robot"> フィードバック</h2>
-
-  <!-- AI評価生成ボタン -->
-  <div class="section mt-3" id="ai-eval-section">
-    <h2>AI運転評価</h2>
-    <input type="text" id="focus-point-input" placeholder="重点ポイントを入力" style="width:70%; padding:6px; margin-right:8px;">
-    <button id="generate-ai-eval-btn" class="btn btn-primary">AI評価を生成</button>
-    <div id="ai-eval-result" style="margin-top:12px; color:#00796b; font-weight:bold;"></div>
-  </div>
-
   <div id="focus-feedback-list">
     <p>AIフィードバックを読み込んでいます...</p>
   </div>
@@ -291,47 +282,10 @@
         });
     }
 
-  document.addEventListener("DOMContentLoaded", () => {
-    const sessionId = "{{ session.id }}";
-    if (sessionId) loadFocusFeedbacks(sessionId);
-
-    // ===== AI評価生成ボタン =====
-    const generateBtn = document.getElementById("generate-ai-eval-btn");
-    const focusInput  = document.getElementById("focus-point-input");
-    const resultDiv   = document.getElementById("ai-eval-result");
-
-    generateBtn.addEventListener("click", async () => {
-      const focusPoint = focusInput.value.trim();
-      if (!focusPoint) {
-        resultDiv.innerText = "重点ポイントを入力してください。";
-        return;
-      }
-
-      resultDiv.innerText = "AI評価を生成中…";
-
-      try {
-        const response = await fetch(`/generate_ai_evaluation/${sessionId}`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({ focus_point: focusPoint })
-        });
-
-        const data = await response.json();
-
-        if (data.status === "ok") {
-          resultDiv.innerText = `生成結果: ${data.evaluation}`;
-        } else {
-          resultDiv.innerText = `エラー: ${data.message}`;
-        }
-      } catch (err) {
-        console.error(err);
-        resultDiv.innerText = "通信エラーが発生しました。";
-      }
+    document.addEventListener("DOMContentLoaded", () => {
+      const sessionId = "{{ session.id }}";
+      if (sessionId) loadFocusFeedbacks(sessionId);
     });
-  });
-
   </script>
 
   <style>
