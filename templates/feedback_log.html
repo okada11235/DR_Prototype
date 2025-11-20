@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>フィードバック集計 - ドライブバディ</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <style>
+    body { background:#f5f7fa; padding:20px; }
+    .summary-card { background:#fff; border-radius:10px; padding:20px; margin-bottom:20px; box-shadow:0 2px 8px rgba(0,0,0,.08); }
+    .stat-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:15px; }
+    .stat-item { background:#f8f9fa; padding:12px; border-radius:8px; text-align:center; }
+    .stat-label { font-size:0.85rem; color:#666; margin-bottom:5px; }
+    .stat-value { font-size:1.5rem; font-weight:bold; color:#2090c2; }
+    .feedback-item { background:#fff; border-left:4px solid #2090c2; padding:15px; margin-bottom:12px; border-radius:6px; }
+    .badge-device { background:#28a745; color:#fff; padding:4px 8px; border-radius:4px; font-size:0.8rem; }
+    .badge-browser { background:#17a2b8; color:#fff; padding:4px 8px; border-radius:4px; font-size:0.8rem; }
+    .eval-bar { background:#e9ecef; height:30px; border-radius:4px; position:relative; margin:8px 0; overflow:hidden; }
+    .eval-fill { background:#2090c2; height:100%; border-radius:4px; display:flex; align-items:center; padding-left:10px; color:#fff; font-size:0.85rem; font-weight:500; transition:width 0.3s ease; }
+    .chart-container { display:flex; align-items:flex-end; gap:8px; height:200px; margin:20px 0; max-width:600px; }
+    .chart-bar { flex:1; max-width:60px; background:#e9ecef; border-radius:4px 4px 0 0; position:relative; display:flex; flex-direction:column; justify-content:flex-end; transition:all 0.3s ease; }
+    .chart-bar:hover { opacity:0.8; }
+    .chart-fill { background:#2090c2; width:100%; border-radius:4px 4px 0 0; display:flex; align-items:center; justify-content:center; color:#fff; font-size:0.75rem; font-weight:bold; min-height:25px; }
+    .chart-label { text-align:center; font-size:0.75rem; color:#666; margin-top:5px; word-break:break-word; }
+  </style>
+</head>
+<body>
+  <div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h3 class="mb-0">📊 フィードバック集計</h3>
+      <a href="{{ url_for('views.home') }}" class="btn btn-outline-secondary btn-sm">ホームへ戻る</a>
+    </div>
+
+    <!-- 日付フィルター -->
+    <div class="summary-card mb-3">
+      <div class="row align-items-center">
+        <div class="col-md-6">
+          <h6 class="mb-2">日付で絞り込み</h6>
+          <select id="dateFilter" class="form-select" onchange="filterByDate(this.value)">
+            <option value="">全期間</option>
+            {% for date, count in date_counts.most_common() %}
+              <option value="{{ date }}" {% if filter_date == date %}selected{% endif %}>
+                {{ date }} ({{ count }}件)
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6 text-end">
+          {% if filter_date %}
+            <a href="{{ url_for('views.feedback_log') }}" class="btn btn-sm btn-outline-secondary mt-3">フィルターをクリア</a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {% if error %}
+      <div class="alert alert-danger">エラー: {{ error }}</div>
+    {% endif %}
+
+    <!-- 基本統計 -->
+    <div class="summary-card">
+      <h5 class="mb-3">基本統計</h5>
+      <div class="stat-grid">
+        <div class="stat-item">
+          <div class="stat-label">総回答数</div>
+          <div class="stat-value">{{ total_count }}</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">平均満足度</div>
+          <div class="stat-value">
+            {% if satisfaction_counts %}
+              {% set total_sat = satisfaction_counts.values()|sum %}
+              {% set weighted = namespace(sum=0) %}
+              {% for val, count in satisfaction_counts.items() %}
+                {% if val|string|length > 0 %}
+                  {% set weighted.sum = weighted.sum + (val|int * count) %}
+                {% endif %}
+              {% endfor %}
+              {{ "%.1f"|format(weighted.sum / total_sat if total_sat > 0 else 0) }}
+            {% else %}
+              N/A
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 使用環境 -->
+    <div class="summary-card">
+      <h5 class="mb-3">使用環境</h5>
+      <div class="row">
+        <div class="col-md-6">
+          <h6>使用機種</h6>
+          {% for device, count in device_counts.most_common() %}
+            <div class="eval-bar">
+              <div class="eval-fill" style="width:{{ (count / total_count * 100)|int }}%">
+                {{ device }}: {{ count }}件
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+        <div class="col-md-6">
+          <h6>使用ブラウザ</h6>
+          {% for browser, count in browser_counts.most_common() %}
+            <div class="eval-bar">
+              <div class="eval-fill" style="width:{{ (count / total_count * 100)|int }}%">
+                {{ browser }}: {{ count }}件
+              </div>
+            </div>
+          {% endfor %}
+          {% if browser_other_list %}
+            <div class="mt-2 small text-muted">
+              <strong>その他の詳細:</strong>
+              {% for other in browser_other_list %}
+                <span class="badge bg-secondary me-1">{{ other }}</span>
+              {% endfor %}
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- リアルタイムアドバイス評価 -->
+    <div class="summary-card">
+      <h5 class="mb-3">リアルタイムアドバイス判定評価</h5>
+      {% set eval_options = ['適切だった', '甘すぎた', '厳しすぎた', '判定されなかった'] %}
+      
+      <!-- 急ブレーキ、急カーブ、急加速 -->
+      <h6 class="mt-3">急ブレーキ・急カーブ・急加速</h6>
+      <div style="display:flex; gap:30px;">
+        {% for key in ['hard_brake', 'hard_curve', 'hard_accel'] %}
+          {% set label = {'hard_brake': '急ブレーキ', 'hard_curve': '急カーブ', 'hard_accel': '急加速'}[key] %}
+          <div style="flex:1;">
+            <div style="text-align:center; font-weight:bold; margin-bottom:10px; font-size:0.9rem;">{{ label }}</div>
+            <div class="chart-container" style="margin:0;">
+              {% for option in eval_options %}
+                {% set count = eval_summary.get(key, {}).get(option, 0) %}
+                {% set percentage = (count / total_count * 100)|int if total_count > 0 else 0 %}
+                <div class="chart-bar">
+                  <div class="chart-fill" style="height:{{ percentage * 2 }}px;">{{ count }}</div>
+                </div>
+              {% endfor %}
+            </div>
+            <div style="display:flex; gap:8px; max-width:600px;">
+              {% for option in eval_options %}
+                <div style="flex:1; max-width:60px; text-align:center; font-size:0.7rem; color:#666; word-wrap:break-word;">{{ option }}</div>
+              {% endfor %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+
+      <!-- 良減速、良カーブ、良加速 -->
+      <h6 class="mt-4">良減速・良カーブ・良加速</h6>
+      <div style="display:flex; gap:30px;">
+        {% for key in ['good_decel', 'good_curve', 'good_accel'] %}
+          {% set label = {'good_decel': '良減速', 'good_curve': '良カーブ', 'good_accel': '良加速'}[key] %}
+          <div style="flex:1;">
+            <div style="text-align:center; font-weight:bold; margin-bottom:10px; font-size:0.9rem;">{{ label }}</div>
+            <div class="chart-container" style="margin:0;">
+              {% for option in eval_options %}
+                {% set count = eval_summary.get(key, {}).get(option, 0) %}
+                {% set percentage = (count / total_count * 100)|int if total_count > 0 else 0 %}
+                <div class="chart-bar">
+                  <div class="chart-fill" style="height:{{ percentage * 2 }}px;">{{ count }}</div>
+                </div>
+              {% endfor %}
+            </div>
+            <div style="display:flex; gap:8px; max-width:600px;">
+              {% for option in eval_options %}
+                <div style="flex:1; max-width:60px; text-align:center; font-size:0.7rem; color:#666; word-wrap:break-word;">{{ option }}</div>
+              {% endfor %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- 運転後フィードバック評価 -->
+    <div class="summary-card">
+      <h5 class="mb-3">運転後フィードバック評価</h5>
+      {% set post_options = ['とても良い', '良い', '普通', '改善が必要', '表示されなかった'] %}
+      <div style="display:flex; gap:30px;">
+        {% for key in ['overall', 'clarity', 'accuracy', 'helpfulness'] %}
+          {% set label = {'overall': '総合評価', 'clarity': '分かりやすさ', 'accuracy': '正確さ', 'helpfulness': '改善に役立つ度'}[key] %}
+          <div style="flex:1;">
+            <div style="text-align:center; font-weight:bold; margin-bottom:10px; font-size:0.9rem;">{{ label }}</div>
+            <div class="chart-container" style="margin:0;">
+              {% for option in post_options %}
+                {% set count = post_fb_summary.get(key, {}).get(option, 0) %}
+                {% set percentage = (count / total_count * 100)|int if total_count > 0 else 0 %}
+                <div class="chart-bar">
+                  <div class="chart-fill" style="height:{{ percentage * 2 }}px;">{{ count }}</div>
+                </div>
+              {% endfor %}
+            </div>
+            <div style="display:flex; gap:8px; max-width:600px;">
+              {% for option in post_options %}
+                <div style="flex:1; max-width:60px; text-align:center; font-size:0.65rem; color:#666; word-wrap:break-word;">{{ option }}</div>
+              {% endfor %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- 重点ポイント評価 -->
+    <div class="summary-card">
+      <h5 class="mb-3">重点ポイント設置評価</h5>
+      {% set focus_options = ['とても良い', '良い', '普通', '改善が必要', '利用していない'] %}
+      <div style="display:flex; gap:30px;">
+        {% for key in ['ease_view', 'ease_edit', 'ease_check'] %}
+          {% set label = {'ease_view': '閲覧のしやすさ', 'ease_edit': '編集のしやすさ', 'ease_check': '内容の確認しやすさ'}[key] %}
+          <div style="flex:1;">
+            <div style="text-align:center; font-weight:bold; margin-bottom:10px; font-size:0.9rem;">{{ label }}</div>
+            <div class="chart-container" style="margin:0;">
+              {% for option in focus_options %}
+                {% set count = focus_summary.get(key, {}).get(option, 0) %}
+                {% set percentage = (count / total_count * 100)|int if total_count > 0 else 0 %}
+                <div class="chart-bar">
+                  <div class="chart-fill" style="height:{{ percentage * 2 }}px;">{{ count }}</div>
+                </div>
+              {% endfor %}
+            </div>
+            <div style="display:flex; gap:8px; max-width:600px;">
+              {% for option in focus_options %}
+                <div style="flex:1; max-width:60px; text-align:center; font-size:0.65rem; color:#666; word-wrap:break-word;">{{ option }}</div>
+              {% endfor %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- マップピン評価 -->
+    <div class="summary-card">
+      <h5 class="mb-3">マップピン機能評価</h5>
+      {% set pin_options = ['とても良い', '良い', '普通', '改善が必要', '利用していない'] %}
+      <div style="display:flex; gap:30px;">
+        {% for key in ['ease_add', 'ease_edit', 'speak_useful', 'advanced_settings'] %}
+          {% set label = {'ease_add': 'ピン追加のしやすさ', 'ease_edit': 'ピン編集のしやすさ', 'speak_useful': '読み上げ機能の有用性', 'advanced_settings': '優先度/時間帯設定の使いやすさ'}[key] %}
+          <div style="flex:1;">
+            <div style="text-align:center; font-weight:bold; margin-bottom:10px; font-size:0.85rem;">{{ label }}</div>
+            <div class="chart-container" style="margin:0;">
+              {% for option in pin_options %}
+                {% set count = pin_summary.get(key, {}).get(option, 0) %}
+                {% set percentage = (count / total_count * 100)|int if total_count > 0 else 0 %}
+                <div class="chart-bar">
+                  <div class="chart-fill" style="height:{{ percentage * 2 }}px;">{{ count }}</div>
+                </div>
+              {% endfor %}
+            </div>
+            <div style="display:flex; gap:8px; max-width:600px;">
+              {% for option in pin_options %}
+                <div style="flex:1; max-width:60px; text-align:center; font-size:0.65rem; color:#666; word-wrap:break-word;">{{ option }}</div>
+              {% endfor %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- 課題解決評価 -->
+    <div class="summary-card">
+      <h5 class="mb-3">課題解決評価</h5>
+      {% set solution_options = ['とても当てはまる', '当てはまる', 'あまり当てはまらない', '全く当てはまらない'] %}
+      <div style="display:flex; gap:30px;">
+        {% for key in ['focus_awareness', 'realtime_improvement', 'pin_reference'] %}
+          {% set label = {'focus_awareness': '重点ポイントFBで自分の課題を把握できたか', 'realtime_improvement': 'リアルタイムアドバイスで快適に自分の運転を改善できたか', 'pin_reference': '他の人が刺したピンが運転の参考になっているか'}[key] %}
+          <div style="flex:1;">
+            <div style="text-align:center; font-weight:bold; margin-bottom:10px; font-size:0.85rem;">{{ label }}</div>
+            <div class="chart-container" style="margin:0;">
+              {% for option in solution_options %}
+                {% set count = solution_summary.get(key, {}).get(option, 0) %}
+                {% set percentage = (count / total_count * 100)|int if total_count > 0 else 0 %}
+                <div class="chart-bar">
+                  <div class="chart-fill" style="height:{{ percentage * 2 }}px;">{{ count }}</div>
+                </div>
+              {% endfor %}
+            </div>
+            <div style="display:flex; gap:8px; max-width:600px;">
+              {% for option in solution_options %}
+                <div style="flex:1; max-width:60px; text-align:center; font-size:0.7rem; color:#666; word-wrap:break-word;">{{ option }}</div>
+              {% endfor %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- 満足度分布 -->
+    <div class="summary-card">
+      <h5 class="mb-3">満足度分布</h5>
+      {% for rating in range(5, 0, -1) %}
+        {% set count = satisfaction_counts.get(rating|string, 0) %}
+        <div class="eval-bar">
+          <div class="eval-fill" style="width:{{ (count / total_count * 100)|int if total_count > 0 else 0 }}%">
+            ★{{ rating }}: {{ count }}件
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+
+    <!-- 自由記述一覧 -->
+    <div class="summary-card">
+      <h5 class="mb-3">自由記述コメント</h5>
+      {% for fb in feedbacks %}
+        {% if fb.get('good_points') or fb.get('improvement_points') or fb.get('desired_features') or fb.get('other_comments') %}
+        <div class="feedback-item">
+          <div class="mb-2">
+            <a href="{{ url_for('views.feedback_detail', feedback_id=fb.get('id')) }}" class="text-decoration-none">
+              <strong class="text-primary">{{ fb.get('real_name', '匿名') }}</strong>
+            </a>
+            <span class="badge-device ms-2">{{ fb.get('device_type', 'N/A') }}</span>
+            <span class="badge-browser">{{ fb.get('browser', 'N/A') }}</span>
+            {% if fb.get('browser') == 'その他' and fb.get('browser_other') %}
+              <span class="badge bg-info text-white ms-1">{{ fb.get('browser_other') }}</span>
+            {% endif %}
+            <span class="text-muted ms-2" style="font-size:0.85rem;">
+              運転回数: {{ fb.get('drive_times')|length if fb.get('drive_times') else 1 }}回
+            </span>
+            <span class="text-muted ms-2" style="font-size:0.85rem;">
+              満足度: {{ fb.get('satisfaction', 'N/A') }}
+            </span>
+          </div>
+          {% if fb.get('good_points') %}
+            <div class="mb-1"><strong>良かった点:</strong> {{ fb.get('good_points') }}</div>
+          {% endif %}
+          {% if fb.get('improvement_points') %}
+            <div class="mb-1"><strong>改善点:</strong> {{ fb.get('improvement_points') }}</div>
+          {% endif %}
+          {% if fb.get('desired_features') %}
+            <div class="mb-1"><strong>追加希望機能:</strong> {{ fb.get('desired_features') }}</div>
+          {% endif %}
+          {% if fb.get('other_comments') %}
+            <div class="mb-1"><strong>その他:</strong> {{ fb.get('other_comments') }}</div>
+          {% endif %}
+        </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+
+  </div>
+
+  <script>
+    function filterByDate(date) {
+      if (date) {
+        window.location.href = "{{ url_for('views.feedback_log') }}?date=" + date;
+      } else {
+        window.location.href = "{{ url_for('views.feedback_log') }}";
+      }
+    }
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

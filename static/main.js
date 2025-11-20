@@ -24,53 +24,66 @@ window.stopMotionDetection = stopMotionDetection;
 function initActiveRecording() {
 
     // ★ 通常運転が始まったら必ずルートモードを解除
-localStorage.setItem('priorityRouteRecordingActive', 'false');
+    localStorage.setItem('priorityRouteRecordingActive', 'false');
 
+    // バッファ初期化
+    window.gpsLogBuffer = window.gpsLogBuffer || [];
+    window.gLogBuffer = window.gLogBuffer || [];
+    window.avgGLogBuffer = window.avgGLogBuffer || [];
 
     if (typeof initMap === 'function') {
         initMap();
     }
+
     const savedSessionId = localStorage.getItem('activeSessionId');
     const savedStartTime = localStorage.getItem('sessionStartTime');
+
     if (savedSessionId && savedStartTime) {
+
         window.sessionId = savedSessionId;
         window.startTime = parseInt(savedStartTime);
-            // initialize pause accumulator
-            window.pauseAccumulatedMs = 0;
+
+        // pause初期化
+        window.pauseAccumulatedMs = 0;
+
         console.log('Session ID set to:', window.sessionId);
         console.log('GPS buffer size:', window.gpsLogBuffer.length);
         console.log('G buffer size:', window.gLogBuffer.length);
+
+        // ★ audio OK
         console.log('🔊 Audio playback enabled (recording active)');
+
         const sessionIdElement = document.getElementById('session_id');
         if (sessionIdElement) sessionIdElement.textContent = window.sessionId;
+
+        // タイマー開始
         startTimer();
+
+        // GPS 監視開始（maps.js）
         watchPosition();
+
+        // 加速度センサー開始
         if (!window.isMotionDetectionActive) {
             startMotionDetection();
         } else {
             console.log('Motion detection already active, skipping startup');
         }
 
-        // ★スコア初期化（走行開始時にリセット）
+        // 初期スコアリセット
         initScores();
-        // ★FIX: active画面でもキャリブレーションを念のため実行
+
+        // 自動キャリブレーション開始
         startAutoCalibration();
+
+        // ログフラッシュ開始
         startLogFlush();
-        //startPraiseCheck();
+
         console.log('Active recording initialized with session:', window.sessionId);
+
     } else {
-    const isRouteMode = localStorage.getItem('priorityRouteRecordingActive') === 'true';
-
-    // ✔ ルート記録モードならリダイレクトせず、そのまま画面を維持
-    if (isRouteMode) {
-        console.log('Route mode active: skipping session check in initActiveRecording');
-        return;
+        console.error('No active session found');
+        window.location.href = '/recording/start';
     }
-
-    // ❌ 通常記録モードのみリダイレクトする
-    console.error('No active session found');
-    window.location.href = '/recording/start';
-}
 }
 
 // ページ読み込み時の初期化
@@ -82,11 +95,11 @@ document.addEventListener('DOMContentLoaded', function() {
     const endButton = document.getElementById('end-button');
     console.log('Start button found:', !!startButton);
     console.log('End button found:', !!endButton);
+
+    // ▶ 記録開始ボタン
     if (startButton && !startButton.hasEventListener) {
         console.log('Adding click listener to start button');
         startButton.addEventListener('click', () => {
-
-
             // ルートの存在チェック（アクティブ・保存済みの両方を考慮）
             const routeIdLS = localStorage.getItem('priorityRouteId');
             let latestRouteExists = false;
@@ -114,66 +127,78 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
                 return; // ルート未設定時は通常の運転開始をしない
             }
+
+            const confirmStart = confirm('記録を開始してよろしいですか？');
+            if (confirmStart) {
+                startSession();
+            } else {
+                console.log('Recording start canceled by user.');
+            }
         });
         startButton.hasEventListener = true;
     }
-   if (endButton && !endButton.hasEventListener) {
-    console.log('Adding click listener to end button');
 
-    endButton.addEventListener('click', async () => {
-
-        // 🔥 先に判定する（超重要）
-        const isRouteMode = localStorage.getItem('priorityRouteRecordingActive') === 'true';
-
-        const confirmEnd = confirm(isRouteMode 
-            ? 'ルート記録を終了しますか？'
-            : '記録を終了してよろしいですか？'
-        );
-        if (!confirmEnd) return;
-
-        // ===============================
-        //  🚗 ルート記録モードの終了処理
-        // ===============================
-        if (isRouteMode && window.priorityRouteAPI) {
-
-            try {
-                await window.priorityRouteAPI.stop(true);
-            } catch (e) {
-                console.warn('Route stop error:', e);
+    // ▶ 記録終了ボタン
+    if (endButton && !endButton.hasEventListener) {
+        console.log('Adding click listener to end button');
+        endButton.addEventListener('click', async () => {
+            const isRouteMode = localStorage.getItem('priorityRouteRecordingActive') === 'true';
+            const confirmEnd = confirm(isRouteMode ? 'ルート記録を終了しますか？' : '記録を終了してよろしいですか？');
+            if (!confirmEnd) {
+                console.log('End canceled by user.');
+                return;
             }
 
-            // 🔥 ここで false にする（順番重要）
-            localStorage.setItem('priorityRouteRecordingActive', 'false');
+            // 🚗 ルート記録モードの終了
+            if (isRouteMode && window.priorityRouteAPI) {
+                window.priorityRouteAPI
+                    .stop(true)
+                    .then(() => {
+                        // ルート記録フラグを確実にオフ
+                        localStorage.setItem('priorityRouteRecordingActive', 'false');
+                        window.location.href = '/recording/start';
+                    })
+                    .catch((e) => {
+                        console.warn('Route stop error:', e);
+                        // エラーしてもフラグはオフにしてスタート画面へ
+                        localStorage.setItem('priorityRouteRecordingActive', 'false');
+                        window.location.href = '/recording/start';
+                    });
+                return;
+            }
 
-            window.location.href = '/recording/start';
-            return;
-        }
+            // 🚘 通常の運転セッション終了
+            relockAudio(); // 🔒 終了時にロック
+            await endSession(true); // Firestore保存含む
 
-        // ===============================
-        //   🚘 通常記録の終了処理
-        // ===============================
-        relockAudio();
-        await endSession(true); 
+            // ✅ ここから重点ポイントAI評価を実行
+            try {
+                console.log(`🤖 重点ポイントAIフィードバック生成開始: session_id=${sessionId}`);
+                const res = await fetch(`/api/focus_feedback/${sessionId}`, { method: 'POST' });
 
-        try {
-            const res = await fetch(`/api/focus_feedback/${sessionId}`, {
-                method: 'POST'
-            });
-            console.log('AI feedback:', res.status);
-        } catch (err) {
-            console.error('AI feedback error:', err);
-        }
+                if (res.ok) {
+                    const data = await res.json();
+                    console.log('✅ フィードバック生成成功:', data);
+                } else {
+                    console.error('❌ フィードバック生成APIエラー (HTTP):', res.status);
+                }
+            } catch (err) {
+                console.error('❌ フィードバック生成中に致命的なエラー:', err);
+            }
 
-        window.location.href = '/recording/completed';
-    });
+            // 🧭 終了後にセッション一覧ページへ遷移
+            window.location.href = `/recording/completed?session_id=${window.sessionId}`;
+        });
 
-    endButton.hasEventListener = true;
-}
+        endButton.hasEventListener = true;
+    }
 
     console.log('Initializing based on current path...');
+
     if (currentPath === '/recording/active') {
         console.log('Initializing active recording screen');
         const isRouteMode = localStorage.getItem('priorityRouteRecordingActive') === 'true';
+
         if (isRouteMode) {
             // ルートモード: セッションは使わない
             console.log('Route recording mode detected. Initializing minimal map UI.');
@@ -183,19 +208,28 @@ document.addEventListener('DOMContentLoaded', function() {
                 localStorage.removeItem('activeSessionId');
                 localStorage.removeItem('sessionStartTime');
             } catch (e) {}
+
             if (typeof initMap === 'function') {
                 initMap();
             }
+
             // UI更新用にGPSは使う（maps.js 側で sessionId が無ければ保存しない）
             try { watchPosition(); } catch (e) {}
+
             // タイマー表示（ルート開始時刻を使用）
             try {
-                const routeStart = (window.priorityRouteAPI && window.priorityRouteAPI.getRouteStartTime && window.priorityRouteAPI.getRouteStartTime())
-                    || Number(localStorage.getItem('priorityRouteStartTime'))
-                    || Date.now();
+                const routeStart =
+                    (window.priorityRouteAPI &&
+                        window.priorityRouteAPI.getRouteStartTime &&
+                        window.priorityRouteAPI.getRouteStartTime()) ||
+                    Number(localStorage.getItem('priorityRouteStartTime')) ||
+                    Date.now();
                 window.startTime = routeStart;
                 startTimer();
-            } catch (e) { console.warn('Failed to start route timer', e); }
+            } catch (e) {
+                console.warn('Failed to start route timer', e);
+            }
+
             // G値とピンUIは非表示
             try {
                 const gBox = document.getElementById('g-box');
@@ -203,10 +237,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 const pinBtn = document.getElementById('addPinBtn');
                 if (pinBtn) pinBtn.style.display = 'none';
             } catch (e) {}
+
             // センサー/助言/音声は起動しない
+
         } else {
+            // 通常記録モード
             initActiveRecording();
         }
+
     } else if (currentPath === '/recording/start' || currentPath === '/') {
         console.log('Initializing start recording screen');
         if (typeof initMap === 'function') {
@@ -215,6 +253,7 @@ document.addEventListener('DOMContentLoaded', function() {
         } else {
             console.log('initMap function not available');
         }
+
         // ルート記録モード中は助言・指摘・音声を起動しない（GPSのみ背景で route_recorder が担当）
         if (localStorage.getItem('priorityRouteRecordingActive') === 'true') {
             console.log('Route recording active: suppressing sensors and advice on start screen');
@@ -222,11 +261,12 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log('Starting GPS and motion monitoring for start screen (display only)');
             watchPosition();
             startMotionDetection();
-            // ★FIX: start 画面でもキャリブレーション収集を開始
+            // ★ FIX: start 画面でもキャリブレーション収集を開始
             startAutoCalibration();
         }
     } else {
         console.log('No specific initialization for path:', currentPath);
     }
+
     console.log('=== DOMContentLoaded initialization completed ===');
 });

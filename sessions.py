@@ -101,7 +101,6 @@ def calculate_distance_from_firestore(session_id):
 
     return round(total_km, 3)
 
-
 # セッション終了
 @sessions_bp.route('/end', methods=['POST'])
 @login_required
@@ -126,24 +125,21 @@ def end():
             if session_data.get('user_id') != current_user.id:
                 return {'status': 'error', 'message': 'Permission denied'}
 
+            # すでに終了しているならそのまま返す
             if session_data.get('status') != 'active':
                 print(f"Session {session_id} already ended: {session_data.get('status')}")
-                return {'status': 'ok', 'message': 'Session already ended'}
+                return {'status': 'ok', 'already': True}
 
-            # 🔥 ここでサーバー側で距離計算！
+            # 🔥 Firestoreログから距離計算
             distance_km = calculate_distance_from_firestore(session_id)
             print(f"🚗 Firestore-based distance = {distance_km} km")
 
-            # Firestore更新
+            # Firestore 更新
             print(f"Ending session {session_id} for user {current_user.id}")
             transaction.update(session_ref, {
                 'end_time': firestore.SERVER_TIMESTAMP,
                 'status': 'completed',
-
-                # 🚀 距離はサーバー計算値を使用
                 'distance': distance_km,
-
-                # 既存の統計値はクライアントから
                 'sudden_accels': int(data.get('sudden_accels', 0)),
                 'sudden_brakes': int(data.get('sudden_brakes', 0)),
                 'sharp_turns': int(data.get('sharp_turns', 0)),
@@ -153,16 +149,28 @@ def end():
             })
 
             print(f"Session {session_id} ended successfully")
-            return {'status': 'ok'}
+            return {'status': 'ok', 'already': False}
 
+        # トランザクション実行
         transaction = db.transaction()
         result = end_session(transaction)
-        return jsonify(result)
+
+        # ★ AI フィードバック生成（失敗してもセッション完了は続行）
+        try:
+            analyze_focus_points_for_session(session_id, current_user.id)
+        except Exception as e:
+            print("AI evaluation error:", e)
+
+        # ★★★ 最重要：必ず session_id を返す ★★★
+        return jsonify({
+            'status': result.get('status', 'ok'),
+            'session_id': session_id,
+            'already': result.get('already', False)
+        })
 
     except Exception as e:
         print(f"DB update error: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
-
 
 # GPSログ（単発：既存）
 @sessions_bp.route('/log_gps', methods=['POST'])
@@ -264,6 +272,7 @@ def log_gps_bulk():
                 'longitude': float(longitude),
                 'speed': float(log.get('speed', 0.0)),
                 'event': log.get('event', 'normal'),
+                'quality': log.get('quality', 'unknown'),  # データ品質レベルを保存
                 'timestamp': ts_dt,       # Firestore標準のTimestamp型
                 'timestamp_ms': ts_ms     # スマホ内部のミリ秒値をそのまま保存
             })
@@ -323,6 +332,7 @@ def log_g_only():
                 'g_z': float(log.get('g_z', 0.0)),
                 'speed': float(log.get('speed', 0.0)),
                 'event': log.get('event', 'normal'),
+                'quality': log.get('quality', 'unknown'),  # データ品質レベルを保存
                 'timestamp': ts_dt,       # Firestore標準のTimestamp型
                 'timestamp_ms': ts_ms     # スマホ内部のミリ秒値をそのまま保存
             })
@@ -377,6 +387,7 @@ def log_avg_g_bulk():
                 'rot_z': float(log.get('rot_z', 0.0)),
                 'speed': float(log.get('speed', 0.0)),
                 'event': log.get('event', 'normal'),
+                'quality': log.get('quality', 'unknown'),  # データ品質レベルを保存
                 'timestamp': ts_dt,
                 'timestamp_ms': ts_ms
             })

@@ -111,8 +111,26 @@
 </div>
 
     <div class="drive-info">
-      <div>走行時間<br><span id="total-time">--:--</span></div>
-      <div>走行距離<br><span id="total-distance">-- km</span></div>
+      <div>走行時間<br>
+        <span id="total-time">
+          {% if session and session.start_time and session.end_time %}
+            {{ ((session.end_time - session.start_time).total_seconds() // 60)|int }}:
+            {{ ((session.end_time - session.start_time).total_seconds() % 60)|int }}
+          {% else %}
+            --:--
+          {% endif %}
+        </span>
+      </div>
+
+      <div>走行距離<br>
+        <span id="total-distance">
+          {% if session and session.distance %}
+            {{ '%.2f'|format(session.distance) }} km
+          {% else %}
+            -- km
+          {% endif %}
+        </span>
+      </div>
     </div>
 
     <!-- ローディング -->
@@ -200,39 +218,33 @@
       const loading = document.getElementById("loading-section");
       const hint = document.getElementById("loading-hint");
 
-      // 初期表示
       loading.style.display = "block";
       section.style.display = "none";
       listDiv.innerHTML = "";
-      loading.querySelector("h2").textContent = "🤖 フィードバック生成中...";
-      hint.textContent = "AIが運転データを分析しています...";
 
-      // ✅ Firestoreのリアルタイムリスナーで監視
-      const ref = db.collection("sessions").doc(sessionId)
+      const ref = db.collection("sessions")
+        .doc(sessionId)
         .collection("focus_feedbacks")
         .orderBy("created_at", "desc");
 
       ref.onSnapshot(snapshot => {
         if (snapshot.empty) {
           hint.textContent = "分析中です。順次フィードバックが表示されます...";
-          console.log("⏳ focus_feedbacks はまだ生成中...");
           return;
         }
 
-        // 一度でもデータが来たら、セクションを表示
         loading.style.display = "none";
         section.style.display = "block";
 
-        // 現在のDOMに既に描画済みのIDを控えておく
-        const existingIds = Array.from(document.querySelectorAll(".pin-feedback"))
-          .map(div => div.dataset.id);
+        const existingIds = Array.from(
+          document.querySelectorAll(".pin-feedback")
+        ).map(div => div.dataset.id);
 
         snapshot.docChanges().forEach(change => {
           if (change.type === "added") {
             const d = change.doc.data();
             d.id = change.doc.id;
 
-            // すでに表示済みならスキップ
             if (existingIds.includes(d.id)) return;
 
             const badge = getRatingBadge(d.rating);
@@ -256,28 +268,21 @@
               </div>
             `;
 
-            // 新しい順に上から追加
             listDiv.insertBefore(div, listDiv.firstChild);
-            console.log("🆕 新しいフィードバックを追加:", d.pin_label || "ラベルなし");
           }
         });
-      }, err => {
-        console.error("❌ focus_feedbacks リアルタイム取得失敗:", err);
-        listDiv.innerHTML = `<div style="text-align:center;color:#d00;">エラーが発生しました。</div>`;
-        loading.querySelector("h2").textContent = "⚠️ エラーが発生しました";
-        hint.textContent = "通信状況を確認してください。";
       });
     }
 
     document.addEventListener("DOMContentLoaded", () => {
-      const sessionData = localStorage.getItem("lastSessionData");
-      if (!sessionData) return;
-      const parsed = JSON.parse(sessionData);
+      const sessionId = "{{ session.id }}";
 
-      document.getElementById("total-time").textContent = parsed.totalTime || "--:--";
-      document.getElementById("total-distance").textContent = (parsed.distance || 0).toFixed(2) + " km";
+      // Jinja で計算済みの走行時間と距離がすでに表示されているため JSでは何もしない
 
-      if (parsed.session_id) loadFocusFeedbacks(parsed.session_id);
+      // AIフィードバック読み込み開始
+      if (sessionId) {
+        loadFocusFeedbacks(sessionId);
+      }
     });
   </script>
 

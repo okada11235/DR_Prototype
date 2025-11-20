@@ -180,30 +180,51 @@ def recording_active():
 @views_bp.route('/recording/completed')
 @login_required
 def recording_completed():
-    db_ref = firestore.client()
-    # 直近のセッション（最新の start_time を持つ completed 状態）
-    latest_session = (
-        db_ref.collection('sessions')
-        .where('user_id', '==', current_user.id)
-        .where('status', '==', 'completed')
-        .order_by('end_time', direction=firestore.Query.DESCENDING)
-        .limit(1)
-        .stream()
-    )
+    session_id = request.args.get("session_id")
 
-    session_obj = None
-    for doc in latest_session:
-        data = doc.to_dict()
-        data['id'] = doc.id
-        session_obj = data
-        break
+    # --- ① session_id が指定されている場合はそれを最優先で読む ---
+    if session_id:
+        doc_ref = db.collection("sessions").document(session_id)
+        doc = doc_ref.get()
 
-    if not session_obj:
-        # セッションが見つからない場合のフォールバック
-        return render_template('recording_completed.html', session=None)
+        if doc.exists:
+            session = doc.to_dict()
+            session["id"] = doc.id  # テンプレート用にIDを付ける
+            print(f"📘 recording_completed: using session_id={session_id}")
+            return render_template("recording_completed.html", session=session)
 
-    return render_template('recording_completed.html', session=session_obj)
+        else:
+            print(f"⚠ session_id={session_id} not found. Falling back to latest completed.")
 
+    # --- ② fallback（従来どおり最新 completed を探す） ---
+    user_id = current_user.id
+    print(f"📘 recording_completed: searching latest completed for user {user_id}")
+
+    try:
+        query = (
+            db.collection("sessions")
+            .where("user_id", "==", user_id)
+            .where("status", "==", "completed")
+            .order_by("end_time", direction=firestore.Query.DESCENDING)
+            .limit(1)
+            .stream()
+        )
+
+        docs = list(query)
+        if not docs:
+            print("⚠ No completed sessions found.")
+            return render_template("recording_completed.html", session=None)
+
+        doc = docs[0]
+        session = doc.to_dict()
+        session["id"] = doc.id
+
+        print(f"📘 recording_completed: loaded latest completed session {doc.id}")
+        return render_template("recording_completed.html", session=session)
+
+    except Exception as e:
+        print("❌ recording_completed ERROR:", e)
+        return render_template("recording_completed.html", session=None)
 
 # セッション一覧
 @views_bp.route('/sessions')
@@ -936,8 +957,247 @@ def feedback_detail_completed(session_id, pin_id):
         session_id=session_id
     )
 
-# === フィードバックページ ===
-@views_bp.route("/feedback", endpoint="feedback")
+# === フィードバックページ（ユーザー入力フォーム） ===
+@views_bp.route("/feedback", methods=["GET", "POST"], endpoint="feedback")
 @login_required
 def feedback_page():
+    from datetime import datetime
+    import base64
+    if request.method == "POST":
+        real_name = request.form.get("real_name", "").strip()
+        device_type = request.form.get("device_type", "")  # iPhone / Android
+        browser = request.form.get("browser", "")
+        browser_other = request.form.get("browser_other", "").strip() if browser == "その他" else ""
+        
+        # 運転時間の複数取得（配列形式）
+        drive_start_dates = request.form.getlist("drive_start_date[]")
+        drive_start_times = request.form.getlist("drive_start_time[]")
+        drive_end_times = request.form.getlist("drive_end_time[]")
+        
+        # 運転時間リストを作成
+        drive_times = []
+        for i in range(len(drive_start_dates)):
+            if drive_start_dates[i] and drive_start_times[i] and drive_end_times[i]:
+                drive_times.append({
+                    'start_datetime': f"{drive_start_dates[i]} {drive_start_times[i]}",
+                    'end_datetime': f"{drive_start_dates[i]} {drive_end_times[i]}"
+                })
+        
+        satisfaction = request.form.get("satisfaction", "")  # 数値 or テキスト
+
+        # 評価カテゴリ（キーは英語化）
+        eval_map = {
+            'hard_brake': request.form.get('eval_hard_brake', ''),
+            'hard_curve': request.form.get('eval_hard_curve', ''),
+            'hard_accel': request.form.get('eval_hard_accel', ''),
+            'good_decel': request.form.get('eval_good_decel', ''),
+            'good_curve': request.form.get('eval_good_curve', ''),
+            'good_accel': request.form.get('eval_good_accel', ''),
+        }
+
+        # 運転後フィードバック評価
+        post_fb_map = {
+            'overall': request.form.get('post_fb_overall', ''),
+            'clarity': request.form.get('post_fb_clarity', ''),
+            'accuracy': request.form.get('post_fb_accuracy', ''),
+            'helpfulness': request.form.get('post_fb_helpfulness', ''),
+        }
+
+        # 重点ポイント設置評価
+        focus_point_map = {
+            'ease_view': request.form.get('focus_ease_view', ''),
+            'ease_edit': request.form.get('focus_ease_edit', ''),
+            'ease_check': request.form.get('focus_ease_check', ''),
+        }
+
+        # マップピン評価
+        map_pin_map = {
+            'ease_add': request.form.get('pin_ease_add', ''),
+            'ease_edit': request.form.get('pin_ease_edit', ''),
+            'speak_useful': request.form.get('pin_speak_useful', ''),
+            'advanced_settings': request.form.get('pin_advanced_settings', ''),
+        }
+
+        # 課題解決評価
+        solution_map = {
+            'focus_awareness': request.form.get('solution_focus_awareness', ''),
+            'realtime_improvement': request.form.get('solution_realtime_improvement', ''),
+            'pin_reference': request.form.get('solution_pin_reference', ''),
+        }
+
+        good_points = request.form.get("good_points", "").strip()
+        improvement = request.form.get("improvement", "").strip()
+        desired_features = request.form.get("desired_features", "").strip()
+        other_comments = request.form.get("other_comments", "").strip()
+
+        image_file = request.files.get("feedback_image")
+        image_base64 = ""
+        if image_file and image_file.filename:
+            try:
+                image_bytes = image_file.read()
+                image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+            except Exception:
+                image_base64 = ""
+
+        # Firestoreへ保存
+        try:
+            feedback_doc = {
+                'user_id': current_user.id,
+                'real_name': real_name,
+                'device_type': device_type,
+                'browser': browser,
+                'browser_other': browser_other,
+                'drive_times': drive_times,  # 複数の運転時間を配列で保存
+                'evaluations': eval_map,
+                'post_drive_feedback': post_fb_map,
+                'focus_point_evaluation': focus_point_map,
+                'map_pin_evaluation': map_pin_map,
+                'solution_evaluation': solution_map,
+                'good_points': good_points,
+                'improvement_points': improvement,
+                'desired_features': desired_features,
+                'other_comments': other_comments,
+                'satisfaction': satisfaction,
+                'image_base64': image_base64,
+                'created_at': datetime.now(JST)
+            }
+            db.collection('user_feedback').add(feedback_doc)
+            flash('フィードバックを送信しました。ありがとうございます。', 'success')
+            return redirect(url_for('views.feedback'))
+        except Exception as e:
+            flash(f'送信中にエラーが発生しました: {e}', 'danger')
+            return redirect(url_for('views.feedback'))
+
     return render_template("user_feedback.html")
+
+# === フィードバック集計ページ ===
+@views_bp.route("/feedback_log", methods=["GET"])
+@login_required
+def feedback_log():
+    from collections import Counter
+    from datetime import datetime, timedelta
+    try:
+        # 日付フィルターパラメータ取得
+        filter_date = request.args.get('date', '')
+        
+        # Firestoreから全フィードバック取得
+        feedbacks_ref = db.collection('user_feedback').order_by('created_at', direction=firestore.Query.DESCENDING).stream()
+        feedbacks = []
+        date_counts = Counter()  # 日付ごとの件数
+        
+        for doc in feedbacks_ref:
+            data = doc.to_dict()
+            data['id'] = doc.id
+            # created_atをJSTに変換
+            if 'created_at' in data and data['created_at']:
+                data['created_at'] = data['created_at'].astimezone(JST)
+                # 日付をキーにしてカウント
+                date_key = data['created_at'].strftime('%Y-%m-%d')
+                date_counts[date_key] += 1
+                
+                # 日付フィルター適用
+                if filter_date:
+                    if date_key != filter_date:
+                        continue
+            
+            feedbacks.append(data)
+        
+        # 集計処理
+        total_count = len(feedbacks)
+        device_counts = Counter(fb.get('device_type','') for fb in feedbacks if fb.get('device_type'))
+        browser_counts = Counter(fb.get('browser','') for fb in feedbacks if fb.get('browser'))
+        # ブラウザ「その他」の詳細リスト
+        browser_other_list = [fb.get('browser_other','') for fb in feedbacks if fb.get('browser') == 'その他' and fb.get('browser_other')]
+        satisfaction_counts = Counter(fb.get('satisfaction','') for fb in feedbacks if fb.get('satisfaction'))
+        
+        # 評価項目集計（リアルタイムアドバイス）
+        eval_summary = {}
+        eval_keys = ['hard_brake','hard_curve','hard_accel','good_decel','good_curve','good_accel']
+        for key in eval_keys:
+            eval_summary[key] = Counter(fb.get('evaluations',{}).get(key,'') for fb in feedbacks if fb.get('evaluations',{}).get(key))
+        
+        # 運転後フィードバック集計
+        post_fb_summary = {}
+        post_keys = ['overall','clarity','accuracy','helpfulness']
+        for key in post_keys:
+            post_fb_summary[key] = Counter(fb.get('post_drive_feedback',{}).get(key,'') for fb in feedbacks if fb.get('post_drive_feedback',{}).get(key))
+        
+        # 重点ポイント集計
+        focus_summary = {}
+        focus_keys = ['ease_view','ease_edit','ease_check']
+        for key in focus_keys:
+            focus_summary[key] = Counter(fb.get('focus_point_evaluation',{}).get(key,'') for fb in feedbacks if fb.get('focus_point_evaluation',{}).get(key))
+        
+        # マップピン集計
+        pin_summary = {}
+        pin_keys = ['ease_add','ease_edit','speak_useful','advanced_settings']
+        for key in pin_keys:
+            pin_summary[key] = Counter(fb.get('map_pin_evaluation',{}).get(key,'') for fb in feedbacks if fb.get('map_pin_evaluation',{}).get(key))
+        
+        # 課題解決集計
+        solution_summary = {}
+        solution_keys = ['focus_awareness','realtime_improvement','pin_reference']
+        for key in solution_keys:
+            solution_summary[key] = Counter(fb.get('solution_evaluation',{}).get(key,'') for fb in feedbacks if fb.get('solution_evaluation',{}).get(key))
+        
+        return render_template(
+            "feedback_log.html",
+            feedbacks=feedbacks,
+            total_count=total_count,
+            device_counts=device_counts,
+            browser_counts=browser_counts,
+            browser_other_list=browser_other_list,
+            satisfaction_counts=satisfaction_counts,
+            eval_summary=eval_summary,
+            post_fb_summary=post_fb_summary,
+            focus_summary=focus_summary,
+            pin_summary=pin_summary,
+            solution_summary=solution_summary,
+            date_counts=date_counts,
+            filter_date=filter_date
+        )
+    except Exception as e:
+        print(f"Error in feedback_log: {e}")
+        import traceback
+        traceback.print_exc()
+        return render_template("feedback_log.html", feedbacks=[], total_count=0, error=str(e))
+
+# === 個別フィードバック詳細ページ ===
+@views_bp.route("/feedback_detail/<feedback_id>", methods=["GET"])
+@login_required
+def feedback_detail(feedback_id):
+    try:
+        doc_ref = db.collection('user_feedback').document(feedback_id)
+        doc = doc_ref.get()
+        if not doc.exists:
+            flash('指定されたフィードバックが見つかりません。', 'warning')
+            return redirect(url_for('views.feedback_log'))
+        
+        feedback = doc.to_dict()
+        feedback['id'] = doc.id
+        # created_atをJSTに変換
+        if 'created_at' in feedback and feedback['created_at']:
+            feedback['created_at'] = feedback['created_at'].astimezone(JST)
+        
+        # user_idからusernameを取得
+        user_id = feedback.get('user_id')
+        if user_id:
+            try:
+                user_doc = db.collection('users').document(user_id).get()
+                if user_doc.exists:
+                    feedback['username'] = user_doc.to_dict().get('username', '不明なユーザー')
+                else:
+                    feedback['username'] = '不明なユーザー'
+            except Exception as e:
+                print(f"Error fetching username: {e}")
+                feedback['username'] = '不明なユーザー'
+        else:
+            feedback['username'] = '匿名ユーザー'
+        
+        return render_template("feedback_detail.html", feedback=feedback)
+    except Exception as e:
+        print(f"Error in feedback_detail: {e}")
+        import traceback
+        traceback.print_exc()
+        flash(f'エラーが発生しました: {e}', 'danger')
+        return redirect(url_for('views.feedback_log'))

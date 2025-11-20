@@ -1,154 +1,380 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>フィードバックフォーム - ドライブバディ</title>
-
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>フィードバック送信 - ドライブバディ</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
   <style>
-    body {
-      background-color: #cdeae0;
-      font-family: "Hiragino Maru Gothic ProN", sans-serif;
-      color: #333;
-      padding-bottom: 70px;
-    }
-    h1 {
-      color: #2090c2;
-      font-weight: bold;
-      text-align: center;
-      margin: 30px 0 20px;
-    }
-    .feedback-card {
-      background: #fff;
-      border-radius: 16px;
-      box-shadow: 0 3px 10px rgba(0,0,0,0.1);
-      padding: 24px;
-      margin: 0 auto 25px;
-      max-width: 700px;
-    }
-    .form-label {
-      font-weight: bold;
-      color: #007e99;
-    }
-    .btn-primary {
-      background-color: #2090c2;
-      border: none;
-    }
-    .btn-primary:hover {
-      background-color: #167ca8;
-    }
-    .success-message {
-      display: none;
-      text-align: center;
-      margin-top: 30px;
-    }
-    .rating-stars {
-      display: flex;
-      justify-content: space-between;
-      width: 60%;
-      margin: 0 auto;
-      font-size: 1.6em;
-      color: #ccc;
-      cursor: pointer;
-    }
-    .rating-stars span.active {
-      color: #ffbf00;
-    }
+    body { background:#f8fafb; padding-bottom:70px; }
+    .section { background:#fff; border-radius:12px; padding:18px; margin-bottom:20px; box-shadow:0 2px 6px rgba(0,0,0,.08); }
+    .required:after { content:" *"; color:#d9534f; }
+    .eval-table th, .eval-table td { vertical-align:middle; font-size:0.8rem; }
   </style>
 </head>
-
 <body>
-  <h1>ドライブバディ<br>フィードバックフォーム</h1>
-  <p class="text-center text-secondary">アプリを使ってみた感想や改善点をお聞かせください📸</p>
+  <div class="container py-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h4 class="mb-0">フィードバック送信</h4>
+      <a href="{{ url_for('views.home') }}" class="btn btn-outline-secondary btn-sm">ホームへ戻る</a>
+    </div>
 
-  <div class="feedback-card">
-    <form id="feedbackForm">
-      <div class="mb-3">
-        <label class="form-label">ユーザー名<br>（アプリにログインする時の名前）<span class="text-danger">*</span></label>
-        <input type="text" class="form-control" id="username" required>
-      </div>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, msg in messages %}
+          <div class="alert alert-{{ 'success' if category=='success' else 'danger' }} py-2 mb-2">{{ msg }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
 
-      <div class="mb-3">
-        <label class="form-label">運転を記録した日<br>（例：11/1、無ければ「なし」）<span class="text-danger">*</span></label>
-        <textarea class="form-control" id="recordDates" rows="2" required></textarea>
-      </div>
+    <form method="POST" enctype="multipart/form-data" target="_self">
+      <!-- 基本情報 -->
+      <div class="section">
+        <h6 class="mb-3">基本情報</h6>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label required">お名前（本名）</label>
+            <input type="text" name="real_name" class="form-control" required value="" />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label required">使用機種</label>
+            <select name="device_type" class="form-select" required>
+              <option value="">選択してください</option>
+              <option value="iPhone">iPhone</option>
+              <option value="Android">Android</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label required">使用ブラウザ</label>
+            <select name="browser" id="browserSelect" class="form-select" required>
+              <option value="">選択してください</option>
+              <option value="Safari">Safari</option>
+              <option value="Chrome">Chrome</option>
+              <option value="その他">その他</option>
+            </select>
+          </div>
+          <div class="col-md-6" id="browserOtherWrapper" style="display:none;">
+            <label class="form-label">その他ブラウザ名</label>
+            <input type="text" name="browser_other" class="form-control" placeholder="例: Firefox" />
+          </div>
+        </div>
 
-      <div class="mb-3">
-        <label class="form-label">運転した時間帯<span class="text-danger">*</span></label>
-        <div class="form-check"><input class="form-check-input" type="checkbox" value="早朝 4:00〜7:00" id="t1"> <label class="form-check-label" for="t1">早朝 4:00〜7:00</label></div>
-        <div class="form-check"><input class="form-check-input" type="checkbox" value="朝 8:00〜11:00" id="t2"> <label class="form-check-label" for="t2">朝 8:00〜11:00</label></div>
-        <div class="form-check"><input class="form-check-input" type="checkbox" value="昼 11:00〜15:00" id="t3"> <label class="form-check-label" for="t3">昼 11:00〜15:00</label></div>
-        <div class="form-check"><input class="form-check-input" type="checkbox" value="夕方 16:00〜18:00" id="t4"> <label class="form-check-label" for="t4">夕方 16:00〜18:00</label></div>
-        <div class="form-check"><input class="form-check-input" type="checkbox" value="夜 19:00〜22:00" id="t5"> <label class="form-check-label" for="t5">夜 19:00〜22:00</label></div>
-        <div class="form-check"><input class="form-check-input" type="checkbox" value="深夜 23:00〜3:00" id="t6"> <label class="form-check-label" for="t6">深夜 23:00〜3:00</label></div>
-        <div class="form-check"><input class="form-check-input" type="checkbox" value="利用していない" id="t7"> <label class="form-check-label" for="t7">利用していない</label></div>
-      </div>
-
-      <div class="mb-3 text-center">
-        <label class="form-label d-block">アプリの満足度（1=不満〜5=とても満足）<span class="text-danger">*</span></label>
-        <div class="rating-stars" id="rating">
-          <span data-value="1">★</span>
-          <span data-value="2">★</span>
-          <span data-value="3">★</span>
-          <span data-value="4">★</span>
-          <span data-value="5">★</span>
+        <!-- 運転時間セクション -->
+        <h6 class="mb-3 mt-3">運転記録日時</h6>
+        <div id="driveTimesContainer">
+          <div class="drive-time-entry mb-3 border p-3 rounded" data-index="0">
+            <div class="row g-3 align-items-end">
+              <div class="col-md-3">
+                <label class="form-label required">運転開始日</label>
+                <input type="date" name="drive_start_date[]" class="form-control drive-start-date" required />
+              </div>
+              <div class="col-md-2 start-time-wrapper" style="display:none;">
+                <label class="form-label required">開始時刻</label>
+                <input type="time" name="drive_start_time[]" class="form-control" required />
+              </div>
+              <div class="col-md-2 end-time-wrapper" style="display:none;">
+                <label class="form-label required">終了時刻</label>
+                <input type="time" name="drive_end_time[]" class="form-control" required />
+              </div>
+              <div class="col-md-2 remove-btn-wrapper" style="display:none;">
+                <button type="button" class="btn btn-danger btn-sm w-100 remove-time-btn">削除</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="mb-3">
+          <button type="button" id="addDriveTimeBtn" class="btn btn-outline-primary btn-sm">+ 運転時間を追加</button>
         </div>
       </div>
 
-      <div class="mb-3">
-        <label class="form-label">良かった点</label>
-        <textarea class="form-control" id="goodPoints" rows="2"></textarea>
+      <!-- リアルタイムアドバイス判定評価 -->
+      <div class="section">
+        <h6 class="mb-3">リアルタイムアドバイスの判定</h6>
+        <p class="small text-muted mb-2">各項目で最も近いものを選択してください。</p>
+        <div class="table-responsive">
+          <table class="table table-sm eval-table">
+            <thead>
+              <tr>
+                <th>項目</th>
+                <th class="text-center">適切だった</th>
+                <th class="text-center">甘すぎた</th>
+                <th class="text-center">厳しすぎた</th>
+                <th class="text-center">判定されなかった</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% set rows = [
+                ('急ブレーキ','eval_hard_brake'),
+                ('急カーブ','eval_hard_curve'),
+                ('急加速','eval_hard_accel'),
+                ('良減速','eval_good_decel'),
+                ('良カーブ','eval_good_curve'),
+                ('良加速','eval_good_accel')
+              ] %}
+              {% for label, name in rows %}
+              <tr>
+                <th>{{ label }}</th>
+                {% for val in ['適切だった','甘すぎた','厳しすぎた','判定されなかった'] %}
+                  <td class="text-center">
+                    <input type="radio" name="{{ name }}" value="{{ val }}" required />
+                  </td>
+                {% endfor %}
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      <div class="mb-3">
-        <label class="form-label">改善点</label>
-        <textarea class="form-control" id="improvements" rows="2"></textarea>
+      <!-- 自由記述 -->
+      <!-- 運転後フィードバック評価 -->
+      <div class="section">
+        <h6 class="mb-3">運転後のフィードバック（要約/振り返り）について</h6>
+        <p class="small text-muted mb-2">生成された振り返り内容や改善ポイントの印象を教えてください（表示されなかった場合は「表示されなかった」を選択）。</p>
+        <div class="table-responsive">
+          <table class="table table-sm eval-table">
+            <thead>
+              <tr>
+                <th>評価項目</th>
+                <th class="text-center">とても良い</th>
+                <th class="text-center">良い</th>
+                <th class="text-center">普通</th>
+                <th class="text-center">改善が必要</th>
+                <th class="text-center">表示されなかった</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% set post_rows = [
+                ('総合評価','post_fb_overall'),
+                ('分かりやすさ','post_fb_clarity'),
+                ('正確さ','post_fb_accuracy'),
+                ('改善に役立つ度','post_fb_helpfulness')
+              ] %}
+              {% for label, name in post_rows %}
+              <tr>
+                <th>{{ label }}</th>
+                {% for val in ['とても良い','良い','普通','改善が必要','表示されなかった'] %}
+                  <td class="text-center"><input type="radio" name="{{ name }}" value="{{ val }}" required /></td>
+                {% endfor %}
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      <div class="mb-3">
-        <label class="form-label">スクリーンショット・画像（5枚まで）</label>
-        <input type="file" class="form-control" id="images" accept="image/*" multiple>
+      <!-- 重点ポイント設置評価 -->
+      <div class="section">
+        <h6 class="mb-3">重点ポイント設置について</h6>
+        <p class="small text-muted mb-2">走行前に自分で設定できる重点ポイント設置について評価してください。</p>
+        <div class="table-responsive">
+          <table class="table table-sm eval-table">
+            <thead>
+              <tr>
+                <th>評価項目</th>
+                <th class="text-center">とても良い</th>
+                <th class="text-center">良い</th>
+                <th class="text-center">普通</th>
+                <th class="text-center">改善が必要</th>
+                <th class="text-center">利用していない</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% set focus_rows = [
+                ('閲覧のしやすさ','focus_ease_view'),
+                ('編集のしやすさ','focus_ease_edit'),
+                ('内容の確認しやすさ','focus_ease_check')
+              ] %}
+              {% for label, name in focus_rows %}
+              <tr>
+                <th>{{ label }}</th>
+                {% for val in ['とても良い','良い','普通','改善が必要','利用していない'] %}
+                  <td class="text-center"><input type="radio" name="{{ name }}" value="{{ val }}" required /></td>
+                {% endfor %}
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      <div class="mb-3">
-        <label class="form-label">今後追加してほしい機能</label>
-        <textarea class="form-control" id="futureFeatures" rows="2"></textarea>
+      <!-- マップピン評価 -->
+      <div class="section">
+        <h6 class="mb-3">マップピン機能について</h6>
+        <p class="small text-muted mb-2">手動で追加・編集するマップピンや読み上げ機能について評価してください。</p>
+        <div class="table-responsive">
+          <table class="table table-sm eval-table">
+            <thead>
+              <tr>
+                <th>評価項目</th>
+                <th class="text-center">とても良い</th>
+                <th class="text-center">良い</th>
+                <th class="text-center">普通</th>
+                <th class="text-center">改善が必要</th>
+                <th class="text-center">利用していない</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% set pin_rows = [
+                ('ピン追加のしやすさ','pin_ease_add'),
+                ('ピン編集のしやすさ','pin_ease_edit'),
+                ('読み上げ機能の有用性','pin_speak_useful'),
+                ('優先度/時間帯設定の使いやすさ','pin_advanced_settings')
+              ] %}
+              {% for label, name in pin_rows %}
+              <tr>
+                <th>{{ label }}</th>
+                {% for val in ['とても良い','良い','普通','改善が必要','利用していない'] %}
+                  <td class="text-center"><input type="radio" name="{{ name }}" value="{{ val }}" required /></td>
+                {% endfor %}
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      <div class="mb-3">
-        <label class="form-label">その他</label>
-        <textarea class="form-control" id="other" rows="2"></textarea>
+      <!-- 課題解決について -->
+      <div class="section">
+        <h6 class="mb-3">課題解決について</h6>
+        <p class="small text-muted mb-2">アプリが自分の運転課題の解決に役立っているか評価してください。</p>
+        <div class="table-responsive">
+          <table class="table table-sm eval-table">
+            <thead>
+              <tr>
+                <th>評価項目</th>
+                <th class="text-center">とても当てはまる</th>
+                <th class="text-center">当てはまる</th>
+                <th class="text-center">あまり当てはまらない</th>
+                <th class="text-center">全く当てはまらない</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% set solution_rows = [
+                ('重点ポイントフィードバックで自分の課題を把握できたか','solution_focus_awareness'),
+                ('リアルタイムアドバイスで快適に自分の運転を改善できたか','solution_realtime_improvement'),
+                ('他の人が刺したピンが運転の参考になっているか','solution_pin_reference')
+              ] %}
+              {% for label, name in solution_rows %}
+              <tr>
+                <th>{{ label }}</th>
+                {% for val in ['とても当てはまる','当てはまる','あまり当てはまらない','全く当てはまらない'] %}
+                  <td class="text-center"><input type="radio" name="{{ name }}" value="{{ val }}" required /></td>
+                {% endfor %}
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      <div class="text-center">
-        <button type="submit" class="btn btn-primary px-5">送信する</button>
+      <div class="section">
+        <h6 class="mb-3">自由記述</h6>
+        <div class="mb-3">
+          <label class="form-label">良かった点</label>
+          <textarea name="good_points" rows="2" class="form-control" placeholder="使いやすかった点など"></textarea>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">改善してほしい点</label>
+          <textarea name="improvement" rows="2" class="form-control" placeholder="改善希望や不満点"></textarea>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">今後追加してほしい機能</label>
+          <textarea name="desired_features" rows="2" class="form-control" placeholder="欲しい機能・提案"></textarea>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">その他</label>
+          <textarea name="other_comments" rows="2" class="form-control" placeholder="その他ご意見"></textarea>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">画像アップロード（任意）</label>
+          <input type="file" name="feedback_image" accept="image/*" class="form-control" />
+          <div class="form-text">スクリーンショットなど参考画像があれば添付してください。</div>
+        </div>
+      </div>
+
+      <!-- 満足度（最後） -->
+      <div class="section">
+        <h6 class="mb-2">アプリ全体の満足度</h6>
+        <div class="d-flex flex-wrap gap-3 align-items-center mb-2">
+          {% for i in range(1,6) %}
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="satisfaction" id="sat{{i}}" value="{{i}}" required />
+            <label class="form-check-label" for="sat{{i}}">{{i}}</label>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="form-text">1=不満 / 5=とても満足</div>
+      </div>
+
+      <div class="text-end mb-5">
+        <button type="submit" class="btn btn-primary px-4">送信する</button>
       </div>
     </form>
-
-    <div class="success-message" id="successMessage">
-      <h4 class="text-success mt-3">✅ 送信ありがとうございます！</h4>
-      <p>ご協力に感謝します。</p>
-      <div class="d-flex justify-content-center gap-3 mt-3">
-        <button class="btn btn-outline-primary" id="newFeedbackBtn">もう一度回答する</button>
-        <a href="{{ url_for('views.home') }}" class="btn btn-outline-secondary">ホームに戻る</a>
-      </div>
-    </div>
   </div>
 
-  <!-- 🔧 Flaskのユーザー情報をJSに渡す -->
   <script>
-    window.FLASK_USER_ID = "{{ current_user.id if current_user.is_authenticated else '' }}";
-    window.FLASK_USER_NAME = "{{ current_user.name or current_user.username or '' }}";
-    console.log("User Info from Flask:", window.FLASK_USER_ID, window.FLASK_USER_NAME);
+    const browserSelect = document.getElementById('browserSelect');
+    const otherWrapper = document.getElementById('browserOtherWrapper');
+    browserSelect.addEventListener('change', () => {
+      if (browserSelect.value === 'その他') {
+        otherWrapper.style.display = 'block';
+      } else {
+        otherWrapper.style.display = 'none';
+        const input = otherWrapper.querySelector('input');
+        if (input) input.value = '';
+      }
+    });
+
+    // 運転時間の複数追加機能
+    const driveTimesContainer = document.getElementById('driveTimesContainer');
+    const addDriveTimeBtn = document.getElementById('addDriveTimeBtn');
+    let driveTimeIndex = 1;
+
+    // 日付入力時に時刻入力欄を表示
+    driveTimesContainer.addEventListener('change', (e) => {
+      if (e.target.classList.contains('drive-start-date') && e.target.value) {
+        const entry = e.target.closest('.drive-time-entry');
+        entry.querySelector('.start-time-wrapper').style.display = 'block';
+        entry.querySelector('.end-time-wrapper').style.display = 'block';
+      }
+    });
+
+    // 運転時間追加ボタン
+    addDriveTimeBtn.addEventListener('click', () => {
+      const newEntry = document.createElement('div');
+      newEntry.className = 'drive-time-entry mb-3 border p-3 rounded';
+      newEntry.dataset.index = driveTimeIndex;
+      newEntry.innerHTML = `
+        <div class="row g-3 align-items-end">
+          <div class="col-md-3">
+            <label class="form-label required">運転開始日</label>
+            <input type="date" name="drive_start_date[]" class="form-control drive-start-date" required />
+          </div>
+          <div class="col-md-2 start-time-wrapper" style="display:none;">
+            <label class="form-label required">開始時刻</label>
+            <input type="time" name="drive_start_time[]" class="form-control" required />
+          </div>
+          <div class="col-md-2 end-time-wrapper" style="display:none;">
+            <label class="form-label required">終了時刻</label>
+            <input type="time" name="drive_end_time[]" class="form-control" required />
+          </div>
+          <div class="col-md-2 remove-btn-wrapper" style="display:block;">
+            <button type="button" class="btn btn-danger btn-sm w-100 remove-time-btn">削除</button>
+          </div>
+        </div>
+      `;
+      driveTimesContainer.appendChild(newEntry);
+      driveTimeIndex++;
+    });
+
+    // 削除ボタン
+    driveTimesContainer.addEventListener('click', (e) => {
+      if (e.target.classList.contains('remove-time-btn')) {
+        e.target.closest('.drive-time-entry').remove();
+      }
+    });
   </script>
-
-  <!-- Firebase & フィードバックスクリプト -->
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-
-  <!-- フィードバック送信用 -->
-  <script src="{{ url_for('static', filename='user_feedback.js') }}"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

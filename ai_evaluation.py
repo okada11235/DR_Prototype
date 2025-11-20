@@ -4,6 +4,8 @@ from datetime import datetime
 from flask import current_app
 from google.cloud import firestore
 from pytz import timezone
+import os
+import google.generativeai as genai
 
 JST = timezone("Asia/Tokyo")
 
@@ -16,6 +18,28 @@ NOT_PASSED_STATS = {
     "std_gx": 0, "std_gz": 0, "max_gx": 0, "max_gz": 0
 }
 NOT_PASSED_COMMENT = "この重点ポイントは今回の走行で通過しなかったようです。次回、挑戦してみましょう！"
+
+# ==========================================================
+#  Gemini クライアント設定ヘルパ
+# ==========================================================
+def get_gemini_model(model_name: str = "gemini-2.0-flash"):
+    """
+    GEMINI_API_KEY （キー文字列そのもの）を環境変数から取得して
+    google-generativeai を初期化し、GenerativeModel オブジェクトを返す。
+    """
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        print("⚠️ GEMINI_API_KEY が環境変数に設定されていません。")
+        return None
+
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel(model_name)
+        return model
+    except Exception as e:
+        print(f"⚠️ Gemini 初期化エラー: {e}")
+        return None
+
 
 # ==========================================================
 #  フォーカスタイプごとのデータ範囲設定
@@ -56,6 +80,7 @@ def get_focus_rating(stats, focus_type):
             rating = "いい"
         elif gz < 0.25:
             rating = "ふつう"
+            # pass
         else:
             rating = "わるい"
 
@@ -148,31 +173,19 @@ def compare_focus_stats(prev_stats, current_stats):
 
 
 # ==========================================================
-#  AIフィードバック生成（OpenAI呼び出し）
+#  AIフィードバック生成（Gemini 呼び出し）
 # ==========================================================
 def generate_ai_focus_feedback(focus_type_name, current_stats, diff, rating, diff_text):
-    import openai, os
-    from flask import current_app
+    """
+    OpenAI ではなく Gemini を使ってフィードバック文章を生成する。
+    GEMINI_API_KEY（キー文字列）が環境変数に入っている前提。
+    """
+    model = get_gemini_model()
+    if model is None:
+        # キー未設定など
+        return "AIフィードバック用の設定がまだ完了していないため、自動コメントを生成できませんでした。"
 
-    # === OpenAI APIキーの取得方法（旧構成と互換） ===
-    api_key_path = os.getenv("OPENAI_API_KEY")
-    api_key_value = None
-
-    if api_key_path:
-        if os.path.exists(api_key_path):
-            with open(api_key_path, "r", encoding="utf-8") as f:
-                api_key_value = f.read().strip()
-        else:
-            # 環境変数そのものがキーの場合
-            api_key_value = api_key_path
-
-    if not api_key_value:
-        print("⚠️ OpenAI APIキーが見つかりません。")
-        api_key_value = "DUMMY_KEY"
-
-    client = openai.OpenAI(api_key=api_key_value)
-
-    # --- プロンプト構築（あなた指定の形式） ---
+    # --- プロンプト構築（元の形式をほぼ維持） ---
     prompt = f"""
     あなたは運転コーチAI『ドライボ』です。
     この地点は「{focus_type_name}」を意識するよう設定されていました。
@@ -198,19 +211,14 @@ def generate_ai_focus_feedback(focus_type_name, current_stats, diff, rating, dif
     - 最後に前向きな一言と絵文字を添える（例：「この調子です！😊」「少しずつ上達していますね🚗✨」）
     """
 
-
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "あなたは安全運転をサポートする優しいコーチAIです。"},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=200
-        )
-        feedback_text = response.choices[0].message.content.strip()
+        response = model.generate_content(prompt)
+        # google-generativeai は通常 .text で本文が取れる
+        feedback_text = (response.text or "").strip()
+        if not feedback_text:
+            feedback_text = "AIフィードバックの生成結果が空でした。"
     except Exception as e:
-        print(f"⚠️ AI生成エラー: {e}")
+        print(f"⚠️ AI生成エラー (Gemini): {e}")
         feedback_text = "AIフィードバック生成中にエラーが発生しました。"
 
     # --- 前回との比較を考慮してトーンを追加 ---
@@ -226,31 +234,21 @@ def generate_ai_focus_feedback(focus_type_name, current_stats, diff, rating, dif
 
     return feedback_text
 
+
 # ==========================================================
-#  簡潔版フィードバック生成
+#  簡潔版フィードバック生成（Gemini 要約）
 # ==========================================================
 def summarize_feedback(ai_comment: str, diff_text: str) -> str:
     """長文のAIコメントから簡潔な要約を生成（良い点・改善点・比較）"""
-    import openai, os
-    from flask import current_app
+    model = get_gemini_model()
+    if model is None:
+        # モデルが使えないときのデフォルト
+        return (
+            "😊 良い点: 全体的に安定した走行でした。\n"
+            "⚠ 改善点: カーブ時の揺れに注意しましょう。\n"
+            "📈 比較: 前回とほぼ同じ傾向です。"
+        )
 
-    # === OpenAI APIキーの取得方法（旧構成と互換） ===
-    api_key_path = os.getenv("OPENAI_API_KEY")
-    api_key_value = None
-
-    if api_key_path:
-        if os.path.exists(api_key_path):
-            with open(api_key_path, "r", encoding="utf-8") as f:
-                api_key_value = f.read().strip()
-        else:
-            # 環境変数そのものがキーの場合
-            api_key_value = api_key_path
-
-    if not api_key_value:
-        print("⚠️ OpenAI APIキーが見つかりません。")
-        api_key_value = "DUMMY_KEY"
-
-    client = openai.OpenAI(api_key=api_key_value)
     prompt = f"""
     以下は運転に関するAIフィードバックです。
     この文章から「良い点」「改善点」「前回との比較」を1行ずつ簡潔に要約してください。
@@ -264,20 +262,23 @@ def summarize_feedback(ai_comment: str, diff_text: str) -> str:
     """
 
     try:
-        res = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=150
-        )
-        summary = res.choices[0].message.content.strip()
+        res = model.generate_content(prompt)
+        summary = (res.text or "").strip()
+        if not summary:
+            summary = (
+                "😊 良い点: 全体的に安定した走行でした。\n"
+                "⚠ 改善点: カーブ時の揺れに注意しましょう。\n"
+                "📈 比較: 前回とほぼ同じ傾向です。"
+            )
     except Exception as e:
-        print(f"⚠️ 要約生成エラー: {e}")
+        print(f"⚠️ 要約生成エラー (Gemini): {e}")
         summary = (
             "😊 良い点: 全体的に安定した走行でした。\n"
             "⚠ 改善点: カーブ時の揺れに注意しましょう。\n"
             "📈 比較: 前回とほぼ同じ傾向です。"
         )
     return summary
+
 
 # ==========================================================
 #  メイン：重点ポイント解析
@@ -391,8 +392,28 @@ def analyze_focus_points_for_session(session_id: str, user_id: str) -> dict:
         }
 
         # --- 前回データ取得（比較用） ---
-        prev_doc = sess_ref.collection("focus_feedbacks").document(pin_id).get()
-        prev_stats = prev_doc.to_dict().get("stats") if prev_doc.exists else None
+        prev_stats = None
+
+        prev_sessions = (
+            db.collection("sessions")
+            .where("user_id", "==", user_id)
+            .where("status", "==", "completed")
+            .order_by("end_time", direction=firestore.Query.DESCENDING)
+            .stream()
+        )
+
+        for sdoc in prev_sessions:
+            if sdoc.id == session_id:
+                continue  # 今回のセッションを除外
+
+            # 今回のpin_idに対応する前回の focus_feedback を探す
+            fb_ref = db.collection("sessions").document(sdoc.id)\
+                .collection("focus_feedbacks").document(pin_id)
+
+            fb_doc = fb_ref.get()
+            if fb_doc.exists:
+                prev_stats = fb_doc.to_dict().get("stats")
+                break
 
         diff, diff_text = compare_focus_stats(prev_stats, current_stats)
         rating = get_focus_rating(current_stats, focus_type)

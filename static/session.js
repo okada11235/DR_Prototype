@@ -1,10 +1,11 @@
 // session.js - セッション管理機能
 
-import { stopMotionDetection, startMotionDetection, startAutoCalibration } from './sensors.js';
+import { stopMotionDetection, startMotionDetection, startAutoCalibration, performInitialCalibration } from './sensors.js';
 import { watchPosition, calculateDistance } from './maps.js';
 import { startTimer, stopTimer, formatTime, calculateStability } from './utils.js';
 import { unlockAudio, stopAudioSystem } from './audio.js'; // FIX: stopAudioSystemをimport
 import { resetState } from './state.js';
+import { stopGPSWatch } from './maps.js';
 
 
 console.log('=== session.js LOADED [FIXED] ===');
@@ -14,7 +15,6 @@ document.addEventListener("touchstart", unlockAudio, { once: true });
 
 // ✅ iOS & Android モーション許可リクエスト
 async function requestMotionPermission(callback) {
-  // ログイン時に許可済みならスキップ
   const preGranted = localStorage.getItem('perm_motion') === 'granted';
   if (preGranted) {
     console.log("✅ Motion permission already granted (from login)");
@@ -51,224 +51,172 @@ function getFocusPoint() {
     return '';
 }
 
-// 記録開始
-export async function startSession() {
-    console.log('=== startSession function called ===');
-
-    // 前回セッションのクリア
-    localStorage.removeItem('activeSessionId');
-    localStorage.removeItem('sessionStartTime');
-    window.sessionId = null;
-
-    if (window.isSessionStarting) {
-        alert('セッション開始処理中です。');
-        return null;
-    }
-    window.isSessionStarting = true;
-
-    // 音声許可
-    unlockAudio();
-
-    // モーション許可
-    await new Promise(resolve => requestMotionPermission(resolve));
-
-    console.log('Sending /start request...');
-    let sessionId = null;
-
-    try {
-        const res = await fetch('/start', { method: 'POST' });
-        const data = await res.json();
-
-        if (!data.session_id) throw new Error("セッションIDが返されていません");
-
-        sessionId = data.session_id;
-        window.sessionId = sessionId;
-        window.startTime = Date.now();
-
-        localStorage.setItem('activeSessionId', sessionId);
-        localStorage.setItem('sessionStartTime', window.startTime);
-
-        console.log("SESSION OK:", sessionId);
-
-        resetState();
-        window.gLogBuffer = [];
-        window.gpsLogBuffer = [];
-        window.avgGLogBuffer = [];
-
-    } catch (err) {
-        console.error("Error starting session:", err);
-        alert("記録開始に失敗しました");
-    } finally {
-        window.isSessionStarting = false;
+// === GPS監視を開始する関数 ===
+function startGPSWatch() {
+    if (window.watchId) {
+        navigator.geolocation.clearWatch(window.watchId);
     }
 
-    // ❗❗ ここで画面遷移しないことが重要 ❗❗
-    return sessionId;
-}
-
-// 記録終了
-export function endSession(showAlert = true) {
-    console.log("=== endSession called ===");
-    
-    if (!window.sessionId) {
-        console.log("No sessionId found");
-        if (showAlert) alert('まだ記録が開始されていません');
+    if (!('geolocation' in navigator)) {
+        console.warn('⚠️ この端末ではGPSが利用できません');
         return;
     }
 
-    console.log("Stopping timer...");
-    stopTimer();
+    window.watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+            const { latitude, longitude, speed } = pos.coords;
+            const timestamp = Date.now();
+            const kmh = speed !== null ? speed * 3.6 : 0;
 
-    console.log("Clearing intervals...");
-    if (window.logFlushInterval) {
-        clearInterval(window.logFlushInterval);
-        window.logFlushInterval = null;
-    }
-    if (window.praiseInterval) {
-        clearInterval(window.praiseInterval);
-        window.praiseInterval = null;
-    }
+            const gxs = window.latestGX || 0;
+            const gys = window.latestGY || 0;
+            const gzs = window.latestGZ || 0;
 
-    console.log("Clearing GPS watch...");
-    if (window.watchId !== null) {
-        navigator.geolocation.clearWatch(window.watchId);
-        window.watchId = null;
-    }
-    
-    console.log("Stopping motion detection...");
-    stopMotionDetection();
+            const log = {
+                latitude,
+                longitude,
+                speed: kmh,
+                timestamp: timestamp,
+                g_x: gxs,
+                g_y: gys,
+                g_z: gzs,
+                event: 'normal'
+            };
 
-    // FIX: AudioContextを安全に停止
-    console.log("Stopping audio system...");
-    stopAudioSystem();
+            window.gpsLogBuffer = window.gpsLogBuffer || [];
+            window.gpsLogBuffer.push(log);
 
-    console.log("Calculating distance...");
-    let distance = 0;
-    try {
-        distance = calculateDistance(window.path);
-        console.log("Distance calculated:", distance, "km");
-    } catch (error) {
-        console.error("Error calculating distance:", error);
-        distance = 0;
-    }
-    
-    // FIX: サーバーに終了リクエストを送信する前に、残りのログをすべて送信
-    const flushFinalLogs = () => {
-        // FIX: ローカルバッファを強制フラッシュする関数
-        const flushOneBuffer = (buffer, endpoint) => {
-            if (buffer.length === 0) return Promise.resolve({ status: 'ok', saved_count: 0 });
-            
-            const logsToSend = buffer.splice(0, buffer.length); // すべて取り出す
-            console.log(`Sending final ${logsToSend.length} logs to ${endpoint}`);
-            
-            return fetch(endpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ session_id: window.sessionId, [endpoint.includes('gps') ? 'gps_logs' : endpoint.includes('avg') ? 'avg_g_logs' : 'g_logs']: logsToSend })
-            })
-            .then(r => r.json())
-            .then(data => {
-                console.log(`${endpoint} final save response:`, data);
-                return data;
-            })
-            .catch(err => {
-                console.error(`ERROR: Final ${endpoint} save failed:`, err);
-                return { status: 'error', message: err.message };
-            });
-        };
-        
-        // ログの保存順序: GPSログがセッションの座標の主となるため、先に送る
-        return Promise.all([
-            flushOneBuffer(window.gpsLogBuffer, '/log_gps_bulk'),
-            flushOneBuffer(window.gLogBuffer, '/log_g_only'),
-            flushOneBuffer(window.avgGLogBuffer, '/log_avg_g_bulk') // FIX: avgGLogBufferも最後にフラッシュ
-        ]);
-    };
+            window.currentSpeed = kmh;
 
+            console.log(`📍 GPS更新: ${latitude.toFixed(5)}, ${longitude.toFixed(5)} (${kmh.toFixed(1)} km/h)`);
+        },
+        (err) => {
+            console.error('⚠️ GPS取得エラー:', err);
+        },
+        {
+            enableHighAccuracy: true,
+            maximumAge: 1000,
+            timeout: 10000
+        }
+    );
 
-    console.log("Sending end request to server...");
-    
-    // 重点ポイントを localStorage から取得（fetchより前に取得）
-    const focusPoint = localStorage.getItem('currentFocusPoint') || '';
-    
-    flushFinalLogs() // ログを先に送信
-        .then(() => {
-            console.log("All logs flushed, proceeding with session end request.");
-            
-            return fetch('/end', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    session_id: window.sessionId,
-                    distance: distance,
-                    sudden_accels: window.suddenAccels,
-                    sudden_brakes: window.suddenBrakes,
-                    sharp_turns: window.sharpTurns,
-                    speed_violations: window.speedViolations,
-                    focus_point: focusPoint,  // 重点ポイントを追加
-                }),
-            });
-        })
-        .then(response => {
-            console.log("End request response status:", response.status);
-            if (!response.ok) {
-                return response.json().then(errorData => {
-                    throw new Error(errorData.message || '記録終了時にサーバーエラーが発生しました');
-                });
-            }
-            return response.json();
-        })
-        .then(data => {
-            console.log("End request response data:", data);
-            if (data.status === 'ok' || data.status === 'warning') {
-                console.log("Session end confirmed, preparing redirect.");
-                
-                let elapsedTime = 0;
-                if (window.startTime && typeof window.startTime === 'number') {
-                    elapsedTime = Math.floor((Date.now() - window.startTime) / 1000);
-                    console.log("Elapsed time calculated:", elapsedTime);
-                } else {
-                    console.warn("startTime is not valid:", window.startTime);
-                }
-                const sessionData = {
-                    distance: distance,
-                    sudden_accels: window.suddenAccels,
-                    sudden_brakes: window.suddenBrakes,
-                    sharp_turns: window.sharpTurns,
-                    speed_violations: window.speedViolations,
-                    totalTime: formatTime(elapsedTime),
-                    stability: calculateStability(window.suddenAccels, window.suddenBrakes, window.sharpTurns, distance),
-                    session_id: window.sessionId,  // セッションIDを追加
-                    focus_point: focusPoint        // 重点ポイントを追加
-                };
-                console.log("Session data prepared:", sessionData);
-                localStorage.setItem('lastSessionData', JSON.stringify(sessionData));
-                localStorage.removeItem('activeSessionId');
-                localStorage.removeItem('sessionStartTime');
-                window.sessionId = null;
-                resetState();
-                window.lastAudioPlayTime = {};
-                console.log("Cleaning up map elements...");
-                if (window.polyline) window.polyline.setPath([]);
-                if (window.currentPositionMarker) window.currentPositionMarker.setMap(null);
-                window.path = [];
-                window.eventMarkers.forEach(marker => marker.setMap(null));
-                window.eventMarkers = [];
-                console.log("Redirecting to completed page...");
-                window.location.href = '/recording/completed';
-            } else {
-                console.error("End session failed:", data);
-                if (showAlert) alert('記録終了に失敗しました: ' + (data.message || '不明なエラー'));
-            }
-        })
-        .catch(error => {
-            console.error('記録終了中にエラーが発生しました:', error);
-            console.error('Error stack:', error.stack);
-            if (showAlert) alert('記録終了中にネットワークまたは処理エラーが発生しました: ' + error.message);
-        });
+    console.log('✅ GPS監視を開始しました');
 }
 
-// ログフラッシュ処理を開始する関数
+// === 記録開始 ===
+export function startSession() {
+    console.log('=== startSession function called ===');
+
+    localStorage.removeItem('activeSessionId');
+    localStorage.removeItem('sessionStartTime');
+    localStorage.removeItem('lastSessionData');
+    window.sessionId = null;
+
+    if (window.isSessionStarting) {
+        alert('セッション開始処理中です。しばらくお待ちください。');
+        return;
+    }
+
+    window.isSessionStarting = true;
+
+    const startButton = document.getElementById('start-button');
+    if (startButton) {
+        startButton.disabled = true;
+        startButton.textContent = '開始中...';
+    }
+
+    const focusPoint = getFocusPoint();
+    localStorage.setItem('currentFocusPoint', focusPoint);
+
+    unlockAudio();
+
+    requestMotionPermission(() => {
+        console.log('Motion permission granted');
+
+        performInitialCalibration(async () => {
+
+            console.log('Sending session start request...');
+            let data;
+
+            try {
+                const res = await fetch('/start', { method: 'POST' });
+                if (!res.ok) throw new Error('サーバーエラー');
+                data = await res.json();
+            } catch (err) {
+                alert('記録開始時にエラーが発生しました：' + err.message);
+                window.isSessionStarting = false;
+                if (startButton) {
+                    startButton.disabled = false;
+                    startButton.textContent = '記録開始';
+                }
+                return;
+            }
+
+            window.sessionId = data.session_id;
+            window.startTime = Date.now();
+            localStorage.setItem('activeSessionId', window.sessionId);
+            localStorage.setItem('sessionStartTime', window.startTime.toString());
+
+            resetState();
+            window.gLogBuffer = [];
+            window.gpsLogBuffer = [];
+            window.avgGLogBuffer = [];
+            window.path = [];
+
+            startMotionDetection();
+            startGPSWatch();
+
+            window.isSessionStarting = false;
+            window.location.href = '/recording/active';
+        });
+    });
+}
+
+// === 記録終了 ===
+export async function endSession() {
+
+    console.log("=== endSession CALLED ===");
+
+    if (window.isEndingSession) return;
+    window.isEndingSession = true;
+
+    stopMotionDetection();
+    stopGPSWatch();
+    stopTimer();
+
+    await flushLogsNow();
+
+    const sessionId = window.sessionId;
+    if (!sessionId) {
+        console.error("No sessionId at endSession");
+        window.isEndingSession = false;
+        return;
+    }
+
+    let data;
+    try {
+        const res = await fetch('/end', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: sessionId })
+        });
+        data = await res.json();
+        console.log("END session response:", data);
+    } catch (err) {
+        alert("終了時にエラー発生: " + err.message);
+        window.isEndingSession = false;
+        return;
+    }
+
+    localStorage.removeItem('activeSessionId');
+    localStorage.removeItem('sessionStartTime');
+
+    window.sessionId = null;
+
+    window.location.href = `/recording/completed?session_id=${data.session_id}`;
+}
+
+// === 定期ログフラッシュ ===
 export function startLogFlush() {
     if (window.logFlushInterval) clearInterval(window.logFlushInterval);
     window.logFlushInterval = setInterval(() => {
@@ -279,49 +227,81 @@ export function startLogFlush() {
             return;
         }
 
-        // === Gログ送信 ===
+        // Gログ
         if (window.gLogBuffer.length > 0) {
             const logsToSend = window.gLogBuffer.splice(0, window.gLogBuffer.length);
-            console.log(`Sending ${logsToSend.length} G logs for session ${window.sessionId}`);
             fetch('/log_g_only', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ session_id: window.sessionId, g_logs: logsToSend })
-            })
-            .then(r => r.json())
-            .then(data => console.log('G logs save response:', data))
-            .catch(err => console.error('Gログ送信エラー:', err));
+            });
         }
 
-        // === 平滑化Gログ送信 ===
+        // AVG-G
         if (window.avgGLogBuffer && window.avgGLogBuffer.length > 0) {
             const avgToSend = window.avgGLogBuffer.splice(0, window.avgGLogBuffer.length);
-            console.log(`Sending ${avgToSend.length} AVG-G logs for session ${window.sessionId}`);
             fetch('/log_avg_g_bulk', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ session_id: window.sessionId, avg_g_logs: avgToSend })
-            })
-            .then(r => r.json())
-            .then(data => console.log('AVG G logs save response:', data))
-            .catch(err => console.error('AVG Gログ送信エラー:', err));
+            });
         }
 
-        // === GPSログ送信 ===
+        // GPSログ
         if (window.gpsLogBuffer.length > 0) {
             const logsToSend = window.gpsLogBuffer.splice(0, window.gpsLogBuffer.length);
-            console.log(`Sending ${logsToSend.length} GPS logs for session ${window.sessionId}`);
             fetch('/log_gps_bulk', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ session_id: window.sessionId, gps_logs: logsToSend })
-            })
-            .then(r => r.json())
-            .then(data => console.log('GPS logs save response:', data))
-            .catch(err => console.error('GPSログ送信エラー:', err));
+            });
         }
 
-    }, 60000); // 🔹60秒ごと
+    }, 60000);
+}
+
+// === 即時ログフラッシュ（終了時） ===
+export async function flushLogsNow() {
+    console.log("=== flushLogsNow CALLED ===");
+
+    if (!window.sessionId) {
+        console.warn("No sessionId, skip flush");
+        return;
+    }
+
+    if (window.gLogBuffer.length > 0) {
+        const logs = window.gLogBuffer.splice(0, window.gLogBuffer.length);
+        await fetch('/log_g_only', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: window.sessionId, g_logs: logs })
+        });
+    }
+
+    if (window.avgGLogBuffer?.length > 0) {
+        const logs = window.avgGLogBuffer.splice(0, window.avgGLogBuffer.length);
+        await fetch('/log_avg_g_bulk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: window.sessionId, avg_g_logs: logs })
+        });
+    }
+
+    if (window.gpsLogBuffer.length > 0) {
+        const logs = window.gpsLogBuffer.splice(0, window.gpsLogBuffer.length);
+        await fetch('/log_gps_bulk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: window.sessionId, gps_logs: logs })
+        });
+    }
+
+    console.log("=== flushLogsNow COMPLETED ===");
+}
+
+// === 褒めチェックは無効 ===
+export function startPraiseCheck() {
+    console.log("⏸️ 定期褒めチェックは無効化されています。");
 }
 
 // 褒めチェック開始
