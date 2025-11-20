@@ -32,6 +32,15 @@ tailwind.config = {
 
   <h1 id="recordingTitle" class="text-3xl font-bold text-primary-green mb-6" style="display:none;">記録中</h1>
 
+  <!-- 吹き出し（スタート後に表示） -->
+  <div id="speechBubble" style="display:none;" class="relative bg-white rounded-2xl shadow-lg px-6 py-4 mb-4 max-w-xs mx-auto">
+    <p class="text-center text-gray-800 font-semibold text-lg">運転に集中しましょう！</p>
+    <!-- 吹き出しの三角形 -->
+    <div class="absolute left-1/2 transform -translate-x-1/2 -bottom-2 w-0 h-0" 
+         style="border-left: 12px solid transparent; border-right: 12px solid transparent; border-top: 12px solid white;">
+    </div>
+  </div>
+
   <!-- キャラアイコン -->
   <div class="w-36 h-36 rounded-full bg-white shadow-md flex items-center justify-center overflow-hidden mb-8">
     <img src="{{ url_for('static', filename='img/robot_active.png') }}" alt="ロボット" class="object-cover w-full h-full">
@@ -187,6 +196,10 @@ tailwind.config = {
         // 経過時間表示を表示
         const timerDisplay = document.getElementById('timerDisplay');
         if (timerDisplay) timerDisplay.style.display = '';
+
+        // 吹き出しを表示
+        const speechBubble = document.getElementById('speechBubble');
+        if (speechBubble) speechBubble.style.display = '';
 
         console.log('✅ 記録をスタートしました');
       });
