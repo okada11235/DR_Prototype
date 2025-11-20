@@ -124,6 +124,14 @@
             </tbody>
           </table>
         </div>
+        <div class="mt-3">
+          <label class="form-label required">運転中アドバイスについてよかった点</label>
+          <textarea name="advice_good" rows="2" class="form-control" placeholder="運転中アドバイスのよかった点" required></textarea>
+        </div>
+        <div class="mt-3">
+          <label class="form-label required">運転中アドバイスについて悪かった点</label>
+          <textarea name="advice_bad" rows="2" class="form-control" placeholder="運転中アドバイスの悪かった点" required></textarea>
+        </div>
       </div>
 
       <!-- 自由記述 -->
@@ -161,6 +169,14 @@
             </tbody>
           </table>
         </div>
+        <div class="mt-3">
+          <label class="form-label required">運転終了後フィードバックのよかった点</label>
+          <textarea name="post_feedback_good" rows="2" class="form-control" placeholder="運転終了後フィードバックのよかった点" required></textarea>
+        </div>
+        <div class="mt-3">
+          <label class="form-label required">運転終了後フィードバックの悪かった点</label>
+          <textarea name="post_feedback_bad" rows="2" class="form-control" placeholder="運転終了後フィードバックの悪かった点" required></textarea>
+        </div>
       </div>
 
       <!-- 重点ポイント設置評価 -->
@@ -195,6 +211,14 @@
               {% endfor %}
             </tbody>
           </table>
+        </div>
+        <div class="mt-3">
+          <label class="form-label required">重点ポイントピン機能のよかった点</label>
+          <textarea name="focus_pin_good" rows="2" class="form-control" placeholder="重点ポイントピン機能のよかった点" required></textarea>
+        </div>
+        <div class="mt-3">
+          <label class="form-label required">重点ポイントピン機能の悪かった点</label>
+          <textarea name="focus_pin_bad" rows="2" class="form-control" placeholder="重点ポイントピン機能の悪かった点" required></textarea>
         </div>
       </div>
 
@@ -232,6 +256,14 @@
             </tbody>
           </table>
         </div>
+        <div class="mt-3">
+          <label class="form-label required">マップピン機能のよかった点</label>
+          <textarea name="map_pin_good" rows="2" class="form-control" placeholder="マップピン機能のよかった点" required></textarea>
+        </div>
+        <div class="mt-3">
+          <label class="form-label required">マップピン機能の悪かった点</label>
+          <textarea name="map_pin_bad" rows="2" class="form-control" placeholder="マップピン機能の悪かった点" required></textarea>
+        </div>
       </div>
 
       <!-- 課題解決について -->
@@ -266,30 +298,42 @@
             </tbody>
           </table>
         </div>
+        <div class="mt-3">
+          <label class="form-label required">説明機能のよかった点</label>
+          <textarea name="explanation_good" rows="2" class="form-control" placeholder="説明機能のよかった点" required></textarea>
+        </div>
+        <div class="mt-3">
+          <label class="form-label required">説明機能の悪かった点</label>
+          <textarea name="explanation_bad" rows="2" class="form-control" placeholder="説明機能の悪かった点" required></textarea>
+        </div>
       </div>
 
       <div class="section">
-        <h6 class="mb-3">自由記述</h6>
+        <h6 class="mb-3">その他の自由記述</h6>
         <div class="mb-3">
-          <label class="form-label">良かった点</label>
-          <textarea name="good_points" rows="2" class="form-control" placeholder="使いやすかった点など"></textarea>
+          <label class="form-label required">今後追加してほしい機能</label>
+          <textarea name="desired_features" rows="2" class="form-control" placeholder="欲しい機能・提案" required></textarea>
         </div>
         <div class="mb-3">
-          <label class="form-label">改善してほしい点</label>
-          <textarea name="improvement" rows="2" class="form-control" placeholder="改善希望や不満点"></textarea>
+          <label class="form-label required">使い方がわからなかった機能</label>
+          <textarea name="unclear_features" rows="2" class="form-control" placeholder="使い方がわからなかった機能" required></textarea>
         </div>
         <div class="mb-3">
-          <label class="form-label">今後追加してほしい機能</label>
-          <textarea name="desired_features" rows="2" class="form-control" placeholder="欲しい機能・提案"></textarea>
+          <label class="form-label required">操作しづらかったところ</label>
+          <textarea name="difficult_operation" rows="2" class="form-control" placeholder="操作しづらかったところ" required></textarea>
         </div>
         <div class="mb-3">
-          <label class="form-label">その他</label>
-          <textarea name="other_comments" rows="2" class="form-control" placeholder="その他ご意見"></textarea>
+          <label class="form-label required">アプリ全体の感想</label>
+          <textarea name="overall_impression" rows="2" class="form-control" placeholder="アプリ全体の感想" required></textarea>
         </div>
         <div class="mb-3">
-          <label class="form-label">画像アップロード（任意）</label>
-          <input type="file" name="feedback_image" accept="image/*" class="form-control" />
-          <div class="form-text">スクリーンショットなど参考画像があれば添付してください。</div>
+          <label class="form-label required">その他</label>
+          <textarea name="other_comments" rows="2" class="form-control" placeholder="その他ご意見" required></textarea>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">画像アップロード（任意、複数可）</label>
+          <input type="file" name="feedback_images" accept="image/*" class="form-control" multiple />
+          <div class="form-text">スクリーンショットなど参考画像があれば添付してください。（複数選択可能）</div>
         </div>
       </div>
 
