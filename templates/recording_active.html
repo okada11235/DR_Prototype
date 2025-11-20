@@ -72,6 +72,11 @@ tailwind.config = {
     </div>
   </div>
 
+  <!-- 経過時間表示（スタート後に表示） -->
+  <div id="timerDisplay" style="display:none;" class="fixed bottom-8 left-0 right-0 text-center text-2xl font-bold text-gray-700">
+    <span id="timer">00:00:00</span>
+  </div>
+
   <!-- スタートボタンの動作 -->
   <script>
     document.addEventListener("DOMContentLoaded", () => {
@@ -85,11 +90,53 @@ tailwind.config = {
         if (hasStarted) return;
         hasStarted = true;
 
-        // iOSの場合は音声アンロック
+        // iOSの場合は音声アンロック（即座に実行）
         const isiOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-        if (isiOS && window.initIOSAudioUnlock) {
+        if (isiOS) {
           try {
-            window.initIOSAudioUnlock();
+            // AudioContextを即座に作成・再開
+            if (!window.audioContext) {
+              window.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+              console.log("🎧 AudioContext created on start button");
+            }
+            if (window.audioContext.state === 'suspended') {
+              await window.audioContext.resume();
+              console.log("🔄 AudioContext resumed on start button");
+            }
+            
+            // 無音再生でアンロック
+            const buffer = window.audioContext.createBuffer(1, 1, 22050);
+            const source = window.audioContext.createBufferSource();
+            source.buffer = buffer;
+            source.connect(window.audioContext.destination);
+            source.start(0);
+            
+            window.audioUnlocked = true;
+            localStorage.setItem('audioUnlocked', 'true');
+            console.log("🔓 iOS Audio unlocked immediately on start");
+            
+            // keep-alive開始（5秒ごと）
+            if (!window.keepAliveIntervalId) {
+              window.keepAliveIntervalId = setInterval(() => {
+                if (window.audioContext && window.audioContext.state === 'suspended') {
+                  window.audioContext.resume().then(() => {
+                    console.log("🌀 AudioContext auto-resumed (keep-alive)");
+                  });
+                }
+                // 無音パルス
+                try {
+                  const buf = window.audioContext.createBuffer(1, 1, 22050);
+                  const src = window.audioContext.createBufferSource();
+                  src.buffer = buf;
+                  src.connect(window.audioContext.destination);
+                  src.start(0);
+                  console.log("💓 keep-alive pulse");
+                } catch (e) {
+                  console.warn("⚠️ keep-alive failed:", e);
+                }
+              }, 5000);
+              console.log("✅ keep-alive interval started");
+            }
           } catch(e) {
             console.warn("iOS audio unlock failed:", e);
           }
@@ -136,6 +183,10 @@ tailwind.config = {
         // 「記録中」タイトルを表示
         const recordingTitle = document.getElementById('recordingTitle');
         if (recordingTitle) recordingTitle.style.display = '';
+
+        // 経過時間表示を表示
+        const timerDisplay = document.getElementById('timerDisplay');
+        if (timerDisplay) timerDisplay.style.display = '';
 
         console.log('✅ 記録をスタートしました');
       });
