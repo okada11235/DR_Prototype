@@ -52,157 +52,58 @@ function getFocusPoint() {
 }
 
 // 記録開始
-export function startSession() {
+export async function startSession() {
     console.log('=== startSession function called ===');
-    console.log('Current sessionId:', window.sessionId);
-    console.log('isSessionStarting:', window.isSessionStarting);
 
-    // 🚀 対策1：前回のセッションデータを必ずクリア
+    // 前回セッションのクリア
     localStorage.removeItem('activeSessionId');
     localStorage.removeItem('sessionStartTime');
-    localStorage.removeItem('lastSessionData'); // 終了画面用に残っている場合も初期化
     window.sessionId = null;
-    
+
     if (window.isSessionStarting) {
-        console.warn('Session start already in progress');
-        alert('セッション開始処理中です。しばらくお待ちください。');
-        return;
-    }
-    if (window.sessionId) {
-        console.warn('Session already started:', window.sessionId);
-        alert('既に記録が開始されています');
-        return;
-    }
-    
-    // 重点ポイントを取得して保存
-    const focusPoint = getFocusPoint();
-    console.log('Selected focus point:', focusPoint);
-    localStorage.setItem('currentFocusPoint', focusPoint);
-    const existingSessionId = localStorage.getItem('activeSessionId');
-    if (existingSessionId) {
-        console.warn('Active session found in localStorage:', existingSessionId);
-        const confirmResult = confirm('既にアクティブなセッションがあります。新しいセッションを開始しますか？');
-        if (!confirmResult) return;
-        localStorage.removeItem('activeSessionId');
-        localStorage.removeItem('sessionStartTime');
+        alert('セッション開始処理中です。');
+        return null;
     }
     window.isSessionStarting = true;
-    
-    const startButton = document.getElementById('start-button');
 
-    unlockAudio()
+    // 音声許可
+    unlockAudio();
 
-    if (startButton) {
-        startButton.disabled = true;
-        startButton.textContent = '開始中...';
-    }
-    
-    requestMotionPermission(() => {
-        console.log('Motion permission granted');
-        startMotionDetection();
+    // モーション許可
+    await new Promise(resolve => requestMotionPermission(resolve));
 
-        // ★FIX: 起動時オートキャリブレーションを実行
-        startAutoCalibration();
+    console.log('Sending /start request...');
+    let sessionId = null;
 
-        console.log('Sending session start request...');
-        fetch('/start', { method: 'POST' })
-            .then(res => {
-                console.log('Session start response status:', res.status);
-                if (!res.ok) {
-                    return res.json().then(err => { throw new Error(err.message || 'サーバーエラー'); });
-                }
-                return res.json();
-            })
-            .then(data => {
-                console.log('Session start response data:', data);
-                if (data.status === 'warning' && data.session_id) {
-                    console.log('Using existing active session:', data.session_id);
-                    window.sessionId = data.session_id;
-                    window.startTime = Date.now();
-                } else if (data.session_id) {
-                    window.sessionId = data.session_id;
-                    window.startTime = Date.now();
-                    console.log('Session created successfully:', window.sessionId);
-                } else {
-                    throw new Error('サーバーからのセッションIDが不正です。');
-                }
-                localStorage.setItem('activeSessionId', window.sessionId);
-                localStorage.setItem('sessionStartTime', window.startTime.toString());
-                resetState();
-                window.gLogBuffer = [];
-                window.gpsLogBuffer = [];
-                window.avgGLogBuffer = []; // FIX: avgGLogBufferをリセット
-                window.path = [];
-                console.log('Cleared data buffers for new session');
-                console.log('SessionID now set to:', window.sessionId);
-                console.log('About to redirect to /recording/active');
-                window.location.href = '/recording/active';
-            })
-            .catch(err => {
-                console.error('Error during /start fetch or response handling:', err);
-                alert('記録開始時にエラーが発生しました: ' + err.message);
-                if (startButton) {
-                    startButton.disabled = false;
-                    startButton.textContent = '記録開始';
-                }
-            })
-            .finally(() => {
-                window.isSessionStarting = false;
-            });
-    });
+    try {
+        const res = await fetch('/start', { method: 'POST' });
+        const data = await res.json();
 
-    // === GPS監視の開始 ===
-    if ('geolocation' in navigator) {
-    // 既存のwatchが残っていたら一度解除（再実行防止）
-    if (window.watchId) {
-        navigator.geolocation.clearWatch(window.watchId);
+        if (!data.session_id) throw new Error("セッションIDが返されていません");
+
+        sessionId = data.session_id;
+        window.sessionId = sessionId;
+        window.startTime = Date.now();
+
+        localStorage.setItem('activeSessionId', sessionId);
+        localStorage.setItem('sessionStartTime', window.startTime);
+
+        console.log("SESSION OK:", sessionId);
+
+        resetState();
+        window.gLogBuffer = [];
+        window.gpsLogBuffer = [];
+        window.avgGLogBuffer = [];
+
+    } catch (err) {
+        console.error("Error starting session:", err);
+        alert("記録開始に失敗しました");
+    } finally {
+        window.isSessionStarting = false;
     }
 
-    window.watchId = navigator.geolocation.watchPosition(
-        (pos) => {
-        const { latitude, longitude, speed } = pos.coords;
-        const timestamp = Date.now();
-        const kmh = speed !== null ? speed * 3.6 : 0; // FIX: nullチェック
-
-        // FIX: G値をセンサーの最新値と同期
-        const gxs = window.latestGX || 0;
-        const gys = window.latestGY || 0;
-        const gzs = window.latestGZ || 0;
-
-        const log = {
-            latitude,
-            longitude,
-            speed: kmh,
-            timestamp: timestamp, // FIX: timestamp_ms -> timestamp に変更
-            g_x: gxs, // FIX: G値を追加
-            g_y: gys,
-            g_z: gzs,
-            event: 'normal'
-        };
-
-        // 🔹 バッファ初期化を安全側に
-        window.gpsLogBuffer = window.gpsLogBuffer || [];
-        window.gpsLogBuffer.push(log);
-
-        // 🔹 sensors.js 側で速度参照用
-        window.currentSpeed = kmh;
-
-        console.log(`📍 GPS更新: ${latitude.toFixed(5)}, ${longitude.toFixed(5)} (${kmh.toFixed(1)} km/h)`);
-        },
-        (err) => {
-        console.error('⚠️ GPS取得エラー:', err);
-        },
-        {
-        enableHighAccuracy: true, // ✅ 精度優先
-        maximumAge: 1000,         // ✅ キャッシュ許容1秒
-        timeout: 10000            // ✅ タイムアウト10秒
-        }
-    );
-
-    console.log('✅ GPS監視を開始しました');
-    } else {
-    console.warn('⚠️ この端末ではGPSが利用できません');
-    }
+    // ❗❗ ここで画面遷移しないことが重要 ❗❗
+    return sessionId;
 }
 
 // 記録終了

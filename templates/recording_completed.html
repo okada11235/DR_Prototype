@@ -105,6 +105,11 @@
     <img src="{{ url_for('static', filename='img/robot.png') }}" alt="ドライボ" class="robot">
     <div class="main-title">お疲れさまでした！</div>
 
+    <div id="completed-route-name" 
+     style="font-size:1.3em; font-weight:bold; margin: 10px 0; color:#007c91;">
+  今回走ったルート：読み込み中...
+</div>
+
     <div class="drive-info">
       <div>走行時間<br><span id="total-time">--:--</span></div>
       <div>走行距離<br><span id="total-distance">-- km</span></div>
@@ -150,7 +155,33 @@
       messagingSenderId: "500916744769",
       appId: "1:500916744769:web:d5a529ef05d15bb2934cc0"
     };
+
     firebase.initializeApp(firebaseConfig);
+    async function loadCompletedRouteName() {
+  const routeNameEl = document.getElementById("completed-route-name");
+  const routeId = localStorage.getItem("priorityRouteId");
+
+  if (!routeId) {
+    routeNameEl.textContent = "取得できませんでした";
+    return;
+  }
+
+  try {
+    const doc = await db.collection("priority_routes").doc(routeId).get();
+    if (!doc.exists) {
+      routeNameEl.textContent = "不明なルート";
+      return;
+    }
+
+    const data = doc.data();
+    routeNameEl.textContent = data.name || "（名前なし）";
+
+  } catch (e) {
+    console.error("ルート名取得エラー:", e);
+    routeNameEl.textContent = "取得に失敗しました";
+  }
+}
+
     const db = firebase.firestore();
 
     function getRatingBadge(rating) {
@@ -249,5 +280,39 @@
       if (parsed.session_id) loadFocusFeedbacks(parsed.session_id);
     });
   </script>
+
+  <script>
+document.addEventListener("DOMContentLoaded", async () => {
+  const db = firebase.firestore();
+
+  // 🔥 recording_start.html で保存したルートID
+  const routeId = localStorage.getItem("CURRENT_ROUTE_ID");
+  const labelEl = document.getElementById("completed-route-name");
+
+  if (!routeId) {
+    labelEl.textContent = "今回走ったルート：取得できませんでした";
+    return;
+  }
+
+  labelEl.textContent = "今回走ったルート：読み込み中...";
+
+  try {
+    const doc = await db.collection("priority_routes").doc(routeId).get();
+    if (!doc.exists) {
+      labelEl.textContent = "今回走ったルート：不明（データが見つかりません）";
+      return;
+    }
+
+    const data = doc.data();
+    const routeName = data.name || "名称未設定";   // ← Firestore の正しいフィールド
+
+    labelEl.textContent = `今回走ったルート：${routeName}`;
+  } catch (err) {
+    console.error("ルート名読み込みエラー:", err);
+    labelEl.textContent = "今回走ったルート：取得中にエラー";
+  }
+});
+</script>
+
 </body>
 </html>

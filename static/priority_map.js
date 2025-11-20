@@ -1,4 +1,7 @@
+
 console.log("=== priority_map.js (label編集＋S/G描画対応版) loaded ===");
+
+window._displayedPins = [];
 
 async function initPriorityMap() {
   console.log("✅ initPriorityMap called");
@@ -13,6 +16,8 @@ async function initPriorityMap() {
     center: { lat: 35.681236, lng: 139.767125 },
     zoom: 15,
   });
+
+  window._priorityMapInstance = map;
 
   // === 現在地取得 ===
   if (navigator.geolocation) {
@@ -38,8 +43,6 @@ async function initPriorityMap() {
     );
   }
 
-  await loadPins(map);
-  try { await drawLatestRoute(map); } catch (e) { console.warn("ルート描画失敗:", e); }
 
   // === ピン追加 ===
   map.addListener("click", async (event) => {
@@ -73,8 +76,9 @@ async function initPriorityMap() {
     }
     const selectedFocus = focusOptions[choice - 1];
 
-    const userId = window.FLASK_USER_ID || null;
+    const userId = window.FLASK_USER_ID || localStorage.getItem("CURRENT_USER_ID");
     try {
+      const currentRouteId = localStorage.getItem("CURRENT_ROUTE_ID");
       const docRef = await firebase.firestore().collection("priority_pins").add({
         lat,
         lng,
@@ -82,6 +86,7 @@ async function initPriorityMap() {
         focus_type: selectedFocus.key,
         focus_label: selectedFocus.name,
         user_id: userId,
+        route_id: currentRouteId,
         created_at: new Date(),
       });
       console.log("✅ ピン追加:", label, selectedFocus.name);
@@ -102,15 +107,53 @@ async function initPriorityMap() {
 // === ピン読み込み ===
 async function loadPins(map) {
   console.log("📥 ピンを読み込み中...");
+
+  // 🔥 まず古いピンを全消去
+  if (window._displayedPins && window._displayedPins.length > 0) {
+    window._displayedPins.forEach(m => m.setMap(null));
+    window._displayedPins = [];
+  }
+
   const userId = window.FLASK_USER_ID || localStorage.getItem("CURRENT_USER_ID");
-  const query = firebase.firestore().collection("priority_pins").where("user_id", "==", userId);
-  const snapshot = await query.get();
-  snapshot.forEach((doc) => {
+  const routeId = localStorage.getItem("CURRENT_ROUTE_ID");
+
+  if (!routeId) {
+    console.warn("❌ CURRENT_ROUTE_ID がありません");
+    return;
+  }
+
+  const snapshot = await firebase.firestore()
+      .collection("priority_pins")
+      .where("user_id", "==", userId)
+      .where("route_id", "==", routeId)
+      .get();
+
+  snapshot.forEach(doc => {
     const d = doc.data();
-    addMarker(map, { id: doc.id, lat: d.lat, lng: d.lng, label: d.label || "(無題)" });
+    addMarker(map, {
+      id: doc.id,
+      lat: d.lat,
+      lng: d.lng,
+      label: d.label || "(無題)",
+      focus_type: d.focus_type,
+      focus_label: d.focus_label
+    });
   });
+
   console.log(`📍 ${snapshot.size}件のピンを読み込み完了`);
 }
+
+// === ピンだけを全て消す ===
+function clearPins() {
+  if (window._displayedPins && window._displayedPins.length > 0) {
+    window._displayedPins.forEach(m => m.setMap(null));
+  }
+  window._displayedPins = [];
+  console.log("🧹 すべての重点ポイントピンを消去しました");
+}
+
+// どこからでも呼べるように global へ
+window.clearPins = clearPins;
 
 // === ピン追加（編集＋削除） ===
 function addMarker(map, pin) {
@@ -178,6 +221,7 @@ function addMarker(map, pin) {
       }
     }, 200);
   });
+  window._displayedPins.push(marker);
 }
 
 // === ルート描画（S/G付き） ===
@@ -250,3 +294,214 @@ async function drawLatestRoute(map) {
 }
 
 window.initPriorityMap = initPriorityMap;
+
+// === 前回運転したルートを自動選択して表示する ===
+document.addEventListener("DOMContentLoaded", async () => {
+  const lastRouteId = localStorage.getItem("LAST_USED_ROUTE_ID");
+  if (!lastRouteId) return;
+
+  console.log("📌 前回のルートを自動選択:", lastRouteId);
+
+  // セレクトボックスが存在する場合は選択状態にする
+  const selectEl = document.getElementById("route-select");
+  if (selectEl) {
+    selectEl.value = lastRouteId;
+  }
+
+  // 現在のルートIDとして設定
+  localStorage.setItem("CURRENT_ROUTE_ID", lastRouteId);
+  window._selectedRouteId = lastRouteId;
+
+  // 地図インスタンスが準備されるまで待つ
+  const waitMap = () =>
+    new Promise(resolve => {
+      const check = () => {
+        if (window._priorityMapInstance) resolve();
+        else setTimeout(check, 100);
+      };
+      check();
+    });
+  await waitMap();
+
+  const map = window._priorityMapInstance;
+
+  // ルート描画
+  await drawRouteById(map, lastRouteId);
+
+  // ピン表示
+  await loadPins(map);
+});
+
+
+// === 表示中のルート／マーカーを保持する配列（グローバル） ===
+if (!window._displayedRoutes) window._displayedRoutes = [];
+
+// === 現在表示しているルート要素をすべて削除する関数 ===
+function clearDisplayedRoutes() {
+  try {
+    if (!window._displayedRoutes || window._displayedRoutes.length === 0) return;
+    window._displayedRoutes.forEach(obj => {
+      // obj は Polyline や Marker のインスタンスのはず
+      if (obj && typeof obj.setMap === "function") {
+        obj.setMap(null);
+      }
+    });
+  } catch (e) {
+    console.warn("clearDisplayedRoutes error:", e);
+  } finally {
+    window._displayedRoutes = [];
+  }
+}
+
+async function drawRouteById(map, routeId) {
+  // 先に既存描画要素をクリア
+  clearDisplayedRoutes();
+
+  const routesCol = firebase.firestore().collection("priority_routes");
+  const docRef = routesCol.doc(routeId);
+  const docSnap = await docRef.get();
+  if (!docSnap.exists) {
+    console.warn("❌ 指定ルートが存在しません:", routeId);
+    return;
+  }
+
+  const ptsSnap = await docRef.collection("points").orderBy("timestamp_ms").get();
+  const pts = [];
+  ptsSnap.forEach((d) => {
+    const p = d.data();
+    if (p.lat !== undefined && p.lng !== undefined) pts.push({ lat: p.lat, lng: p.lng });
+  });
+  if (pts.length === 0) {
+    console.warn("❌ ルートにポイントがありません:", routeId);
+    return;
+  }
+
+  // ルート線を作成して地図に追加
+  const polyline = new google.maps.Polyline({
+    path: pts,
+    geodesic: true,
+    strokeColor: "#1E88E5",
+    strokeOpacity: 0.9,
+    strokeWeight: 5,
+    map,
+  });
+
+  // S/G マーカー
+  const start = pts[0];
+  const goal = pts[pts.length - 1];
+  const startMarker = new google.maps.Marker({
+    position: start,
+    map,
+    label: { text: "S", color: "#fff", fontWeight: "bold" },
+    icon: {
+      path: google.maps.SymbolPath.CIRCLE,
+      scale: 8,
+      fillColor: "#2e7d32",
+      fillOpacity: 1,
+      strokeColor: "#fff",
+      strokeWeight: 2,
+    },
+  });
+  const goalMarker = new google.maps.Marker({
+    position: goal,
+    map,
+    label: { text: "G", color: "#fff", fontWeight: "bold" },
+    icon: {
+      path: google.maps.SymbolPath.CIRCLE,
+      scale: 8,
+      fillColor: "#c62828",
+      fillOpacity: 1,
+      strokeColor: "#fff",
+      strokeWeight: 2,
+    },
+  });
+
+  // 表示範囲を自動調整
+  const bounds = new google.maps.LatLngBounds();
+  pts.forEach((p) => bounds.extend(p));
+  map.fitBounds(bounds);
+
+  // 描画した要素をグローバル配列に保存（次回クリア用）
+  window._displayedRoutes = [polyline, startMarker, goalMarker];
+
+  console.log(`✅ ルート「${routeId}」を描画しました`);
+}
+
+// グローバルに選択中ルートIDを保持
+window._selectedRouteId = null;
+
+function onRouteSelected(routeId) {
+  if (!routeId) {
+    window._selectedRouteId = null;
+    const startBtn = document.getElementById("start-driving-btn");
+    if (startBtn) startBtn.disabled = true;
+    return;
+  }
+
+  window._selectedRouteId = routeId;
+  localStorage.setItem("CURRENT_ROUTE_ID", routeId); // 🔸 センサー側でも参照可能に
+  console.log("✅ 選択中ルート:", routeId);
+
+  // 運転開始ボタンがある場合は有効化
+  const startBtn = document.getElementById("start-driving-btn");
+  if (startBtn) startBtn.disabled = false;
+
+  // ===========================
+// 🚗 運転開始機能（既存ルート選択）
+// ===========================
+
+// 選択中ルートIDをグローバルで保持
+window.selectedRouteId = null;
+
+// 地図上でルートクリック時に選択できるようにする
+function enableRouteSelection() {
+  if (!window.displayedRoutes) return;
+  for (const routeId in window.displayedRoutes) {
+    const polyline = window.displayedRoutes[routeId];
+    polyline.addListener("click", () => {
+      // 前回選択ルートのスタイルを戻す
+      for (const rId in window.displayedRoutes) {
+        window.displayedRoutes[rId].setOptions({ strokeColor: "#0000ff", strokeWeight: 4 });
+      }
+      // 選択ルートを強調表示
+      polyline.setOptions({ strokeColor: "#ff0000", strokeWeight: 6 });
+      window.selectedRouteId = routeId;
+      console.log("✅ ルート選択:", routeId);
+    });
+  }
+}
+
+// 初期化時に選択機能を有効化
+document.addEventListener("DOMContentLoaded", () => {
+  setTimeout(enableRouteSelection, 1500); // ルート描画後に実行
+});
+
+// ===========================
+// 🚀 運転開始ボタン連携
+// ===========================
+
+document.getElementById("startDrivingBtn")?.addEventListener("click", async () => {
+  if (!window.selectedRouteId) {
+    alert("運転するルートを選択してください。");
+    return;
+  }
+
+  // ここで選択したルートを localStorage に保存
+  localStorage.setItem("SELECTED_ROUTE_ID", window.selectedRouteId);
+
+  // もし route_recorder.js のAPIを使う場合：
+  try {
+    ensureFirebaseInitialized();
+    console.log("🚗 運転開始: ルートID =", window.selectedRouteId);
+    alert("選択したルートで運転を開始します。");
+    // ここに運転開始時の処理を追加（例：ナビ画面へ遷移など）
+    // window.location.href = "/driving.html"; // 例
+  } catch (e) {
+    console.error("運転開始エラー:", e);
+    alert("運転開始に失敗しました。");
+  }
+});
+
+}
+
+

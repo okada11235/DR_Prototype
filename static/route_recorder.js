@@ -42,16 +42,41 @@ function getUserId() {
   return window.FLASK_USER_ID || localStorage.getItem(LS_USER_ID) || null;
 }
 
-async function createRouteDoc() {
+async function createRouteDoc(routeName) {
+  if (!routeName) {
+    throw new Error("routeName is required");
+  }
+
   const userId = getUserId();
-  const docRef = await firebase.firestore().collection("priority_routes").add({
+  const db = firebase.firestore();
+  const routesRef = db.collection("priority_routes");
+
+  let currentCount = 0;
+  if (userId) {
+    const qs = await routesRef.where("user_id", "==", userId).get();
+    currentCount = qs.size;
+  } else {
+    const qs = await routesRef.get();
+    currentCount = qs.size;
+  }
+
+  if (currentCount >= 5) {
+    alert("保存できるルートは最大5件までです。古いルートを削除してください。");
+    throw new Error("ルート保存上限に達しました");
+  }
+
+  const docRef = await routesRef.add({
     user_id: userId,
     status: "recording",
+    route_name: routeName,
     created_at: new Date(),
     updated_at: new Date(),
   });
+
   return docRef.id;
 }
+
+
 
 async function savePointsBatch(routeId, points) {
   if (!points || points.length === 0) return;
@@ -179,6 +204,51 @@ async function stopWatch(routeId, markCompleted = true) {
 
 // 公開API
 window.priorityRouteAPI = {
+    /**
+   * startDriving(routeId)
+   * - 既存のルートIDを使って「運転開始（= そのルートに点を追記して録画）」を行う。
+   * - 既存 start() は新規ルート作成のため、選択済みルートを使うためのAPIを追加します。
+   */
+  async startDriving(routeId) {
+  try {
+    ensureFirebaseInitialized();
+    if (!routeId) throw new Error("routeId が指定されていません");
+
+    // ①（削除）startSession() は絶対に呼ばない
+
+    // ②ユーザーID保存
+    if (window.FLASK_USER_ID) {
+      try { localStorage.setItem(LS_USER_ID, window.FLASK_USER_ID); } catch(e) {}
+    }
+
+    // ③ routeId 保存
+    localStorage.setItem(LS_ROUTE_ID, routeId);
+    localStorage.setItem(LS_ROUTE_ACTIVE, 'true');
+    localStorage.setItem(LS_ROUTE_START, String(Date.now()));
+
+    window.ROUTE_RECORDING_ACTIVE = true;
+
+    // Firestore update
+    const db = firebase.firestore();
+    const docRef = db.collection("priority_routes").doc(routeId);
+    const docSnap = await docRef.get();
+    if (!docSnap.exists) throw new Error("指定されたルートが存在しません: " + routeId);
+
+    await docRef.update({ status: 'recording', updated_at: new Date() });
+
+    // ④ GPS ログ保存開始
+    startWatch(routeId);
+
+    console.log("🏁 startDriving: route recording started:", routeId);
+    return routeId;
+
+  } catch (err) {
+    console.error("startDriving failed:", err);
+    alert("記録開始時にエラーが発生しました: " + (err.message || err));
+    throw err;
+  }
+},
+
   async getLatestRouteId() {
     try {
       ensureFirebaseInitialized();
@@ -198,38 +268,39 @@ window.priorityRouteAPI = {
       return null;
     }
   },
-  async start() {
-    try {
-      ensureFirebaseInitialized();
-      const userId = getUserId();
-      if (!userId) {
-        // user_id は可能なら保存（recording_start.html から渡せる）
-        console.warn('User ID not found. Route will be created without user_id filter.');
-      }
-      const id = await createRouteDoc();
-      localStorage.setItem(LS_ROUTE_ID, id);
-      localStorage.setItem(LS_ROUTE_ACTIVE, 'true');
-      localStorage.setItem(LS_ROUTE_START, String(Date.now()));
-      // センサー/助言停止のためグローバルフラグ
-      window.ROUTE_RECORDING_ACTIVE = true;
-      // 連携用にユーザーIDも保存（homeで継続録画するため）
-      if (window.FLASK_USER_ID) localStorage.setItem(LS_USER_ID, window.FLASK_USER_ID);
+  async start(routeName) {
+  try {
+    ensureFirebaseInitialized();
 
-      startWatch(id);
-      console.log('🏁 Route recording started:', id);
-      return id;
-    } catch (e) {
-      console.error('Failed to start route recording:', e);
-      alert('ルート記録の開始に失敗しました');
-      throw e;
+    if (!routeName) {
+      throw new Error("routeName が指定されていません");
     }
-  },
+
+    const id = await createRouteDoc(routeName);
+    localStorage.setItem(LS_ROUTE_ID, id);
+    localStorage.setItem(LS_ROUTE_ACTIVE, 'true');
+    localStorage.setItem(LS_ROUTE_START, String(Date.now()));
+    window.ROUTE_RECORDING_ACTIVE = true;
+
+    if (window.FLASK_USER_ID) {
+      localStorage.setItem(LS_USER_ID, window.FLASK_USER_ID);
+    }
+
+    startWatch(id);
+    console.log('🏁 Route recording started:', id);
+    return id;
+
+  } catch (e) {
+    console.error('Failed to start route recording:', e);
+    alert('ルート記録の開始に失敗しました');
+    throw e;
+  }
+},
   async stop(markCompleted = true) {
     const id = localStorage.getItem(LS_ROUTE_ID);
     if (!id) return;
     await stopWatch(id, markCompleted);
     localStorage.removeItem(LS_ROUTE_ACTIVE);
-    localStorage.removeItem(LS_ROUTE_ID);
     localStorage.removeItem(LS_ROUTE_START);
     window.ROUTE_RECORDING_ACTIVE = false;
     console.log('🛑 Route recording stopped');

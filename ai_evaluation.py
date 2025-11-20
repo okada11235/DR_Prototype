@@ -284,13 +284,42 @@ def summarize_feedback(ai_comment: str, diff_text: str) -> str:
 # ==========================================================
 def analyze_focus_points_for_session(session_id: str, user_id: str) -> dict:
     sess_ref = db.collection("sessions").document(session_id)
-    if not sess_ref.get().exists:
+    sess_doc = sess_ref.get()
+
+    if not sess_doc.exists:
         print(f"Session not found: {session_id}")
         return {}
 
-    gps_logs = [d.to_dict() for d in sess_ref.collection("gps_logs").order_by("timestamp").stream()]
-    avg_g_logs = [d.to_dict() for d in sess_ref.collection("avg_g_logs").order_by("timestamp").stream()]
-    pins = [dict(p.to_dict(), id=p.id) for p in db.collection("priority_pins").where("user_id", "==", user_id).stream()]
+    session_data = sess_doc.to_dict()
+
+    # 🔥 ここで route_id を取得する（重要！）
+    route_id = session_data.get("route_id")
+    if not route_id:
+        print("⚠️ このセッションに route_id が設定されていません。")
+        return {}
+
+    print(f"🎯 Using route_id={route_id} for evaluation")
+
+    # GPS & AVG-G logs
+    gps_logs = [
+        d.to_dict()
+        for d in sess_ref.collection("gps_logs").order_by("timestamp").stream()
+    ]
+    avg_g_logs = [
+        d.to_dict()
+        for d in sess_ref.collection("avg_g_logs").order_by("timestamp").stream()
+    ]
+
+    # 🔥 ピンを route_id で絞り込む（ここが最重要）
+    pin_query = (
+        db.collection("priority_pins")
+        .where("user_id", "==", user_id)
+        .where("route_id", "==", route_id)
+    )
+
+    pins = [dict(p.to_dict(), id=p.id) for p in pin_query.stream()]
+
+    print(f"📌 Loaded {len(pins)} pins for this route.")
 
     results = {}
     for pin in pins:

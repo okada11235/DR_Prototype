@@ -632,6 +632,7 @@ def generate_ai_evaluation(session_id):
         # セッションの権限確認
         session_ref = db.collection('sessions').document(session_id)
         session_doc = session_ref.get()
+        route_id = session_data.get("route_id")
         
         if not session_doc.exists:
             return jsonify({'status': 'error', 'message': 'Session not found'}), 404
@@ -647,7 +648,7 @@ def generate_ai_evaluation(session_id):
         print(f"Generating AI evaluation for session {session_id}, focus: {focus_point}")
         
         # AI評価を生成（重点ポイントを渡す）
-        evaluation = analyze_focus_points_for_session(session_id, current_user.id, focus_point)
+        evaluation = analyze_focus_points_for_session(session_id, current_user.id, focus_point, route_id)
         
         if evaluation is None:
             return jsonify({'status': 'error', 'message': 'Failed to generate evaluation'}), 500
@@ -730,3 +731,33 @@ def get_avg_g_logs_for_session(session_id):
         logs.append(data)
     logs.sort(key=lambda x: x.get("timestamp_ms", 0))
     return logs
+
+# --- セッションに route_id を保存 ---
+@sessions_bp.route('/api/set_route_to_session/<session_id>', methods=['POST'])
+@login_required
+def set_route_to_session(session_id):
+    data = request.get_json() or {}
+    route_id = data.get('route_id')
+
+    if not route_id:
+        return jsonify({'status': 'error', 'message': 'Missing route_id'}), 400
+
+    session_ref = db.collection('sessions').document(session_id)
+    session_doc = session_ref.get()
+
+    if not session_doc.exists:
+        return jsonify({'status': 'error', 'message': 'Session not found'}), 404
+
+    session_data = session_doc.to_dict()
+    if session_data.get('user_id') != current_user.id:
+        return jsonify({'status': 'error', 'message': 'Permission denied'}), 403
+
+    try:
+        session_ref.update({
+            'route_id': route_id
+        })
+        print(f"🔗 Route ID {route_id} saved to session {session_id}")
+        return jsonify({'status': 'ok'})
+    except Exception as e:
+        print(f"Error saving route_id: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500

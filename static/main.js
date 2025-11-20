@@ -22,6 +22,11 @@ window.stopMotionDetection = stopMotionDetection;
 
 // 記録中画面の初期化処理
 function initActiveRecording() {
+
+    // ★ 通常運転が始まったら必ずルートモードを解除
+localStorage.setItem('priorityRouteRecordingActive', 'false');
+
+
     if (typeof initMap === 'function') {
         initMap();
     }
@@ -54,9 +59,18 @@ function initActiveRecording() {
         //startPraiseCheck();
         console.log('Active recording initialized with session:', window.sessionId);
     } else {
-        console.error('No active session found');
-        window.location.href = '/recording/start';
+    const isRouteMode = localStorage.getItem('priorityRouteRecordingActive') === 'true';
+
+    // ✔ ルート記録モードならリダイレクトせず、そのまま画面を維持
+    if (isRouteMode) {
+        console.log('Route mode active: skipping session check in initActiveRecording');
+        return;
     }
+
+    // ❌ 通常記録モードのみリダイレクトする
+    console.error('No active session found');
+    window.location.href = '/recording/start';
+}
 }
 
 // ページ読み込み時の初期化
@@ -71,6 +85,8 @@ document.addEventListener('DOMContentLoaded', function() {
     if (startButton && !startButton.hasEventListener) {
         console.log('Adding click listener to start button');
         startButton.addEventListener('click', () => {
+
+
             // ルートの存在チェック（アクティブ・保存済みの両方を考慮）
             const routeIdLS = localStorage.getItem('priorityRouteId');
             let latestRouteExists = false;
@@ -98,68 +114,62 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
                 return; // ルート未設定時は通常の運転開始をしない
             }
-
-            const confirmStart = confirm('記録を開始してよろしいですか？');
-            if (confirmStart) {
-                startSession();
-            } else {
-                console.log('Recording start canceled by user.');
-            }
         });
         startButton.hasEventListener = true;
     }
-    if (endButton && !endButton.hasEventListener) {
-        console.log('Adding click listener to end button');
-        endButton.addEventListener('click', async () => {
-            const isRouteMode = localStorage.getItem('priorityRouteRecordingActive') === 'true';
-            const confirmEnd = confirm(isRouteMode ? 'ルート記録を終了しますか？' : '記録を終了してよろしいですか？');
-            if (!confirmEnd) {
-                console.log('End canceled by user.');
-                return;
-            }
+   if (endButton && !endButton.hasEventListener) {
+    console.log('Adding click listener to end button');
 
-            if (isRouteMode && window.priorityRouteAPI) {
-                // ルート記録の終了
-                window.priorityRouteAPI.stop(true).then(() => {
-                    window.location.href = '/recording/start';
-                }).catch(() => {
-                    window.location.href = '/recording/start';
-                });
-                return;
-            }
+    endButton.addEventListener('click', async () => {
 
-            // 🚗 通常の運転セッション終了
-            relockAudio(); // 🔒 終了時にロック
-            await endSession(true); // Firestore保存含む
+        // 🔥 先に判定する（超重要）
+        const isRouteMode = localStorage.getItem('priorityRouteRecordingActive') === 'true';
 
-            // ✅ ここから重点ポイントAI評価を実行
+        const confirmEnd = confirm(isRouteMode 
+            ? 'ルート記録を終了しますか？'
+            : '記録を終了してよろしいですか？'
+        );
+        if (!confirmEnd) return;
+
+        // ===============================
+        //  🚗 ルート記録モードの終了処理
+        // ===============================
+        if (isRouteMode && window.priorityRouteAPI) {
+
             try {
-                // ... 前提条件チェック (sessionId) ...
-
-                console.log(`🤖 重点ポイントAIフィードバック生成開始: session_id=${sessionId}`);
-                const res = await fetch(`/api/focus_feedback/${sessionId}`, { method: 'POST' });
-
-                if (res.ok) {
-                    const data = await res.json();
-                    console.log('✅ フィードバック生成成功:', data);
-                    //alert('重点ポイントのフィードバックを生成しました！結果は次の画面で確認できます。'); // 成功
-                } else {
-                    // API側でエラーが起きている (4xx, 5xx ステータス)
-                    console.error('❌ フィードバック生成APIエラー (HTTP):', res.status);
-                    //alert(`重点ポイントフィードバックの生成に失敗しました。サーバーエラー: ${res.status}`); // APIエラー
-                }
-            } catch (err) {
-                // ネットワーク、JSONパースエラーなど
-                console.error('❌ フィードバック生成中に致命的なエラー:', err);
-                //alert('ネットワーク接続またはデータ処理中に予期せぬエラーが発生しました。'); // 致命的エラー
+                await window.priorityRouteAPI.stop(true);
+            } catch (e) {
+                console.warn('Route stop error:', e);
             }
 
-            // 🧭 終了後にセッション一覧ページへ遷移
-            window.location.href = '/recording/completed';
-        });
+            // 🔥 ここで false にする（順番重要）
+            localStorage.setItem('priorityRouteRecordingActive', 'false');
 
-        endButton.hasEventListener = true;
-    }
+            window.location.href = '/recording/start';
+            return;
+        }
+
+        // ===============================
+        //   🚘 通常記録の終了処理
+        // ===============================
+        relockAudio();
+        await endSession(true); 
+
+        try {
+            const res = await fetch(`/api/focus_feedback/${sessionId}`, {
+                method: 'POST'
+            });
+            console.log('AI feedback:', res.status);
+        } catch (err) {
+            console.error('AI feedback error:', err);
+        }
+
+        window.location.href = '/recording/completed';
+    });
+
+    endButton.hasEventListener = true;
+}
+
     console.log('Initializing based on current path...');
     if (currentPath === '/recording/active') {
         console.log('Initializing active recording screen');
