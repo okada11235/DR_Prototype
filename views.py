@@ -1179,6 +1179,21 @@ def feedback_detail(feedback_id):
         if 'created_at' in feedback and feedback['created_at']:
             feedback['created_at'] = feedback['created_at'].astimezone(JST)
         
+        # user_idからusernameを取得
+        user_id = feedback.get('user_id')
+        if user_id:
+            try:
+                user_doc = db.collection('users').document(user_id).get()
+                if user_doc.exists:
+                    feedback['username'] = user_doc.to_dict().get('username', '不明なユーザー')
+                else:
+                    feedback['username'] = '不明なユーザー'
+            except Exception as e:
+                print(f"Error fetching username: {e}")
+                feedback['username'] = '不明なユーザー'
+        else:
+            feedback['username'] = '匿名ユーザー'
+        
         return render_template("feedback_detail.html", feedback=feedback)
     except Exception as e:
         print(f"Error in feedback_detail: {e}")

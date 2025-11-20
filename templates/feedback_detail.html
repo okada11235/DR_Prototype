@@ -39,6 +39,10 @@
     <div class="detail-card">
       <h5 class="section-title">基本情報</h5>
       <div class="info-row">
+        <div class="info-label">ユーザー名:</div>
+        <div class="info-value">{{ feedback.get('username', 'N/A') }}</div>
+      </div>
+      <div class="info-row">
         <div class="info-label">お名前:</div>
         <div class="info-value">{{ feedback.get('real_name', 'N/A') }}</div>
       </div>
