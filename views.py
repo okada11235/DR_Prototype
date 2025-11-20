@@ -1026,6 +1026,21 @@ def feedback_page():
             'pin_reference': request.form.get('solution_pin_reference', ''),
         }
 
+        # 自由記述項目
+        advice_good = request.form.get("advice_good", "").strip()
+        advice_bad = request.form.get("advice_bad", "").strip()
+        post_feedback_good = request.form.get("post_feedback_good", "").strip()
+        post_feedback_bad = request.form.get("post_feedback_bad", "").strip()
+        focus_pin_good = request.form.get("focus_pin_good", "").strip()
+        focus_pin_bad = request.form.get("focus_pin_bad", "").strip()
+        map_pin_good = request.form.get("map_pin_good", "").strip()
+        map_pin_bad = request.form.get("map_pin_bad", "").strip()
+        explanation_good = request.form.get("explanation_good", "").strip()
+        explanation_bad = request.form.get("explanation_bad", "").strip()
+        unclear_features = request.form.get("unclear_features", "").strip()
+        difficult_operation = request.form.get("difficult_operation", "").strip()
+        overall_impression = request.form.get("overall_impression", "").strip()
+        
         good_points = request.form.get("good_points", "").strip()
         improvement = request.form.get("improvement", "").strip()
         desired_features = request.form.get("desired_features", "").strip()
@@ -1054,6 +1069,21 @@ def feedback_page():
                 'focus_point_evaluation': focus_point_map,
                 'map_pin_evaluation': map_pin_map,
                 'solution_evaluation': solution_map,
+                # 自由記述項目
+                'advice_good': advice_good,
+                'advice_bad': advice_bad,
+                'post_feedback_good': post_feedback_good,
+                'post_feedback_bad': post_feedback_bad,
+                'focus_pin_good': focus_pin_good,
+                'focus_pin_bad': focus_pin_bad,
+                'map_pin_good': map_pin_good,
+                'map_pin_bad': map_pin_bad,
+                'explanation_good': explanation_good,
+                'explanation_bad': explanation_bad,
+                'unclear_features': unclear_features,
+                'difficult_operation': difficult_operation,
+                'overall_impression': overall_impression,
+                # その他
                 'good_points': good_points,
                 'improvement_points': improvement,
                 'desired_features': desired_features,
