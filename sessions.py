@@ -569,12 +569,8 @@ def detail_result_page(session_id):
                                display_error="このセッションは存在しません。")
 
     s = session_doc.to_dict()
-    if s.get('user_id') != current_user.id:
-        return render_template('detail_result.html',
-                               session=None,
-                               gps_logs=[],
-                               avg_g_logs=[],
-                               display_error="権限がありません。")
+    # フィードバック管理機能のため、他のユーザーのセッションも閲覧可能にする
+    # (ログイン認証は @login_required で保護済み)
     
     # 🔹 ここで JST 変換を追加！
     if s.get('start_time'):

@@ -225,6 +225,62 @@
     </div>
     {% endif %}
 
+    <!-- 運転記録データ -->
+    {% if sessions %}
+    <div class="detail-card">
+      <h5 class="section-title">フィードバック送信前の運転記録（最新10件）</h5>
+      <div class="table-responsive">
+        <table class="table table-hover">
+          <thead class="table-light">
+            <tr>
+              <th>運転日時</th>
+              <th>所要時間</th>
+              <th>急ブレーキ</th>
+              <th>急カーブ</th>
+              <th>急加速</th>
+              <th>良減速</th>
+              <th>良カーブ</th>
+              <th>良加速</th>
+              <th>詳細</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for session in sessions %}
+            <tr>
+              <td>
+                {% if session.get('start_time') %}
+                  {{ session.get('start_time').strftime('%Y/%m/%d %H:%M') }}
+                {% else %}
+                  N/A
+                {% endif %}
+              </td>
+              <td>
+                {% if session.get('duration') %}
+                  {{ (session.get('duration') // 60)|int }}分
+                {% else %}
+                  N/A
+                {% endif %}
+              </td>
+              <td><span class="badge bg-danger">{{ session.get('hard_brake_count', 0) }}</span></td>
+              <td><span class="badge bg-warning text-dark">{{ session.get('hard_turn_count', 0) }}</span></td>
+              <td><span class="badge bg-info">{{ session.get('hard_accel_count', 0) }}</span></td>
+              <td><span class="badge bg-success">{{ session.get('good_brake_count', 0) }}</span></td>
+              <td><span class="badge bg-success">{{ session.get('good_turn_count', 0) }}</span></td>
+              <td><span class="badge bg-success">{{ session.get('good_accel_count', 0) }}</span></td>
+              <td>
+                <a href="{{ url_for('sessions.detail_result_page', session_id=session.get('id')) }}" class="btn btn-sm btn-outline-primary" target="_blank">
+                  詳細を見る
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="text-muted small mt-2">※ フィードバック送信日時（{{ feedback.get('created_at').strftime('%Y年%m月%d日 %H:%M') if feedback.get('created_at') else 'N/A' }}）以前の記録を表示しています。</p>
+    </div>
+    {% endif %}
+
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>

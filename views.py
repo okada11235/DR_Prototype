@@ -3,6 +3,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
 from firebase_admin import firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
+from google.cloud import firestore as firestore_client
 from models import db
 from datetime import datetime, timezone, timedelta
 
@@ -1194,7 +1195,36 @@ def feedback_detail(feedback_id):
         else:
             feedback['username'] = '匿名ユーザー'
         
-        return render_template("feedback_detail.html", feedback=feedback)
+        # フィードバック送信日時を取得
+        feedback_date = feedback.get('created_at')
+        
+        # そのユーザーのフィードバック送信日時までの運転記録を取得
+        sessions = []
+        if user_id and feedback_date:
+            try:
+                # フィードバック送信日時までのセッションを取得（最新10件）
+                sessions_ref = db.collection('sessions').where('user_id', '==', user_id).where('start_time', '<=', feedback_date).order_by('start_time', direction=firestore_client.Query.DESCENDING).limit(10)
+                sessions_docs = sessions_ref.stream()
+                
+                for session_doc in sessions_docs:
+                    session_data = session_doc.to_dict()
+                    session_data['id'] = session_doc.id
+                    
+                    # 日時をJSTに変換
+                    if 'start_time' in session_data and session_data['start_time']:
+                        session_data['start_time'] = session_data['start_time'].astimezone(JST)
+                    if 'end_time' in session_data and session_data['end_time']:
+                        session_data['end_time'] = session_data['end_time'].astimezone(JST)
+                    
+                    sessions.append(session_data)
+                
+                print(f"Found {len(sessions)} sessions for user {user_id} before feedback date")
+            except Exception as e:
+                print(f"Error fetching sessions: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        return render_template("feedback_detail.html", feedback=feedback, sessions=sessions)
     except Exception as e:
         print(f"Error in feedback_detail: {e}")
         import traceback
