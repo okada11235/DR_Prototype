@@ -33,8 +33,27 @@ tailwind.config = {
   <h1 class="text-3xl font-bold text-primary-green mb-6">記録中</h1>
 
   <!-- キャラアイコン -->
-  <div class="w-36 h-36 rounded-full bg-white shadow-md flex items-center justify-center overflow-hidden mb-8">
+  <div class="w-36 h-36 rounded-full bg-white shadow-md flex items-center justify-center overflow-hidden mb-6">
     <img src="{{ url_for('static', filename='img/robot_active.png') }}" alt="ロボット" class="object-cover w-full h-full">
+  </div>
+
+  <!-- 情報ボックス -->
+  <div class="flex justify-center gap-6 mb-6">
+    <div class="bg-card-light rounded-lg px-6 py-3 shadow">
+      <p class="text-sm text-gray-700">速度</p>
+      <p class="text-2xl font-bold"><span id="speed">0.0</span> km/h</p>
+    </div>
+    <div class="bg-card-light rounded-lg px-6 py-3 shadow text-center">
+      <p class="text-sm text-gray-700">記録時間</p>
+      <p class="text-2xl font-bold" id="timer">00:00</p>
+    </div>
+  </div>
+
+  <!-- G値 -->
+  <div class="bg-card-light rounded-lg p-4 text-gray-800 shadow mb-8 w-72 text-center">
+    横G：<span id="g-x">0.00</span>
+    前後G：<span id="g-z">0.00</span>
+    上下G：<span id="g-y">0.00</span>
   </div>
 
   <!-- 停止ボタン -->
