@@ -218,7 +218,18 @@
     </div>
 
     <!-- 画像 -->
-    {% if feedback.get('image_base64') %}
+    {% if feedback.get('images_base64') %}
+    <div class="detail-card">
+      <h5 class="section-title">添付画像</h5>
+      <div class="row g-3">
+        {% for image_base64 in feedback.get('images_base64') %}
+        <div class="col-md-6">
+          <img src="data:image/png;base64,{{ image_base64 }}" class="image-preview" alt="フィードバック画像 {{ loop.index }}" />
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% elif feedback.get('image_base64') %}
     <div class="detail-card">
       <h5 class="section-title">添付画像</h5>
       <img src="data:image/png;base64,{{ feedback.get('image_base64') }}" class="image-preview" alt="フィードバック画像" />

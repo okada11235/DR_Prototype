@@ -30,111 +30,115 @@ tailwind.config = {
 </head>
 <body class="bg-bg-light text-gray-800 font-sans flex flex-col items-center justify-center min-h-screen p-4" data-page="recording_active">
 
-  <h1 class="text-3xl font-bold text-primary-green mb-6">記録中</h1>
+  <h1 id="recordingTitle" class="text-3xl font-bold text-primary-green mb-6" style="display:none;">記録中</h1>
 
   <!-- キャラアイコン -->
-  <div class="w-36 h-36 rounded-full bg-white shadow-md flex items-center justify-center overflow-hidden mb-6">
+  <div class="w-36 h-36 rounded-full bg-white shadow-md flex items-center justify-center overflow-hidden mb-8">
     <img src="{{ url_for('static', filename='img/robot_active.png') }}" alt="ロボット" class="object-cover w-full h-full">
   </div>
 
-  <!-- 情報ボックス -->
-  <div class="flex justify-center gap-6 mb-6">
-    <div class="bg-card-light rounded-lg px-6 py-3 shadow">
-      <p class="text-sm text-gray-700">速度</p>
-      <p class="text-2xl font-bold"><span id="speed">0</span> km/h</p>
-    </div>
-    <div class="bg-card-light rounded-lg px-6 py-3 shadow">
-      <p class="text-sm text-gray-700">記録時間</p>
-      <p class="text-2xl font-bold" id="timer">00:00</p>
-    </div>
+  <!-- スタートボタン（音声・センサー有効化） -->
+  <button id="startBtn"
+    class="bg-primary-green text-white text-3xl font-bold rounded-full shadow-lg hover:bg-cyan-400 transition mb-4"
+    style="width: 200px; height: 200px;">
+    スタート
+  </button>
+
+  <!-- コントロールボタンエリア（初期は非表示） -->
+  <div id="controlButtons" style="display:none;" class="flex gap-6 mb-4">
+    <!-- 一時停止ボタン -->
+    <button id="pauseBtn"
+      class="bg-yellow-500 text-white text-xl font-bold rounded-xl shadow-lg hover:bg-yellow-400 transition"
+      style="min-width: 150px; min-height: 70px; padding: 16px 24px;">
+      一時停止
+    </button>
+    
+    <!-- 終了ボタン -->
+    <button id="end-button"
+            class="bg-danger-red text-white text-xl font-bold rounded-xl shadow-lg hover:bg-red-500 transition"
+            style="min-width: 150px; min-height: 70px; padding: 16px 24px;">
+      終了
+    </button>
   </div>
-
-  <!-- G値 -->
-  <div id="g-box" class="bg-card-light rounded-lg p-4 text-gray-800 shadow mb-8 w-72 text-center">
-    横G：<span id="g-x">0.00</span>
-    前後G：<span id="g-z">0.00</span>
-    上下G：<span id="g-y">0.00</span>
-  </div>
-
-  <!-- 🎙 手動録音ボタン（Androidでの音声認識不調時のフォールバック） -->
-  <button id="recordBtn"
-          class="bg-danger-red text-white text-xl font-bold py-3 px-10 rounded-xl shadow-lg hover:bg-red-500 transition mb-6">
-    🎙 録音開始（5秒）
-  </button>
-
-  <!-- 📍 ピン設置ボタン -->
-  <button id="addPinBtn" 
-          style="position: fixed; bottom: 120px; right: 20px; 
-                background-color: #00bcd4; color: white;
-                border: none; border-radius: 50%; 
-                width: 60px; height: 60px; 
-                font-size: 28px; font-weight: bold; 
-                box-shadow: 0 2px 6px rgba(0,0,0,0.3);">
-    📍
-  </button>
-
-  <!-- 🎤 音声コマンド トグルボタン -->
-  <button id="voiceToggleBtn"
-          style="position: fixed; bottom: 120px; left: 20px;
-                 background-color: #6b7280; color: white;
-                 border: none; border-radius: 9999px;
-                 height: 40px; padding: 0 14px; 
-                 font-size: 14px; font-weight: 700;
-                 box-shadow: 0 2px 6px rgba(0,0,0,0.3);">
-    🎤 音声OFF
-  </button>
-
-
-  <!-- 一時停止ボタン -->
-  <button id="pauseBtn"
-    class="bg-yellow-500 text-white text-xl font-bold py-3 px-10 rounded-xl shadow-lg hover:bg-yellow-400 transition mb-4">
-    ⏸ 一時停止
-  </button>
+  
   <!-- 一時停止中の表示（オーバーレイ内に再開ボタンを配置し、オーバーレイがクリックを妨げないようにする） -->
   <div id="pausedOverlay" style="display:none;" class="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
     <div class="bg-white rounded-xl p-8 shadow-lg text-center">
-      <div class="text-2xl font-bold text-primary-green mb-4">記録は一時停止中です</div>
-      <button id="resumeBtn" class="bg-primary-green text-white text-lg font-bold py-2 px-6 rounded-xl shadow-lg hover:bg-cyan-400 transition">
-        ▶️ 再開
+      <div class="text-2xl font-bold text-primary-green mb-6">記録は一時停止中です</div>
+      <button id="resumeBtn" class="bg-primary-green text-white text-xl font-bold rounded-xl shadow-lg hover:bg-cyan-400 transition"
+              style="min-width: 150px; min-height: 70px; padding: 16px 32px;">
+        再開
       </button>
     </div>
   </div>
 
-  <!-- 終了ボタン -->
-  <button id="end-button"
-          class="bg-primary-green text-white text-xl font-bold py-3 px-10 rounded-xl shadow-lg hover:bg-cyan-400 transition">
-    記録を終了する
-  </button>
-
-  <!-- 🟡 iOS専用: 音声アンロック案内 -->
-  <div id="ios-audio-banner-active" 
-       class="hidden fixed bottom-6 left-1/2 transform -translate-x-1/2 w-11/12 max-w-md
-              bg-yellow-50 border-2 border-yellow-300 rounded-xl p-4 text-center text-yellow-800 shadow-lg z-[9999]">
-    🎵 <b>音声を有効化するには画面を一度タップしてください</b><br>
-    （iPhone・iPadをご利用の方のみ）
-  </div>
-
-  <!-- iOSバナーの動作 -->
+  <!-- スタートボタンの動作 -->
   <script>
     document.addEventListener("DOMContentLoaded", () => {
-      const isiOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-      if (!isiOS) return;
+      const startBtn = document.getElementById("startBtn");
+      const pauseBtn = document.getElementById("pauseBtn");
+      const endBtn = document.getElementById("end-button");
+      
+      let hasStarted = false;
 
-      const banner = document.getElementById("ios-audio-banner-active");
-      banner.classList.remove("hidden");
+      startBtn.addEventListener("click", async () => {
+        if (hasStarted) return;
+        hasStarted = true;
 
-      const unlockAudio = () => {
-        if (window.initIOSAudioUnlock) window.initIOSAudioUnlock();
-        banner.innerHTML = "✅ 音声が有効になりました";
-        banner.style.backgroundColor = "#c8e6c9";
-        banner.style.borderColor = "#81c784";
-        setTimeout(() => banner.remove(), 1800);
-        document.removeEventListener("click", unlockAudio);
-        document.removeEventListener("touchstart", unlockAudio);
-      };
+        // iOSの場合は音声アンロック
+        const isiOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+        if (isiOS && window.initIOSAudioUnlock) {
+          try {
+            window.initIOSAudioUnlock();
+          } catch(e) {
+            console.warn("iOS audio unlock failed:", e);
+          }
+        }
 
-      document.addEventListener("click", unlockAudio, { once: true });
-      document.addEventListener("touchstart", unlockAudio, { once: true });
+        // iOSのモーション許可リクエスト
+        if (isiOS && typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+          try {
+            const perm = await DeviceMotionEvent.requestPermission();
+            localStorage.setItem('perm_motion', perm === 'granted' ? 'granted' : 'denied');
+            if (perm !== 'granted') {
+              alert('加速度センサーの許可が必要です。設定から有効にしてください。');
+            }
+          } catch(e) {
+            console.warn('Motion permission request failed:', e);
+          }
+        }
+
+        // センサー起動
+        if (typeof window.startMotionDetection === 'function') {
+          try {
+            window.startMotionDetection();
+          } catch(e) {
+            console.warn('startMotionDetection failed:', e);
+          }
+        }
+
+        // タイマー起動
+        if (typeof window.startTimer === 'function') {
+          try {
+            window.startTimer();
+          } catch(e) {
+            console.warn('startTimer failed:', e);
+          }
+        }
+
+        // ボタン表示切り替え
+        startBtn.style.display = 'none';
+        
+        // コントロールボタンエリアを表示
+        const controlButtons = document.getElementById('controlButtons');
+        if (controlButtons) controlButtons.style.display = '';
+        
+        // 「記録中」タイトルを表示
+        const recordingTitle = document.getElementById('recordingTitle');
+        if (recordingTitle) recordingTitle.style.display = '';
+
+        console.log('✅ 記録をスタートしました');
+      });
     });
   </script>
 
@@ -167,7 +171,8 @@ tailwind.config = {
       // 音声認識は停止しない（再開コマンドを受け取るため）
       // if (window.voiceRecognition?.stop) window.voiceRecognition.stop();
       document.getElementById('pausedOverlay').style.display = '';
-      document.getElementById('pauseBtn').style.display = 'none';
+      const controlButtons = document.getElementById('controlButtons');
+      if (controlButtons) controlButtons.style.display = 'none';
       // 録音ボタン等も必要に応じて無効化
       const recordBtn = document.getElementById('recordBtn');
       if (recordBtn) recordBtn.disabled = true;
@@ -191,7 +196,8 @@ tailwind.config = {
       // 音声認識は既に動いているか、必要なら再起動
       try { if (window.voiceRecognition?.start) window.voiceRecognition.start(); } catch(e){}
       document.getElementById('pausedOverlay').style.display = 'none';
-      document.getElementById('pauseBtn').style.display = '';
+      const controlButtons = document.getElementById('controlButtons');
+      if (controlButtons) controlButtons.style.display = '';
       const recordBtn = document.getElementById('recordBtn');
       if (recordBtn) recordBtn.disabled = false;
       // 自動一時停止フラグをリセット
@@ -200,8 +206,10 @@ tailwind.config = {
     document.addEventListener('DOMContentLoaded', function() {
       const pauseBtn = document.getElementById('pauseBtn');
       const resumeBtn = document.getElementById('resumeBtn');
+      const endBtn = document.getElementById('end-button');
       if (pauseBtn) pauseBtn.onclick = pauseRecording;
       if (resumeBtn) resumeBtn.onclick = resumeRecording;
+      // 終了ボタンは既存のイベントリスナーを使用
     });
     // 音声認識コマンド連携
     window._origVoiceOnResult = window.voiceRecognition?.onresult;
