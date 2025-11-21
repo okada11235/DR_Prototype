@@ -188,23 +188,72 @@
       </div>
     </div>
 
-    <!-- 自由記述 -->
+    <!-- リアルタイムアドバイスの感想 -->
     <div class="detail-card">
-      <h5 class="section-title">自由記述</h5>
+      <h5 class="section-title">リアルタイムアドバイスの感想</h5>
       
-      {% if feedback.get('good_points') %}
-        <h6 class="mt-3">良かった点</h6>
-        <div class="comment-box">{{ feedback.get('good_points') }}</div>
+      {% if feedback.get('advice_comment') %}
+        <div class="comment-box">{{ feedback.get('advice_comment') }}</div>
+      {% else %}
+        <p class="text-muted">感想はありません。</p>
       {% endif %}
+    </div>
 
-      {% if feedback.get('improvement_points') %}
-        <h6 class="mt-3">改善してほしい点</h6>
-        <div class="comment-box">{{ feedback.get('improvement_points') }}</div>
+    <!-- 運転終了後フィードバックの感想 -->
+    <div class="detail-card">
+      <h5 class="section-title">運転終了後フィードバックの感想</h5>
+      
+      {% if feedback.get('post_feedback_comment') %}
+        <div class="comment-box">{{ feedback.get('post_feedback_comment') }}</div>
+      {% else %}
+        <p class="text-muted">感想はありません。</p>
       {% endif %}
+    </div>
 
+    <!-- 重点ポイントの感想 -->
+    <div class="detail-card">
+      <h5 class="section-title">重点ポイントの感想</h5>
+      
+      {% if feedback.get('focus_point_comment') %}
+        <div class="comment-box">{{ feedback.get('focus_point_comment') }}</div>
+      {% else %}
+        <p class="text-muted">感想はありません。</p>
+      {% endif %}
+    </div>
+
+    <!-- マップピン機能の感想 -->
+    <div class="detail-card">
+      <h5 class="section-title">マップピン機能の感想</h5>
+      
+      {% if feedback.get('map_pin_comment') %}
+        <div class="comment-box">{{ feedback.get('map_pin_comment') }}</div>
+      {% else %}
+        <p class="text-muted">感想はありません。</p>
+      {% endif %}
+    </div>
+
+    <!-- その他の自由記述 -->
+    <div class="detail-card">
+      <h5 class="section-title">その他の自由記述</h5>
+      
       {% if feedback.get('desired_features') %}
         <h6 class="mt-3">今後追加してほしい機能</h6>
         <div class="comment-box">{{ feedback.get('desired_features') }}</div>
+      {% endif %}
+
+      {% if feedback.get('unclear_features') %}
+        <h6 class="mt-3">使い方がわからなかった機能</h6>
+        <div class="comment-box">{{ feedback.get('unclear_features') }}</div>
+      {% endif %}
+
+      {% if feedback.get('difficult_operation') %}
+        <h6 class="mt-3">操作しづらかったところ</h6>
+        <div class="comment-box">{{ feedback.get('difficult_operation') }}</div>
+      {% endif %}
+
+      {% if feedback.get('overall_impression') %}
+        <h6 class="mt-3">アプリ全体の感想</h6>
+        <div class="comment-box">{{ feedback.get('overall_impression') }}</div>
       {% endif %}
 
       {% if feedback.get('other_comments') %}
@@ -212,16 +261,84 @@
         <div class="comment-box">{{ feedback.get('other_comments') }}</div>
       {% endif %}
 
-      {% if not (feedback.get('good_points') or feedback.get('improvement_points') or feedback.get('desired_features') or feedback.get('other_comments')) %}
+      {% if not (feedback.get('desired_features') or feedback.get('unclear_features') or feedback.get('difficult_operation') or feedback.get('overall_impression') or feedback.get('other_comments')) %}
         <p class="text-muted">自由記述はありません。</p>
       {% endif %}
     </div>
 
-    <!-- 画像 -->
-    {% if feedback.get('image_base64') %}
+    <!-- 添付画像 -->
+    {% if feedback.get('image_base64_list') %}
+    <div class="detail-card">
+      <h5 class="section-title">添付画像</h5>
+      <div class="row">
+        {% for image_base64 in feedback.get('image_base64_list') %}
+        <div class="col-md-6 mb-3">
+          <img src="data:image/png;base64,{{ image_base64 }}" class="image-preview" alt="フィードバック画像 {{ loop.index }}" />
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% elif feedback.get('image_base64') %}
+    <!-- 旧形式の単一画像対応 -->
     <div class="detail-card">
       <h5 class="section-title">添付画像</h5>
       <img src="data:image/png;base64,{{ feedback.get('image_base64') }}" class="image-preview" alt="フィードバック画像" />
+    </div>
+    {% endif %}
+
+    <!-- 運転記録データ -->
+    {% if sessions %}
+    <div class="detail-card">
+      <h5 class="section-title">フィードバック送信前の運転記録（最新10件）</h5>
+      <div class="table-responsive">
+        <table class="table table-hover">
+          <thead class="table-light">
+            <tr>
+              <th>運転日時</th>
+              <th>所要時間</th>
+              <th>急ブレーキ</th>
+              <th>急カーブ</th>
+              <th>急加速</th>
+              <th>良減速</th>
+              <th>良カーブ</th>
+              <th>良加速</th>
+              <th>詳細</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for session in sessions %}
+            <tr>
+              <td>
+                {% if session.get('start_time') %}
+                  {{ session.get('start_time').strftime('%Y/%m/%d %H:%M') }}
+                {% else %}
+                  N/A
+                {% endif %}
+              </td>
+              <td>
+                {% if session.get('duration') %}
+                  {{ (session.get('duration') // 60)|int }}分
+                {% else %}
+                  N/A
+                {% endif %}
+              </td>
+              <td><span class="badge bg-danger">{{ session.get('hard_brake_count', 0) }}</span></td>
+              <td><span class="badge bg-warning text-dark">{{ session.get('hard_turn_count', 0) }}</span></td>
+              <td><span class="badge bg-info">{{ session.get('hard_accel_count', 0) }}</span></td>
+              <td><span class="badge bg-success">{{ session.get('good_brake_count', 0) }}</span></td>
+              <td><span class="badge bg-success">{{ session.get('good_turn_count', 0) }}</span></td>
+              <td><span class="badge bg-success">{{ session.get('good_accel_count', 0) }}</span></td>
+              <td>
+                <a href="{{ url_for('sessions.detail_result_page', session_id=session.get('id')) }}" class="btn btn-sm btn-outline-primary" target="_blank">
+                  詳細を見る
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="text-muted small mt-2">※ フィードバック送信日時（{{ feedback.get('created_at').strftime('%Y年%m月%d日 %H:%M') if feedback.get('created_at') else 'N/A' }}）以前の記録を表示しています。</p>
     </div>
     {% endif %}
 

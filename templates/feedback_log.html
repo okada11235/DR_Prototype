@@ -205,9 +205,9 @@
       
       <!-- リアルタイムアドバイス関連の記述 -->
       <div class="mt-4">
-        <h6 class="mb-2">運転中アドバイスに関するコメント</h6>
+        <h6 class="mb-2">運転中アドバイス・マップピン機能に関するコメント</h6>
         {% for fb in feedbacks %}
-          {% if fb.get('advice_good') or fb.get('advice_bad') %}
+          {% if fb.get('advice_good') or fb.get('advice_bad') or fb.get('map_pin_good') or fb.get('map_pin_bad') %}
           <div class="feedback-item">
             <div class="mb-2">
               <a href="{{ url_for('views.feedback_detail', feedback_id=fb.get('id')) }}" class="text-decoration-none">
@@ -218,10 +218,16 @@
               </span>
             </div>
             {% if fb.get('advice_good') %}
-              <div class="mb-1"><strong>よかった点:</strong> {{ fb.get('advice_good') }}</div>
+              <div class="mb-1"><strong>運転中アドバイス・よかった点:</strong> {{ fb.get('advice_good') }}</div>
             {% endif %}
             {% if fb.get('advice_bad') %}
-              <div class="mb-1"><strong>悪かった点:</strong> {{ fb.get('advice_bad') }}</div>
+              <div class="mb-1"><strong>運転中アドバイス・悪かった点:</strong> {{ fb.get('advice_bad') }}</div>
+            {% endif %}
+            {% if fb.get('map_pin_good') %}
+              <div class="mb-1"><strong>マップピン機能・よかった点:</strong> {{ fb.get('map_pin_good') }}</div>
+            {% endif %}
+            {% if fb.get('map_pin_bad') %}
+              <div class="mb-1"><strong>マップピン機能・悪かった点:</strong> {{ fb.get('map_pin_bad') }}</div>
             {% endif %}
           </div>
           {% endif %}
