@@ -99,109 +99,38 @@ tailwind.config = {
         if (hasStarted) return;
         hasStarted = true;
 
-        // iOSの場合は音声アンロック（即座に実行）
         const isiOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+
         if (isiOS) {
           try {
-            // AudioContextを即座に作成・再開
             if (!window.audioContext) {
               window.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-              console.log("🎧 AudioContext created on start button");
             }
-            if (window.audioContext.state === 'suspended') {
+            if (window.audioContext.state === "suspended") {
               await window.audioContext.resume();
-              console.log("🔄 AudioContext resumed on start button");
             }
-            
-            // 無音再生でアンロック
+
+            // 無音再生でunlock
             const buffer = window.audioContext.createBuffer(1, 1, 22050);
             const source = window.audioContext.createBufferSource();
             source.buffer = buffer;
             source.connect(window.audioContext.destination);
             source.start(0);
-            
+
             window.audioUnlocked = true;
-            localStorage.setItem('audioUnlocked', 'true');
-            console.log("🔓 iOS Audio unlocked immediately on start");
-            
-            // keep-alive開始（5秒ごと）
-            if (!window.keepAliveIntervalId) {
-              window.keepAliveIntervalId = setInterval(() => {
-                if (window.audioContext && window.audioContext.state === 'suspended') {
-                  window.audioContext.resume().then(() => {
-                    console.log("🌀 AudioContext auto-resumed (keep-alive)");
-                  });
-                }
-                // 無音パルス
-                try {
-                  const buf = window.audioContext.createBuffer(1, 1, 22050);
-                  const src = window.audioContext.createBufferSource();
-                  src.buffer = buf;
-                  src.connect(window.audioContext.destination);
-                  src.start(0);
-                  console.log("💓 keep-alive pulse");
-                } catch (e) {
-                  console.warn("⚠️ keep-alive failed:", e);
-                }
-              }, 5000);
-              console.log("✅ keep-alive interval started");
-            }
+            localStorage.setItem("audioUnlocked", "true");
+
           } catch(e) {
             console.warn("iOS audio unlock failed:", e);
           }
         }
 
-        // iOSのモーション許可リクエスト
-        if (isiOS && typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
-          try {
-            const perm = await DeviceMotionEvent.requestPermission();
-            localStorage.setItem('perm_motion', perm === 'granted' ? 'granted' : 'denied');
-            if (perm !== 'granted') {
-              alert('加速度センサーの許可が必要です。設定から有効にしてください。');
-            }
-          } catch(e) {
-            console.warn('Motion permission request failed:', e);
-          }
-        }
-
-        // センサー起動
-        if (typeof window.startMotionDetection === 'function') {
-          try {
-            window.startMotionDetection();
-          } catch(e) {
-            console.warn('startMotionDetection failed:', e);
-          }
-        }
-
-        // タイマー起動
-        if (typeof window.startTimer === 'function') {
-          try {
-            window.startTimer();
-          } catch(e) {
-            console.warn('startTimer failed:', e);
-          }
-        }
-
-        // ボタン表示切り替え
-        startBtn.style.display = 'none';
-        
-        // コントロールボタンエリアを表示
-        const controlButtons = document.getElementById('controlButtons');
-        if (controlButtons) controlButtons.style.display = '';
-        
-        // 「記録中」タイトルを表示
-        const recordingTitle = document.getElementById('recordingTitle');
-        if (recordingTitle) recordingTitle.style.display = '';
-
-        // 経過時間表示を表示
-        const timerDisplay = document.getElementById('timerDisplay');
-        if (timerDisplay) timerDisplay.style.display = '';
-
-        // 吹き出しを表示
-        const speechBubble = document.getElementById('speechBubble');
-        if (speechBubble) speechBubble.style.display = '';
-
-        console.log('✅ 記録をスタートしました');
+        // 🔥 UI切り替えのみ（内部処理は main.js に任せる）
+        startBtn.style.display = "none";
+        document.getElementById("controlButtons").style.display = "";
+        document.getElementById("recordingTitle").style.display = "";
+        document.getElementById("timerDisplay").style.display = "";
+        document.getElementById("speechBubble").style.display = "";
       });
     });
   </script>
@@ -674,34 +603,6 @@ tailwind.config = {
     === 音声認識自動開始機能を無効化（記録中の誤動作防止） === */
     console.log('🚫 音声認識自動開始機能は記録中無効化されています');
   </script>
-  <!-- iOS用: 初回タップでモーション許可をリクエストし、許可後にセンサー起動 -->
-  <script>
-    (function(){
-      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-      if (!isIOS) return;
-      if (typeof DeviceMotionEvent === 'undefined' || typeof DeviceMotionEvent.requestPermission !== 'function') return;
-      try { if (localStorage.getItem('perm_motion') === 'granted') return; } catch(_) {}
-      const ask = async () => {
-        try {
-          const r = await DeviceMotionEvent.requestPermission();
-          localStorage.setItem('perm_motion', r === 'granted' ? 'granted' : 'denied');
-          if (r === 'granted') {
-            if (!window.isMotionDetectionActive && typeof window.startMotionDetection === 'function') {
-              try { window.startMotionDetection(); } catch(_) {}
-            }
-          } else {
-            alert('加速度センサーの許可が必要です。設定から有効にしてください。');
-          }
-        } catch (e) {
-          console.warn('Motion permission request failed:', e);
-        }
-        window.removeEventListener('touchend', ask);
-        window.removeEventListener('click', ask);
-      };
-      window.addEventListener('touchend', ask, { once: true });
-      window.addEventListener('click', ask, { once: true });
-    })();
-  </script>
   <script src="{{ url_for('static', filename='state.js') }}"></script>
   <script src="{{ url_for('static', filename='sensors.js') }}"></script>
   <script src="{{ url_for('static', filename='session.js') }}"></script>
@@ -713,5 +614,3 @@ tailwind.config = {
   <script type="module" src="{{ url_for('static', filename='main.js') }}"></script>
 </body>
 </html>
-
-<script type="module" src="{{ url_for('static', filename='main.js') }}"></script>
