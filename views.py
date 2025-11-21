@@ -1026,19 +1026,30 @@ def feedback_page():
             'pin_reference': request.form.get('solution_pin_reference', ''),
         }
 
-        good_points = request.form.get("good_points", "").strip()
-        improvement = request.form.get("improvement", "").strip()
+        # 新しい感想フィールド
+        advice_comment = request.form.get("advice_comment", "").strip()
+        post_feedback_comment = request.form.get("post_feedback_comment", "").strip()
+        focus_point_comment = request.form.get("focus_point_comment", "").strip()
+        map_pin_comment = request.form.get("map_pin_comment", "").strip()
+        
+        # その他の自由記述
         desired_features = request.form.get("desired_features", "").strip()
+        unclear_features = request.form.get("unclear_features", "").strip()
+        difficult_operation = request.form.get("difficult_operation", "").strip()
+        overall_impression = request.form.get("overall_impression", "").strip()
         other_comments = request.form.get("other_comments", "").strip()
 
-        image_file = request.files.get("feedback_image")
-        image_base64 = ""
-        if image_file and image_file.filename:
-            try:
-                image_bytes = image_file.read()
-                image_base64 = base64.b64encode(image_bytes).decode('utf-8')
-            except Exception:
-                image_base64 = ""
+        # 画像ファイル（複数対応）
+        image_files = request.files.getlist("feedback_images")
+        image_base64_list = []
+        if image_files:
+            for image_file in image_files:
+                if image_file and image_file.filename:
+                    try:
+                        image_bytes = image_file.read()
+                        image_base64_list.append(base64.b64encode(image_bytes).decode('utf-8'))
+                    except Exception:
+                        pass
 
         # Firestoreへ保存
         try:
@@ -1054,12 +1065,19 @@ def feedback_page():
                 'focus_point_evaluation': focus_point_map,
                 'map_pin_evaluation': map_pin_map,
                 'solution_evaluation': solution_map,
-                'good_points': good_points,
-                'improvement_points': improvement,
+                # 新しい感想フィールド
+                'advice_comment': advice_comment,
+                'post_feedback_comment': post_feedback_comment,
+                'focus_point_comment': focus_point_comment,
+                'map_pin_comment': map_pin_comment,
+                # その他の自由記述
                 'desired_features': desired_features,
+                'unclear_features': unclear_features,
+                'difficult_operation': difficult_operation,
+                'overall_impression': overall_impression,
                 'other_comments': other_comments,
                 'satisfaction': satisfaction,
-                'image_base64': image_base64,
+                'image_base64_list': image_base64_list,  # 複数画像対応
                 'created_at': datetime.now(JST)
             }
             db.collection('user_feedback').add(feedback_doc)
