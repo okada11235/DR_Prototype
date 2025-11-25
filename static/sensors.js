@@ -252,8 +252,8 @@ function applyOrientationCorrection(gx, gy, gz) {
       // ただし、上下G(Y)と前後G(Z)が入れ替わっている可能性を考慮
       // Androidの標準軸定義に基づき、Z軸を前後G (finalGz)に割り当てる
       finalGx = gx;
-      finalGy = gy;
-      finalGz = gz;
+      finalGy = gz;
+      finalGz = gy;
       break;
   }
   // finalGx: 左右G (旋回G), finalGz: 前後G (加減速G)
@@ -455,6 +455,12 @@ export function handleDeviceMotion(event) {
   if (gxElem) gxElem.textContent = gxs.toFixed(2);
   if (gyElem) gyElem.textContent = gys.toFixed(2);
   if (gzElem) gzElem.textContent = gzs.toFixed(2);
+
+  window.liveG = {
+      gx: gx,   // 左右
+      gy: gy,   // 上下（不要）
+      gz: gz    // 前後
+  };
 }
 
 // =======================

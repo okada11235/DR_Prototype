@@ -3,6 +3,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
 from firebase_admin import firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
+from google.cloud import firestore as firestore_client
 from models import db
 from datetime import datetime, timezone, timedelta
 
@@ -1025,19 +1026,30 @@ def feedback_page():
             'pin_reference': request.form.get('solution_pin_reference', ''),
         }
 
-        good_points = request.form.get("good_points", "").strip()
-        improvement = request.form.get("improvement", "").strip()
+        # 新しい感想フィールド
+        advice_comment = request.form.get("advice_comment", "").strip()
+        post_feedback_comment = request.form.get("post_feedback_comment", "").strip()
+        focus_point_comment = request.form.get("focus_point_comment", "").strip()
+        map_pin_comment = request.form.get("map_pin_comment", "").strip()
+        
+        # その他の自由記述
         desired_features = request.form.get("desired_features", "").strip()
+        unclear_features = request.form.get("unclear_features", "").strip()
+        difficult_operation = request.form.get("difficult_operation", "").strip()
+        overall_impression = request.form.get("overall_impression", "").strip()
         other_comments = request.form.get("other_comments", "").strip()
 
-        image_file = request.files.get("feedback_image")
-        image_base64 = ""
-        if image_file and image_file.filename:
-            try:
-                image_bytes = image_file.read()
-                image_base64 = base64.b64encode(image_bytes).decode('utf-8')
-            except Exception:
-                image_base64 = ""
+        # 画像ファイル（複数対応）
+        image_files = request.files.getlist("feedback_images")
+        image_base64_list = []
+        if image_files:
+            for image_file in image_files:
+                if image_file and image_file.filename:
+                    try:
+                        image_bytes = image_file.read()
+                        image_base64_list.append(base64.b64encode(image_bytes).decode('utf-8'))
+                    except Exception:
+                        pass
 
         # Firestoreへ保存
         try:
@@ -1053,12 +1065,19 @@ def feedback_page():
                 'focus_point_evaluation': focus_point_map,
                 'map_pin_evaluation': map_pin_map,
                 'solution_evaluation': solution_map,
-                'good_points': good_points,
-                'improvement_points': improvement,
+                # 新しい感想フィールド
+                'advice_comment': advice_comment,
+                'post_feedback_comment': post_feedback_comment,
+                'focus_point_comment': focus_point_comment,
+                'map_pin_comment': map_pin_comment,
+                # その他の自由記述
                 'desired_features': desired_features,
+                'unclear_features': unclear_features,
+                'difficult_operation': difficult_operation,
+                'overall_impression': overall_impression,
                 'other_comments': other_comments,
                 'satisfaction': satisfaction,
-                'image_base64': image_base64,
+                'image_base64_list': image_base64_list,  # 複数画像対応
                 'created_at': datetime.now(JST)
             }
             db.collection('user_feedback').add(feedback_doc)
@@ -1194,7 +1213,36 @@ def feedback_detail(feedback_id):
         else:
             feedback['username'] = '匿名ユーザー'
         
-        return render_template("feedback_detail.html", feedback=feedback)
+        # フィードバック送信日時を取得
+        feedback_date = feedback.get('created_at')
+        
+        # そのユーザーのフィードバック送信日時までの運転記録を取得
+        sessions = []
+        if user_id and feedback_date:
+            try:
+                # フィードバック送信日時までのセッションを取得（最新10件）
+                sessions_ref = db.collection('sessions').where('user_id', '==', user_id).where('start_time', '<=', feedback_date).order_by('start_time', direction=firestore_client.Query.DESCENDING).limit(10)
+                sessions_docs = sessions_ref.stream()
+                
+                for session_doc in sessions_docs:
+                    session_data = session_doc.to_dict()
+                    session_data['id'] = session_doc.id
+                    
+                    # 日時をJSTに変換
+                    if 'start_time' in session_data and session_data['start_time']:
+                        session_data['start_time'] = session_data['start_time'].astimezone(JST)
+                    if 'end_time' in session_data and session_data['end_time']:
+                        session_data['end_time'] = session_data['end_time'].astimezone(JST)
+                    
+                    sessions.append(session_data)
+                
+                print(f"Found {len(sessions)} sessions for user {user_id} before feedback date")
+            except Exception as e:
+                print(f"Error fetching sessions: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        return render_template("feedback_detail.html", feedback=feedback, sessions=sessions)
     except Exception as e:
         print(f"Error in feedback_detail: {e}")
         import traceback

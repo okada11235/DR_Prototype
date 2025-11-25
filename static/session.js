@@ -15,7 +15,6 @@ document.addEventListener("touchstart", unlockAudio, { once: true });
 
 // ✅ iOS & Android モーション許可リクエスト
 async function requestMotionPermission(callback) {
-  // ログイン時に許可済みならスキップ
   const preGranted = localStorage.getItem('perm_motion') === 'granted';
   if (preGranted) {
     console.log("✅ Motion permission already granted (from login)");
@@ -54,8 +53,6 @@ function getFocusPoint() {
 
 // === GPS監視を開始する関数 ===
 function startGPSWatch() {
-
-    // 既存の watch を解除（重複防止）
     if (window.watchId) {
         navigator.geolocation.clearWatch(window.watchId);
     }
@@ -71,7 +68,6 @@ function startGPSWatch() {
             const timestamp = Date.now();
             const kmh = speed !== null ? speed * 3.6 : 0;
 
-            // センサー最新値
             const gxs = window.latestGX || 0;
             const gys = window.latestGY || 0;
             const gzs = window.latestGZ || 0;
@@ -90,7 +86,6 @@ function startGPSWatch() {
             window.gpsLogBuffer = window.gpsLogBuffer || [];
             window.gpsLogBuffer.push(log);
 
-            // sensors.js が参照
             window.currentSpeed = kmh;
 
             console.log(`📍 GPS更新: ${latitude.toFixed(5)}, ${longitude.toFixed(5)} (${kmh.toFixed(1)} km/h)`);
@@ -108,21 +103,21 @@ function startGPSWatch() {
     console.log('✅ GPS監視を開始しました');
 }
 
-// 記録開始
-export function startSession() {
-    console.log('=== startSession function called ===');
+// === 記録開始 ===
+export async function startSession() {
+    console.log('=== startSession (async) called ===');
 
-    // 前回セッション情報を消す（←これはOK）
+    // 前回セッション情報をクリア
     localStorage.removeItem('activeSessionId');
     localStorage.removeItem('sessionStartTime');
     localStorage.removeItem('lastSessionData');
     window.sessionId = null;
 
+    // 二重起動ガード
     if (window.isSessionStarting) {
         alert('セッション開始処理中です。しばらくお待ちください。');
-        return;
+        return null;
     }
-
     window.isSessionStarting = true;
 
     const startButton = document.getElementById('start-button');
@@ -131,72 +126,72 @@ export function startSession() {
         startButton.textContent = '開始中...';
     }
 
-    const focusPoint = getFocusPoint();
-    localStorage.setItem('currentFocusPoint', focusPoint);
+    try {
+        // ① 音声アンロック（iOS用・失敗しても致命的ではない）
+        try {
+            unlockAudio();
+        } catch (e) {
+            console.warn('unlockAudio failed:', e);
+        }
 
-    unlockAudio();
-
-    requestMotionPermission(() => {
+        // ② モーション許可（iOS）
+        await new Promise((resolve) => {
+            requestMotionPermission(resolve);
+        });
         console.log('Motion permission granted');
 
-        performInitialCalibration(async () => {
-
-            console.log('Sending session start request...');
-            let data;
-
-            try {
-                const res = await fetch('/start', { method: 'POST' });
-                if (!res.ok) throw new Error('サーバーエラー');
-                data = await res.json();
-            } catch (err) {
-                alert('記録開始時にエラーが発生しました：' + err.message);
-                window.isSessionStarting = false;
-                if (startButton) {
-                    startButton.disabled = false;
-                    startButton.textContent = '記録開始';
-                }
-                return;
-            }
-
-            // ---- sessionId をセット ----
-            window.sessionId = data.session_id;
-            window.startTime = Date.now();
-            localStorage.setItem('activeSessionId', window.sessionId);
-            localStorage.setItem('sessionStartTime', window.startTime.toString());
-
-            // ---- ここで初めて総リセット（重要）----
-            resetState();
-            window.gLogBuffer = [];
-            window.gpsLogBuffer = [];
-            window.avgGLogBuffer = [];
-            window.path = [];
-
-            // ---- motion + GPS 開始 ----
-            startMotionDetection();
-            startGPSWatch();
-
-            window.isSessionStarting = false;
-            window.location.href = '/recording/active';
+        // ③ キャリブレーション完了待ち
+        await new Promise((resolve) => {
+            performInitialCalibration(resolve);
         });
-    });
+        console.log('Calibration finished');
+
+        // ④ サーバーにセッション開始リクエスト
+        console.log('Sending session start request...');
+        const res = await fetch('/start', { method: 'POST' });
+        if (!res.ok) throw new Error('サーバーエラー');
+        const data = await res.json();
+
+        // ⑤ セッションID保持
+        window.sessionId = data.session_id;
+        window.startTime = Date.now();
+        localStorage.setItem('activeSessionId', window.sessionId);
+        localStorage.setItem('sessionStartTime', window.startTime.toString());
+
+        console.log('✅ session started, id =', window.sessionId);
+
+        // ここでは画面遷移もセンサー起動もしない
+        // => 呼び出し元（recording_start.html）でやる
+        return window.sessionId;
+
+    } catch (err) {
+        console.error('startSession error:', err);
+        alert('記録開始時にエラーが発生しました：' + err.message);
+        return null;
+
+    } finally {
+        // フラグとボタン状態を戻す
+        window.isSessionStarting = false;
+        if (startButton) {
+            startButton.disabled = false;
+            startButton.textContent = '運転開始';
+        }
+    }
 }
 
-// 記録終了
+// === 記録終了 ===
 export async function endSession() {
 
     console.log("=== endSession CALLED ===");
 
-    // 二重終了防止
     if (window.isEndingSession) return;
     window.isEndingSession = true;
 
-    // ① センサー停止
     stopMotionDetection();
     stopGPSWatch();
     stopTimer();
 
-    // ② すべてのログを flush
-    await flushLogsNow(); // ★ これ必須
+    await flushLogsNow();
 
     const sessionId = window.sessionId;
     if (!sessionId) {
@@ -205,7 +200,6 @@ export async function endSession() {
         return;
     }
 
-    // ③ サーバーへ終了リクエスト
     let data;
     try {
         const res = await fetch('/end', {
@@ -221,17 +215,15 @@ export async function endSession() {
         return;
     }
 
-    // ④ localStorage リセット
     localStorage.removeItem('activeSessionId');
     localStorage.removeItem('sessionStartTime');
 
     window.sessionId = null;
 
-    // ⑤ 終了画面へ遷移（ここで初めて画面遷移！）
     window.location.href = `/recording/completed?session_id=${data.session_id}`;
 }
 
-// ログフラッシュ処理を開始する関数
+// === 定期ログフラッシュ ===
 export function startLogFlush() {
     if (window.logFlushInterval) clearInterval(window.logFlushInterval);
     window.logFlushInterval = setInterval(() => {
@@ -242,52 +234,40 @@ export function startLogFlush() {
             return;
         }
 
-        // === Gログ送信 ===
+        // Gログ
         if (window.gLogBuffer.length > 0) {
             const logsToSend = window.gLogBuffer.splice(0, window.gLogBuffer.length);
-            console.log(`Sending ${logsToSend.length} G logs for session ${window.sessionId}`);
             fetch('/log_g_only', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ session_id: window.sessionId, g_logs: logsToSend })
-            })
-            .then(r => r.json())
-            .then(data => console.log('G logs save response:', data))
-            .catch(err => console.error('Gログ送信エラー:', err));
+            });
         }
 
-        // === 平滑化Gログ送信 ===
+        // AVG-G
         if (window.avgGLogBuffer && window.avgGLogBuffer.length > 0) {
             const avgToSend = window.avgGLogBuffer.splice(0, window.avgGLogBuffer.length);
-            console.log(`Sending ${avgToSend.length} AVG-G logs for session ${window.sessionId}`);
             fetch('/log_avg_g_bulk', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ session_id: window.sessionId, avg_g_logs: avgToSend })
-            })
-            .then(r => r.json())
-            .then(data => console.log('AVG G logs save response:', data))
-            .catch(err => console.error('AVG Gログ送信エラー:', err));
+            });
         }
 
-        // === GPSログ送信 ===
+        // GPSログ
         if (window.gpsLogBuffer.length > 0) {
             const logsToSend = window.gpsLogBuffer.splice(0, window.gpsLogBuffer.length);
-            console.log(`Sending ${logsToSend.length} GPS logs for session ${window.sessionId}`);
             fetch('/log_gps_bulk', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ session_id: window.sessionId, gps_logs: logsToSend })
-            })
-            .then(r => r.json())
-            .then(data => console.log('GPS logs save response:', data))
-            .catch(err => console.error('GPSログ送信エラー:', err));
+            });
         }
 
-    }, 60000); // 🔹60秒ごと
+    }, 60000);
 }
 
-// 即時ログフラッシュ（終了時に1回だけ呼ぶ）
+// === 即時ログフラッシュ（終了時） ===
 export async function flushLogsNow() {
     console.log("=== flushLogsNow CALLED ===");
 
@@ -296,37 +276,31 @@ export async function flushLogsNow() {
         return;
     }
 
-    // --- Gログ ---
     if (window.gLogBuffer.length > 0) {
         const logs = window.gLogBuffer.splice(0, window.gLogBuffer.length);
-        console.log(`Flushing ${logs.length} G logs`);
         await fetch('/log_g_only', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ session_id: window.sessionId, g_logs: logs })
-        }).catch(err => console.error("G flush error:", err));
+        });
     }
 
-    // --- AVG-G ---
     if (window.avgGLogBuffer?.length > 0) {
         const logs = window.avgGLogBuffer.splice(0, window.avgGLogBuffer.length);
-        console.log(`Flushing ${logs.length} AVG-G logs`);
         await fetch('/log_avg_g_bulk', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ session_id: window.sessionId, avg_g_logs: logs })
-        }).catch(err => console.error("AVG-G flush error:", err));
+        });
     }
 
-    // --- GPS ---
     if (window.gpsLogBuffer.length > 0) {
         const logs = window.gpsLogBuffer.splice(0, window.gpsLogBuffer.length);
-        console.log(`Flushing ${logs.length} GPS logs`);
         await fetch('/log_gps_bulk', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ session_id: window.sessionId, gps_logs: logs })
-        }).catch(err => console.error("GPS flush error:", err));
+        });
     }
 
     console.log("=== flushLogsNow COMPLETED ===");

@@ -57,6 +57,34 @@
       <div class="alert alert-danger">エラー: {{ error }}</div>
     {% endif %}
 
+    <!-- 全フィードバック詳細一覧 -->
+    <div class="summary-card">
+      <h5 class="mb-3">フィードバック詳細一覧</h5>
+      {% for fb in feedbacks %}
+        <div class="feedback-item">
+          <div class="mb-2">
+            <a href="{{ url_for('views.feedback_detail', feedback_id=fb.get('id')) }}" class="text-decoration-none">
+              <strong class="text-primary">{{ fb.get('real_name', '匿名') }}</strong>
+            </a>
+            <span class="badge-device ms-2">{{ fb.get('device_type', 'N/A') }}</span>
+            <span class="badge-browser">{{ fb.get('browser', 'N/A') }}</span>
+            {% if fb.get('browser') == 'その他' and fb.get('browser_other') %}
+              <span class="badge bg-info text-white ms-1">{{ fb.get('browser_other') }}</span>
+            {% endif %}
+            <span class="text-muted ms-2" style="font-size:0.85rem;">
+              運転回数: {{ fb.get('drive_times')|length if fb.get('drive_times') else 1 }}回
+            </span>
+            <span class="text-muted ms-2" style="font-size:0.85rem;">
+              満足度: {{ fb.get('satisfaction', 'N/A') }}
+            </span>
+          </div>
+          <div class="text-muted" style="font-size:0.8rem;">
+            入力日時: {{ fb.get('created_at').strftime('%Y年%m月%d日 %H:%M') if fb.get('created_at') else 'N/A' }}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+
     <!-- 基本統計 -->
     <div class="summary-card">
       <h5 class="mb-3">基本統計</h5>
@@ -174,6 +202,37 @@
           </div>
         {% endfor %}
       </div>
+      
+      <!-- リアルタイムアドバイス関連の記述 -->
+      <div class="mt-4">
+        <h6 class="mb-2">運転中アドバイス・マップピン機能に関するコメント</h6>
+        {% for fb in feedbacks %}
+          {% if fb.get('advice_good') or fb.get('advice_bad') or fb.get('map_pin_good') or fb.get('map_pin_bad') %}
+          <div class="feedback-item">
+            <div class="mb-2">
+              <a href="{{ url_for('views.feedback_detail', feedback_id=fb.get('id')) }}" class="text-decoration-none">
+                <strong class="text-primary">{{ fb.get('real_name', '匿名') }}</strong>
+              </a>
+              <span class="text-muted ms-2" style="font-size:0.8rem;">
+                ({{ fb.get('created_at').strftime('%Y/%m/%d') if fb.get('created_at') else 'N/A' }})
+              </span>
+            </div>
+            {% if fb.get('advice_good') %}
+              <div class="mb-1"><strong>運転中アドバイス・よかった点:</strong> {{ fb.get('advice_good') }}</div>
+            {% endif %}
+            {% if fb.get('advice_bad') %}
+              <div class="mb-1"><strong>運転中アドバイス・悪かった点:</strong> {{ fb.get('advice_bad') }}</div>
+            {% endif %}
+            {% if fb.get('map_pin_good') %}
+              <div class="mb-1"><strong>マップピン機能・よかった点:</strong> {{ fb.get('map_pin_good') }}</div>
+            {% endif %}
+            {% if fb.get('map_pin_bad') %}
+              <div class="mb-1"><strong>マップピン機能・悪かった点:</strong> {{ fb.get('map_pin_bad') }}</div>
+            {% endif %}
+          </div>
+          {% endif %}
+        {% endfor %}
+      </div>
     </div>
 
     <!-- 運転後フィードバック評価 -->
@@ -200,6 +259,31 @@
               {% endfor %}
             </div>
           </div>
+        {% endfor %}
+      </div>
+      
+      <!-- 運転終了後フィードバック関連の記述 -->
+      <div class="mt-4">
+        <h6 class="mb-2">運転終了後フィードバックに関するコメント</h6>
+        {% for fb in feedbacks %}
+          {% if fb.get('post_feedback_good') or fb.get('post_feedback_bad') %}
+          <div class="feedback-item">
+            <div class="mb-2">
+              <a href="{{ url_for('views.feedback_detail', feedback_id=fb.get('id')) }}" class="text-decoration-none">
+                <strong class="text-primary">{{ fb.get('real_name', '匿名') }}</strong>
+              </a>
+              <span class="text-muted ms-2" style="font-size:0.8rem;">
+                ({{ fb.get('created_at').strftime('%Y/%m/%d') if fb.get('created_at') else 'N/A' }})
+              </span>
+            </div>
+            {% if fb.get('post_feedback_good') %}
+              <div class="mb-1"><strong>よかった点:</strong> {{ fb.get('post_feedback_good') }}</div>
+            {% endif %}
+            {% if fb.get('post_feedback_bad') %}
+              <div class="mb-1"><strong>悪かった点:</strong> {{ fb.get('post_feedback_bad') }}</div>
+            {% endif %}
+          </div>
+          {% endif %}
         {% endfor %}
       </div>
     </div>
@@ -230,6 +314,31 @@
           </div>
         {% endfor %}
       </div>
+      
+      <!-- 重点ポイントピン機能関連の記述 -->
+      <div class="mt-4">
+        <h6 class="mb-2">重点ポイントピン機能に関するコメント</h6>
+        {% for fb in feedbacks %}
+          {% if fb.get('focus_pin_good') or fb.get('focus_pin_bad') %}
+          <div class="feedback-item">
+            <div class="mb-2">
+              <a href="{{ url_for('views.feedback_detail', feedback_id=fb.get('id')) }}" class="text-decoration-none">
+                <strong class="text-primary">{{ fb.get('real_name', '匿名') }}</strong>
+              </a>
+              <span class="text-muted ms-2" style="font-size:0.8rem;">
+                ({{ fb.get('created_at').strftime('%Y/%m/%d') if fb.get('created_at') else 'N/A' }})
+              </span>
+            </div>
+            {% if fb.get('focus_pin_good') %}
+              <div class="mb-1"><strong>よかった点:</strong> {{ fb.get('focus_pin_good') }}</div>
+            {% endif %}
+            {% if fb.get('focus_pin_bad') %}
+              <div class="mb-1"><strong>悪かった点:</strong> {{ fb.get('focus_pin_bad') }}</div>
+            {% endif %}
+          </div>
+          {% endif %}
+        {% endfor %}
+      </div>
     </div>
 
     <!-- マップピン評価 -->
@@ -256,6 +365,31 @@
               {% endfor %}
             </div>
           </div>
+        {% endfor %}
+      </div>
+      
+      <!-- マップピン機能関連の記述 -->
+      <div class="mt-4">
+        <h6 class="mb-2">マップピン機能に関するコメント</h6>
+        {% for fb in feedbacks %}
+          {% if fb.get('map_pin_good') or fb.get('map_pin_bad') %}
+          <div class="feedback-item">
+            <div class="mb-2">
+              <a href="{{ url_for('views.feedback_detail', feedback_id=fb.get('id')) }}" class="text-decoration-none">
+                <strong class="text-primary">{{ fb.get('real_name', '匿名') }}</strong>
+              </a>
+              <span class="text-muted ms-2" style="font-size:0.8rem;">
+                ({{ fb.get('created_at').strftime('%Y/%m/%d') if fb.get('created_at') else 'N/A' }})
+              </span>
+            </div>
+            {% if fb.get('map_pin_good') %}
+              <div class="mb-1"><strong>よかった点:</strong> {{ fb.get('map_pin_good') }}</div>
+            {% endif %}
+            {% if fb.get('map_pin_bad') %}
+              <div class="mb-1"><strong>悪かった点:</strong> {{ fb.get('map_pin_bad') }}</div>
+            {% endif %}
+          </div>
+          {% endif %}
         {% endfor %}
       </div>
     </div>
@@ -286,6 +420,46 @@
           </div>
         {% endfor %}
       </div>
+      
+      <!-- その他のコメント -->
+      <div class="mt-4">
+        <h6 class="mb-2">その他のコメント</h6>
+        {% for fb in feedbacks %}
+          {% if fb.get('explanation_good') or fb.get('explanation_bad') or fb.get('unclear_features') or fb.get('difficult_operation') or fb.get('overall_impression') or fb.get('desired_features') or fb.get('other_comments') %}
+          <div class="feedback-item">
+            <div class="mb-2">
+              <a href="{{ url_for('views.feedback_detail', feedback_id=fb.get('id')) }}" class="text-decoration-none">
+                <strong class="text-primary">{{ fb.get('real_name', '匿名') }}</strong>
+              </a>
+              <span class="text-muted ms-2" style="font-size:0.8rem;">
+                ({{ fb.get('created_at').strftime('%Y/%m/%d') if fb.get('created_at') else 'N/A' }})
+              </span>
+            </div>
+            {% if fb.get('explanation_good') %}
+              <div class="mb-1"><strong>説明機能のよかった点:</strong> {{ fb.get('explanation_good') }}</div>
+            {% endif %}
+            {% if fb.get('explanation_bad') %}
+              <div class="mb-1"><strong>説明機能の悪かった点:</strong> {{ fb.get('explanation_bad') }}</div>
+            {% endif %}
+            {% if fb.get('unclear_features') %}
+              <div class="mb-1"><strong>使い方がわからなかった機能:</strong> {{ fb.get('unclear_features') }}</div>
+            {% endif %}
+            {% if fb.get('difficult_operation') %}
+              <div class="mb-1"><strong>操作しづらかったところ:</strong> {{ fb.get('difficult_operation') }}</div>
+            {% endif %}
+            {% if fb.get('overall_impression') %}
+              <div class="mb-1"><strong>アプリ全体の感想:</strong> {{ fb.get('overall_impression') }}</div>
+            {% endif %}
+            {% if fb.get('desired_features') %}
+              <div class="mb-1"><strong>追加希望機能:</strong> {{ fb.get('desired_features') }}</div>
+            {% endif %}
+            {% if fb.get('other_comments') %}
+              <div class="mb-1"><strong>その他:</strong> {{ fb.get('other_comments') }}</div>
+            {% endif %}
+          </div>
+          {% endif %}
+        {% endfor %}
+      </div>
     </div>
 
     <!-- 満足度分布 -->
@@ -298,45 +472,6 @@
             ★{{ rating }}: {{ count }}件
           </div>
         </div>
-      {% endfor %}
-    </div>
-
-    <!-- 自由記述一覧 -->
-    <div class="summary-card">
-      <h5 class="mb-3">自由記述コメント</h5>
-      {% for fb in feedbacks %}
-        {% if fb.get('good_points') or fb.get('improvement_points') or fb.get('desired_features') or fb.get('other_comments') %}
-        <div class="feedback-item">
-          <div class="mb-2">
-            <a href="{{ url_for('views.feedback_detail', feedback_id=fb.get('id')) }}" class="text-decoration-none">
-              <strong class="text-primary">{{ fb.get('real_name', '匿名') }}</strong>
-            </a>
-            <span class="badge-device ms-2">{{ fb.get('device_type', 'N/A') }}</span>
-            <span class="badge-browser">{{ fb.get('browser', 'N/A') }}</span>
-            {% if fb.get('browser') == 'その他' and fb.get('browser_other') %}
-              <span class="badge bg-info text-white ms-1">{{ fb.get('browser_other') }}</span>
-            {% endif %}
-            <span class="text-muted ms-2" style="font-size:0.85rem;">
-              運転回数: {{ fb.get('drive_times')|length if fb.get('drive_times') else 1 }}回
-            </span>
-            <span class="text-muted ms-2" style="font-size:0.85rem;">
-              満足度: {{ fb.get('satisfaction', 'N/A') }}
-            </span>
-          </div>
-          {% if fb.get('good_points') %}
-            <div class="mb-1"><strong>良かった点:</strong> {{ fb.get('good_points') }}</div>
-          {% endif %}
-          {% if fb.get('improvement_points') %}
-            <div class="mb-1"><strong>改善点:</strong> {{ fb.get('improvement_points') }}</div>
-          {% endif %}
-          {% if fb.get('desired_features') %}
-            <div class="mb-1"><strong>追加希望機能:</strong> {{ fb.get('desired_features') }}</div>
-          {% endif %}
-          {% if fb.get('other_comments') %}
-            <div class="mb-1"><strong>その他:</strong> {{ fb.get('other_comments') }}</div>
-          {% endif %}
-        </div>
-        {% endif %}
       {% endfor %}
     </div>
 
