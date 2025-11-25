@@ -27,34 +27,121 @@ tailwind.config = {
   }
 }
 </script>
+<style>
+  /* 画面幅いっぱいの正円ボウル（最大幅 420px くらいに制限） */
+  #gBowlArea {
+      position: relative;
+      width: 100%;
+      max-width: 420px;
+      aspect-ratio: 1 / 1;
+      border-radius: 50%;
+      background: radial-gradient(circle,
+          #303030 0%,
+          #222 70%,
+          #111 100%);
+      border: 2px solid #555;
+      z-index: 10;
+      margin: 0 auto;
+      display: block;      /* ← これを追加 */
+      transition: opacity 0.2s ease;
+  }
+
+  /* 中のロボボール */
+  #gBall {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    overflow: hidden;
+    z-index: 5;
+  }
+
+  .gBallImg {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  /* Gリング */
+  .gRing {
+    position: absolute;
+    border: 1.4px solid rgba(255,255,255,0.35);
+    border-radius: 50%;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 1;
+  }
+
+  /* リングコンテナ */
+  #gRings {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* ラベル */
+  .gLabel {
+    position: absolute;
+    color: #8b8b8b;
+    font-size: 12px;
+    font-weight: 700;
+    pointer-events: none;
+    z-index: 2;
+    padding: 2px 4px;
+    border-radius: 4px;
+    transform: translate(-50%, -50%); /* 中央基準にする */
+  }
+</style>
 </head>
-<body class="bg-bg-light text-gray-800 font-sans flex flex-col items-center justify-center min-h-screen p-4" data-page="recording_active">
+<body class="bg-bg-light text-gray-800 font-sans flex flex-col items-center justify-center min-h-screen p-4">
 
-  <h1 id="recordingTitle" class="text-3xl font-bold text-primary-green mb-6" style="display:none;">記録中</h1>
+  <!-- 記録中タイトル（スタート後に表示） -->
+  <h1 id="recordingTitle"
+      class="text-3xl font-bold text-primary-green mt-6 mb-4"
+      style="display:none;">
+    記録中
+  </h1>
 
-  <!-- 吹き出し（スタート後に表示） -->
-  <div id="speechBubble" style="display:none;" class="relative bg-white rounded-2xl shadow-lg px-6 py-4 mb-4 max-w-xs mx-auto">
-    <p class="text-center text-gray-800 font-semibold text-lg">運転に集中しましょう！</p>
-    <!-- 吹き出しの三角形 -->
+  <!-- 吹き出し（ルート設定モードの時にだけ表示） -->
+  <div id="routeModeBubble" style="display:none;" class="relative bg-white rounded-2xl shadow-lg px-6 py-4 mb-4 max-w-xs mx-auto">
+    <p class="text-center text-gray-800 font-semibold text-lg">ルート設定中です</p>
     <div class="absolute left-1/2 transform -translate-x-1/2 -bottom-2 w-0 h-0" 
-         style="border-left: 12px solid transparent; border-right: 12px solid transparent; border-top: 12px solid white;">
+        style="border-left: 12px solid transparent; border-right: 12px solid transparent; border-top: 12px solid white;">
     </div>
   </div>
 
-  <!-- キャラアイコン -->
-  <div class="w-36 h-36 rounded-full bg-white shadow-md flex items-center justify-center overflow-hidden mb-8">
+  <!-- キャラアイコン（ルート設定モードの時にだけ表示） -->
+  <div id="routeModeRobot" class="w-36 h-36 rounded-full bg-white shadow-md flex items-center justify-center overflow-hidden mb-8"
+      style="display:none;">
     <img src="{{ url_for('static', filename='img/robot_active.png') }}" alt="ロボット" class="object-cover w-full h-full">
   </div>
 
-  <!-- スタートボタン（音声・センサー有効化） -->
+  <!-- G-Bowl エリア（スタート後に表示） -->
+  <div id="gBowlArea" class="mt-2 opacity-0 transition-opacity duration-300">
+      <!-- Gボール（ロボ画像） -->
+      <div id="gBall">
+        <img src="{{ url_for('static', filename='img/robot_active.png') }}" class="gBallImg">
+      </div>
+
+      <!-- G目盛リング（JSで生成する）-->
+      <div id="gRings"></div>
+  </div>
+
+  <!-- スタートボタン（最初のタッチ用） -->
   <button id="startBtn"
-    class="bg-primary-green text-white text-3xl font-bold rounded-full shadow-lg hover:bg-cyan-400 transition mb-4"
-    style="width: 200px; height: 200px;">
+    class="bg-primary-green text-white text-3xl font-bold rounded-full shadow-lg hover:bg-cyan-400 transition"
+    style="width: 220px; height: 220px;">
     スタート
   </button>
 
-  <!-- コントロールボタンエリア（初期は非表示） -->
-  <div id="controlButtons" style="display:none;" class="flex gap-6 mb-4">
+  <!-- コントロールボタンエリア（スタート後に表示） -->
+  <div id="controlButtons" style="display:none;" class="flex gap-6 mt-8 mb-4">
     <!-- 一時停止ボタン -->
     <button id="pauseBtn"
       class="bg-yellow-500 text-white text-xl font-bold rounded-xl shadow-lg hover:bg-yellow-400 transition"
@@ -88,51 +175,82 @@ tailwind.config = {
 
   <!-- スタートボタンの動作 -->
   <script>
-    document.addEventListener("DOMContentLoaded", () => {
-      const startBtn = document.getElementById("startBtn");
-      const pauseBtn = document.getElementById("pauseBtn");
-      const endBtn = document.getElementById("end-button");
-      
-      let hasStarted = false;
+  document.addEventListener("DOMContentLoaded", () => {
+    const startBtn = document.getElementById("startBtn");
+    const pauseBtn = document.getElementById("pauseBtn");
+    const endBtn   = document.getElementById("end-button");
 
-      startBtn.addEventListener("click", async () => {
-        if (hasStarted) return;
-        hasStarted = true;
+    let hasStarted = false;
 
-        const isiOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    startBtn.addEventListener("click", async () => {
+      if (hasStarted) return;
+      hasStarted = true;
 
-        if (isiOS) {
-          try {
-            if (!window.audioContext) {
-              window.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            }
-            if (window.audioContext.state === "suspended") {
-              await window.audioContext.resume();
-            }
+      const isiOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
 
-            // 無音再生でunlock
-            const buffer = window.audioContext.createBuffer(1, 1, 22050);
-            const source = window.audioContext.createBufferSource();
-            source.buffer = buffer;
-            source.connect(window.audioContext.destination);
-            source.start(0);
-
-            window.audioUnlocked = true;
-            localStorage.setItem("audioUnlocked", "true");
-
-          } catch(e) {
-            console.warn("iOS audio unlock failed:", e);
+      // 🔊 iOS オーディオアンロック
+      if (isiOS) {
+        try {
+          if (!window.audioContext) {
+            window.audioContext = new (window.AudioContext || window.webkitAudioContext)();
           }
-        }
+          if (window.audioContext.state === "suspended") {
+            await window.audioContext.resume();
+          }
 
-        // 🔥 UI切り替えのみ（内部処理は main.js に任せる）
-        startBtn.style.display = "none";
-        document.getElementById("controlButtons").style.display = "";
-        document.getElementById("recordingTitle").style.display = "";
-        document.getElementById("timerDisplay").style.display = "";
-        document.getElementById("speechBubble").style.display = "";
-      });
+          const buffer = window.audioContext.createBuffer(1, 1, 22050);
+          const source = window.audioContext.createBufferSource();
+          source.buffer = buffer;
+          source.connect(window.audioContext.destination);
+          source.start(0);
+
+          window.audioUnlocked = true;
+          localStorage.setItem("audioUnlocked", "true");
+        } catch(e) {
+          console.warn("iOS audio unlock failed:", e);
+        }
+      }
+
+      // 🍏 ルート設定モードかどうか判定
+      const isRouteMode = localStorage.getItem("priorityRouteRecordingActive") === "true";
+
+      // 🔥 UI 切り替え
+      startBtn.style.display = "none";
+
+      const ctrl = document.getElementById("controlButtons");
+      if (ctrl) ctrl.style.display = "flex";
+
+      const title = document.getElementById("recordingTitle");
+      if (title) title.style.display = "";
+
+      const timer = document.getElementById("timerDisplay");
+      if (timer) timer.style.display = "";
+
+      // === 🟢 通常運転 / ルート設定 モード別に表示 ===
+      const bowl = document.getElementById("gBowlArea");
+      const routeBubble = document.getElementById("routeModeBubble"); // ルート用の吹き出し
+      const routeRobot  = document.getElementById("routeModeRobot");  // ルート用ロボ
+
+      if (isRouteMode) {
+        console.log("🚗 Route mode: show robot + bubble on start");
+
+        // 🔵 Gボウルは非表示
+        if (bowl) bowl.style.display = "none";
+
+        // 🟢 ルート設定専用 UI を表示
+        if (routeBubble) routeBubble.style.display = "";
+        if (routeRobot)  routeRobot.style.display = "";
+      } else {
+        console.log("🚗 Normal mode: show G-bowl");
+
+        // 🔵 通常運転では Gボウル表示
+        if (bowl) bowl.classList.remove("opacity-0");
+
+        // 🔵 通常運転の吹き出し
+        if (bubbleStart) bubbleStart.style.display = "";
+      }
     });
+  });
   </script>
 
   <!-- 一時停止・再開機能のJS -->
@@ -602,6 +720,98 @@ tailwind.config = {
     })();
     === 音声認識自動開始機能を無効化（記録中の誤動作防止） === */
     console.log('🚫 音声認識自動開始機能は記録中無効化されています');
+  </script>
+  <!-- ボールを動かすスクリプト -->
+  <script>
+    // =====================================
+    //  Gリング生成（0.1G ～ 0.5G）※リサイズ対応
+    // =====================================
+    (function () {
+      const area          = document.getElementById("gBowlArea");
+      const ringContainer = document.getElementById("gRings");
+      const ball          = document.getElementById("gBall");
+
+      function rebuildRings() {
+        if (!area || !ringContainer || !ball) return;
+
+        const rect   = area.getBoundingClientRect();
+        const AREA   = rect.width;          // 正円なので width = height
+        const CENTER = AREA / 2;
+        const BALL_R = ball.getBoundingClientRect().width / 2 || 24;
+        const MAX_R  = CENTER - BALL_R;     // ボールの端がふちに届く位置を0.5Gに
+        const SCALE  = MAX_R / 0.5;         // 0.5G → MAX_R
+
+        // 他スクリプトから参照できるように保存
+        window._gBowlConfig = { AREA, CENTER, BALL_R, MAX_R, SCALE };
+
+        // 既存リング・ラベルクリア
+        ringContainer.innerHTML = "";
+
+        for (let g = 0.1; g <= 0.5 + 0.0001; g += 0.1) {
+          const radiusPx = g * SCALE;
+
+          const ring = document.createElement("div");
+          ring.className = "gRing";
+          ring.style.width  = (radiusPx * 2) + "px";
+          ring.style.height = (radiusPx * 2) + "px";
+          ring.style.left   = CENTER + "px";
+          ring.style.top    = CENTER + "px";
+
+          const label = document.createElement("div");
+          label.className   = "gLabel";
+          label.textContent = g.toFixed(1) + "G";
+          label.style.left  = CENTER + "px";
+          label.style.top   = (CENTER - radiusPx) + "px";
+
+          ringContainer.appendChild(ring);
+          ringContainer.appendChild(label);
+        }
+      }
+
+      window.addEventListener("load", rebuildRings);
+      window.addEventListener("resize", () => {
+        clearTimeout(window._gBowlResizeTimer);
+        window._gBowlResizeTimer = setTimeout(rebuildRings, 150);
+      });
+    })();
+
+    // =====================================
+    //  ボール移動（latestGX / latestGZ を使用）
+    // =====================================
+    (function(){
+      const ball = document.getElementById("gBall");
+
+      function updateGBall(){
+        const cfg = window._gBowlConfig;
+        if (!ball || !cfg) {
+          requestAnimationFrame(updateGBall);
+          return;
+        }
+
+        const { CENTER, MAX_R, SCALE } = cfg;
+
+        const gx = window.latestGX ?? 0;
+        const gz = window.latestGZ ?? 0;
+
+        let px = gx * SCALE;
+        let py = gz * SCALE;
+
+        // 0.5G を超えたら外周でクランプ
+        const dist = Math.sqrt(px * px + py * py);
+        if (dist > MAX_R){
+          const r = MAX_R / dist;
+          px *= r;
+          py *= r;
+        }
+
+        ball.style.left = (CENTER + px) + "px";
+        ball.style.top  = (CENTER + py) + "px";
+
+        requestAnimationFrame(updateGBall);
+      }
+
+      requestAnimationFrame(updateGBall);
+    })();
   </script>
   <script src="{{ url_for('static', filename='state.js') }}"></script>
   <script src="{{ url_for('static', filename='sensors.js') }}"></script>
