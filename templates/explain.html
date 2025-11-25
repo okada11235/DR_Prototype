@@ -44,9 +44,9 @@
       <h5 class="mb-2">ルート設定（初回のみ必ず行ってください）</h5>
       <p class="mb-0">下のタスクバーの「運転」から「ルート設定」を押してください。
                   <br>あとはスタートを押せば始まります。
-                  <br>走り終わると通った道がオレンジ色に可視化されます。
+                  <br>走り終わると通った道が青色で可視化されます。
       </p>
-      <img src="{{ url_for('static', filename='img/route_settings2.png') }}" alt="ルート設定" width="405" height="280" />
+      <img src="{{ url_for('static', filename='img/route_settings.png') }}" alt="ルート設定" width="310" height="210" />
     </section>
 
     <section id="features" class="section">
@@ -55,7 +55,7 @@
                   <br>タップする → 名前とレベルと時間帯を入力
                   <br>運転中に近づくと読み上げらます。
       </p>
-      <img src="{{ url_for('static', filename='img/map_pins.png') }}" alt="ルート設定" width="405" height="280" />
+      <img src="{{ url_for('static', filename='img/map_pins.png') }}" alt="ルート設定" width="310" height="210" />
     </section>
 
     <section id="pins-spec" class="section">
@@ -68,7 +68,7 @@
       <img src="{{ url_for('static', filename='img/point_settings2.png') }}" alt="ルート設定" width="180" height="200" />
         <br>
         <br>
-      <img src="{{ url_for('static', filename='img/point_settings.png') }}" alt="ルート設定" width="405" height="280" />
+      <img src="{{ url_for('static', filename='img/point_settings.png') }}" alt="ルート設定" width="310" height="210" />
     </section>
 
     <section id="audio-policy" class="section">
@@ -76,8 +76,12 @@
       <p class="mb-2">下のタスクバーの「運転」から使えます。
       <br>流れ：ルート選択 → スマホを固定 → スタートをタップ → 終了
       <br>＜スタート＞
-
-      <br>＜終了＞
+      <br>
+      <img src="{{ url_for('static', filename='img/drive_start.png') }}" alt="ルート設定" width="310" height="210" />
+      <br>
+      <br>＜終了後画面＞
+      <br>
+      <img src="{{ url_for('static', filename='img/drive_end.png') }}" alt="ルート設定" width="310" height="210" />
       </p>
     </section>
 
@@ -85,7 +89,7 @@
       <h5 class="mb-2">走行データを確認</h5>
       <p class="mb-0">下のタスクバーの「リザルト」から確認できます。
       </p>
-      <img src="{{ url_for('static', filename='img/result.png') }}" alt="ルート設定" width="405" height="280" />
+      <img src="{{ url_for('static', filename='img/result.png') }}" alt="ルート設定" width="310" height="210" />
     </section>
 
     <section id="howto" class="section">
