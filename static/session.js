@@ -104,19 +104,20 @@ function startGPSWatch() {
 }
 
 // === 記録開始 ===
-export function startSession() {
-    console.log('=== startSession function called ===');
+export async function startSession() {
+    console.log('=== startSession (async) called ===');
 
+    // 前回セッション情報をクリア
     localStorage.removeItem('activeSessionId');
     localStorage.removeItem('sessionStartTime');
     localStorage.removeItem('lastSessionData');
     window.sessionId = null;
 
+    // 二重起動ガード
     if (window.isSessionStarting) {
         alert('セッション開始処理中です。しばらくお待ちください。');
-        return;
+        return null;
     }
-
     window.isSessionStarting = true;
 
     const startButton = document.getElementById('start-button');
@@ -125,12 +126,18 @@ export function startSession() {
         startButton.textContent = '開始中...';
     }
 
-    const focusPoint = getFocusPoint();
-    localStorage.setItem('currentFocusPoint', focusPoint);
+    try {
+        // ① 音声アンロック（iOS用・失敗しても致命的ではない）
+        try {
+            unlockAudio();
+        } catch (e) {
+            console.warn('unlockAudio failed:', e);
+        }
 
-    unlockAudio();
-
-    requestMotionPermission(() => {
+        // ② モーション許可（iOS）
+        await new Promise((resolve) => {
+            requestMotionPermission(resolve);
+        });
         console.log('Motion permission granted');
 
         performInitialCalibration(async () => {
@@ -169,7 +176,39 @@ export function startSession() {
             window.isSessionStarting = false;
             window.location.href = '/recording/active';
         });
-    });
+        console.log('Calibration finished');
+
+        // ④ サーバーにセッション開始リクエスト
+        console.log('Sending session start request...');
+        const res = await fetch('/start', { method: 'POST' });
+        if (!res.ok) throw new Error('サーバーエラー');
+        const data = await res.json();
+
+        // ⑤ セッションID保持
+        window.sessionId = data.session_id;
+        window.startTime = Date.now();
+        localStorage.setItem('activeSessionId', window.sessionId);
+        localStorage.setItem('sessionStartTime', window.startTime.toString());
+
+        console.log('✅ session started, id =', window.sessionId);
+
+        // ここでは画面遷移もセンサー起動もしない
+        // => 呼び出し元（recording_start.html）でやる
+        return window.sessionId;
+
+    } catch (err) {
+        console.error('startSession error:', err);
+        alert('記録開始時にエラーが発生しました：' + err.message);
+        return null;
+
+    } finally {
+        // フラグとボタン状態を戻す
+        window.isSessionStarting = false;
+        if (startButton) {
+            startButton.disabled = false;
+            startButton.textContent = '運転開始';
+        }
+    }
 }
 
 // === 記録終了 ===
@@ -299,7 +338,11 @@ export async function flushLogsNow() {
     console.log("=== flushLogsNow COMPLETED ===");
 }
 
+<<<<<<< HEAD
 // === 褒めチェックは無効 ===
+=======
+// 褒めチェック開始
+>>>>>>> 08908fde963ef1d4a946b7b9af42c7f393a267af
 export function startPraiseCheck() {
     console.log("⏸️ 定期褒めチェックは無効化されています。");
 }

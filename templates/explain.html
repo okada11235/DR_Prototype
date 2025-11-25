@@ -29,236 +29,71 @@
   <main class="container">
     <!-- 目次 -->
     <section class="section">
-      <h5 class="mb-2">目次</h5>
+      <h5 class="mb-2">機能説明（上から順に試してください）</h5>
       <ol class="mb-0" style="padding-left:1rem;">
-        <li><a href="#about">アプリの概要</a></li>
-        <li><a href="#features">主な機能</a></li>
-        <li><a href="#howto">基本の使い方</a></li>
-        <li><a href="#voice">音声コマンド一覧</a></li>
-        <li><a href="#flow">記録の流れ</a></li>
-        <li><a href="#permissions">権限と設定（Android/iOS/PC）</a></li>
-        <li><a href="#data">データの保存先と扱い</a></li>
-        <li><a href="#trouble">トラブルシューティング</a></li>
-        <li><a href="#faq">よくある質問（FAQ）</a></li>
-        <li><a href="#env">対応環境</a></li>
-        <li><a href="#battery">バッテリー節約のコツ</a></li>
-        <li><a href="#safety">安全運転に関する注意</a></li>
-        <li><a href="#feedback">フィードバックについて</a></li>
+        <li><a href="#about">ルート設定（初回のみ）</a></li>
+        <li><a href="#features">マップピン設置</a></li>
+        <li><a href="#pins-spec">重点ポイントピン設置</a></li>
+        <li><a href="#audio-policy">運転の仕方</a></li>
+        <li><a href="#user-settings">走行データを確認</a></li>
+        <li><a href="#howto">トラブルシューティング</a></li>
       </ol>
     </section>
 
     <section id="about" class="section">
-      <h5 class="mb-2">アプリの概要</h5>
-      <p class="mb-0">スマートフォンの加速度センサーとGPSを使って運転データを記録し、音声操作（録音・ピン）や地図ピン機能でドライブをサポートするアプリです。走行後には「リザルト」から走行履歴・メモ・音声記録を振り返れます。</p>
+      <h5 class="mb-2">ルート設定（初回のみ必ず行ってください）</h5>
+      <p class="mb-0">下のタスクバーの「運転」から「ルート設定」を押してください。
+                  <br>あとはスタートを押せば始まります。
+                  <br>走り終わると通った道が青色で可視化されます。
+      </p>
+      <img src="{{ url_for('static', filename='img/route_settings.png') }}" alt="ルート設定" width="310" height="210" />
     </section>
 
     <section id="features" class="section">
-      <h5 class="mb-2">主な機能</h5>
-      <ul class="mb-0">
-        <li>運転記録（GPS/加速度）と地図表示</li>
-        <li>音声コマンド「録音」「ピン」によるハンズフリー操作</li>
-        <li>音声メモ（5秒録音）と文字起こし（Whisper）</li>
-        <li>走行中のリアルタイム指摘・褒めのフィードバック（音声/画面表示）</li>
-        <li>走行後の運転フィードバック生成とリザルトへの反映</li>
-          <li>ピンの管理（一覧、追加・編集・削除）＋ 優先度(1/2/3)と読み上げ時間帯</li>
-          <li>ユーザー別レベル読み上げ設定（レベル1/2/3のON/OFFを切替）</li>
-        <li>走行後の結果閲覧（イベント、音声、ルートなど）</li>
-      </ul>
+      <h5 class="mb-2">マップピン</h5>
+      <p class="mb-0">下のタスクバーの「マップ」から使えます。
+                  <br>タップする → 名前とレベルと時間帯を入力
+                  <br>運転中に近づくと読み上げらます。
+      </p>
+      <img src="{{ url_for('static', filename='img/map_pins.png') }}" alt="ルート設定" width="310" height="210" />
     </section>
 
     <section id="pins-spec" class="section">
-      <h5 class="mb-2">ピン読み上げのルール</h5>
-      <ul class="mb-2">
-        <li><strong>色とレベル</strong>: 1=オレンジ, 2=紫, 3=赤（色で重要度を判別しやすくしています）</li>
-        <li><strong>読み上げタイミング</strong>: ピンの近く（約30m以内）に近づいた時、もっとも近い1件だけを読み上げます</li>
-        <li><strong>ラベルの優先</strong>: ラベルが付いたピンを優先的に読み上げます。未設定でも自然な文言で案内します</li>
-        <li><strong>時間帯の指定</strong>: ピンごとに「何時から何時まで読み上げるか」を設定できます（未設定なら終日）</li>
-        <li><strong>自分の設定を反映</strong>: レベル1/2/3ごとに読み上げのON/OFFを切り替えでき、無効にしたレベルのピンは読み上げません</li>
-      </ul>
-      <div class="small text-muted">ヒント: よく使う注意ポイントには短いラベルを付けると、走行時の案内がわかりやすくなります。</div>
+      <h5 class="mb-2">重点ポイントピン設置</h5>
+      <p class="mb-0">下のタスクバーの「運転」から使えます。
+                  <br>画面下にある重点ポイントマップから気を付けたい場所をタップ
+                  <br>ピンの名前と何を意識したいかを選択します。
+                  <br>ピンの上を通るとそのピンの場所専用のフィードバックが生成
+      </p>
+      <img src="{{ url_for('static', filename='img/point_settings2.png') }}" alt="ルート設定" width="180" height="200" />
+        <br>
+        <br>
+      <img src="{{ url_for('static', filename='img/point_settings.png') }}" alt="ルート設定" width="310" height="210" />
     </section>
 
     <section id="audio-policy" class="section">
-      <h5 class="mb-2">音声の挙動（コーチングが優先）</h5>
-      <ul class="mb-2">
-        <li><strong>コーチング（褒め・指摘）が最優先</strong>: コーチング音声が流れ始めたら、その時点でピンの読み上げは自動で止まります。</li>
-        <li><strong>同時再生を防止</strong>: コーチングの再生中は新しいピンの読み上げは行いません。</li>
-        <li><strong>iOSでも同様</strong>: iOS端末でも同じ挙動になるように最適化しています。</li>
-      </ul>
+      <h5 class="mb-2">運転の仕方</h5>
+      <p class="mb-2">下のタスクバーの「運転」から使えます。
+      <br>流れ：ルート選択 → スマホを固定 → スタートをタップ → 終了
+      <br>＜スタート＞
+      <br>
+      <img src="{{ url_for('static', filename='img/drive_start.png') }}" alt="ルート設定" width="310" height="210" />
+      <br>
+      <br>＜終了後画面＞
+      <br>
+      <img src="{{ url_for('static', filename='img/drive_end.png') }}" alt="ルート設定" width="310" height="210" />
+      </p>
     </section>
 
     <section id="user-settings" class="section">
-      <h5 class="mb-2">読み上げのカスタマイズ</h5>
-      <p class="mb-2">マップ画面の右上にある「読み上げ設定」から、レベル1/2/3ごとの読み上げのON/OFFを切り替えできます。設定は自動で保存され、運転中の読み上げにすぐ反映されます。</p>
-      <ul class="mb-2">
-        <li>通知が多いと感じる場合は、低いレベルをOFFにするなど調整してください。</li>
-        <li>重要な場所は高いレベル（赤）に設定すると気づきやすくなります。</li>
-      </ul>
+      <h5 class="mb-2">走行データを確認</h5>
+      <p class="mb-0">下のタスクバーの「リザルト」から確認できます。
+      </p>
+      <img src="{{ url_for('static', filename='img/result.png') }}" alt="ルート設定" width="310" height="210" />
     </section>
 
     <section id="howto" class="section">
-      <h5 class="mb-2">基本の使い方</h5>
-      <ol class="mb-2">
-        <li>ホームの下部ナビ「運転」から記録を開始します。</li>
-        <li>運転中は「録音」「ピン」と発話すると、5秒の録音や位置ピンの追加ができます。</li>
-        <li>終了後は「リザルト」で走行履歴や記録を確認します。</li>
-      </ol>
-      <div class="small text-muted">ヒント: 初回はマイク・位置情報などの権限許可が必要です。下の「権限と設定」をご確認ください。</div>
-    </section>
-
-    <section id="voice" class="section">
-      <h5 class="mb-2">音声コマンド一覧</h5>
-      <ul class="mb-2">
-        <li><strong>録音 / ろくおん</strong>: 5秒間の録音が開始され、終了後に自動で保存・文字起こしされます。</li>
-        <li><strong>ピン / ぴん</strong>: 現在地にピンを追加します。後からラベル編集が可能です。</li>
-      </ul>
-      <div class="small text-muted">
-        認識が不安定な場合は、はっきりと普通の声量で話しかけてください。周囲が騒がしい場合は窓を閉めるなどの工夫が有効です。
-      </div>
-    </section>
-
-    <section id="flow" class="section">
-      <h5 class="mb-2">記録の流れ</h5>
-      <ol class="mb-0">
-        <li>「運転」から記録開始。位置と加速度の取得をバックグラウンドで継続します。</li>
-        <li>音声コマンド「録音」「ピン」でハンズフリー操作。</li>
-        <li>走行中、運転状況に応じてリアルタイムに指摘や褒めのフィードバックが提示されます（安全運転を促す軽微な音声/UI）。</li>
-        <li>録音はクラウドに保存され、自動で文字起こしが行われます。</li>
-        <li>走行終了後、運転の振り返りフィードバックが生成され、リザルトに反映されます。記録を確認し、必要に応じてピンやメモを整理します。</li>
-      </ol>
-    </section>
-
-    <section id="map-ux" class="section">
-      <h5 class="mb-2">マップ編集のポイント</h5>
-      <ul class="mb-2">
-        <li>ピンの色: 1=オレンジ, 2=紫, 3=赤（右上に凡例表示）</li>
-        <li>読み上げ時間帯: ピンのInfoWindowで <code>開始〜終了</code> を設定（空なら終日）</li>
-        <li>現在地へ: 右上の「現在地へ 📍」ボタン（初期表示はピン読み込み後に現在地へ移動）</li>
-        <li>マップクリック: 新規ピンの追加（未入力ピンは青点で表示）</li>
-      </ul>
-    </section>
-
-    <section id="feedback" class="section">
-      <h5 class="mb-2">フィードバックについて</h5>
-      <p class="mb-2">
-        本アプリでは、運転中と運転後の二段構えでフィードバックを提供します。
-      </p>
-      <ul class="mb-2">
-        <li><strong>運転中のリアルタイム指摘・褒め</strong>: 急加速・急ブレーキ・急ハンドルなどの検知や速度変化に応じて、軽い音声/表示で注意喚起や良い運転への称賛を行います（過度な通知を避けるよう調整）。</li>
-        <li><strong>運転後のフィードバック生成</strong>: 記録した走行データを基に、重点ポイントの整理や改善アドバイスを自動で生成し、リザルトページに反映します。</li>
-      </ul>
-      <div class="small text-muted">
-        端末やブラウザの性能・権限設定により通知挙動が異なる場合があります。必要に応じて通知の音量や頻度を調整してください。
-      </div>
-    </section>
-
-    <section id="permissions" class="section">
-      <h5 class="mb-2">権限と設定（Android/iOS/PC）</h5>
-      <ul>
-        <li><strong>マイク</strong>: 音声操作・録音のために使用します（ブラウザの許可が必要）。</li>
-        <li><strong>位置情報</strong>: ルート記録・ピン追加のために使用します。</li>
-        <li><strong>モーション/センサー</strong>: 加速度計測のために使用します（iOSは「モーションと向き」の許可ダイアログが表示されます）。</li>
-      </ul>
-      <div class="small">
-        <strong>iOSの注意</strong>: Safariで初回に「モーションと向き」の許可が必要です。設定→Safari→モーションと向きを許可、もしくはWebページのダイアログを許可してください。
-      </div>
-      <div class="small">
-        <strong>音声アンロック（iOS）</strong>: 初回タップで音声を有効化する案内が表示されます。バナーの指示に従って画面をタップしてください。
-      </div>
-      <div class="small">
-        <strong>HTTPS必須</strong>: センサー・位置・マイクは原則HTTPS環境でのみ動作します。アプリはHTTPSでご利用ください。
-      </div>
-    </section>
-
-    <section id="data" class="section">
-      <h5 class="mb-2">データの保存先と扱い</h5>
-      <ul class="mb-2">
-        <li>録音音声: クラウドに安全に保存されます。</li>
-        <li>文字起こし: アップロード後に自動処理され、リザルトから確認できます。</li>
-        <li>走行ログ: 走行ルートや傾向の振り返りにのみ使用します。</li>
-        <li>ピン: 地図上で追加・編集・削除できます。読み上げ設定はいつでも変更可能です。</li>
-        <li>個人設定: 読み上げの好みはアカウントごとに保存されます。</li>
-      </ul>
-      <div class="small text-muted">取り扱いはプロジェクトのプライバシーポリシーに従います。共有が必要な場合はユーザーの同意を前提とします。</div>
-    </section>
-
-    <section id="trouble" class="section">
       <h5 class="mb-2">トラブルシューティング</h5>
-      <ul class="mb-2">
-        <li><strong>音声が反応しない</strong>:
-          <ul>
-            <li>ブラウザのマイク許可を確認（サイト設定で許可に）。</li>
-            <li>ブラウザを最新化、タブを前面表示にして再試行。</li>
-            <li>端末の省電力・フォーカスモードを無効化。</li>
-          </ul>
-        </li>
-        <li><strong>位置が記録されない</strong>:
-          <ul>
-            <li>位置情報の許可・GPS設定を確認。屋外での再試行。</li>
-            <li>ブラウザの位置情報ブロックを解除。</li>
-          </ul>
-        </li>
-        <li><strong>iOSでセンサーが動かない</strong>:
-          <ul>
-            <li>Safariの「モーションと向き」を許可（設定→Safari）。</li>
-            <li>ページ表示後にユーザー操作（タップ）で有効化が必要な場合があります。</li>
-          </ul>
-        </li>
-        <li><strong>録音の保存/文字起こしが失敗する</strong>:
-          <ul>
-            <li>通信状態を確認。Wi‑Fiやモバイルデータの切り替え。</li>
-            <li>ファイル形式は <code>webm</code> を優先しています。ブラウザ互換性をご確認ください。</li>
-          </ul>
-        </li>
-      </ul>
-      <div class="small text-muted">問題が解決しない場合は、日時・端末・ブラウザ・発生手順を記載の上、開発担当までお知らせください。</div>
+      <p class="mb-0">考え中
+      </p>
     </section>
-
-    <section id="faq" class="section">
-      <h5 class="mb-2">よくある質問（FAQ）</h5>
-      <div class="mb-2"><strong>Q.</strong> どのくらいの期間データは保存されますか？<br><strong>A.</strong> プロジェクトの運用ポリシーに従います。必要に応じて管理者がアナウンスします。</div>
-      <div class="mb-2"><strong>Q.</strong> 録音の文字起こしはいつ反映されますか？<br><strong>A.</strong> 通常はアップロード後に数秒〜数十秒で反映されます。通信やサーバ負荷で遅延する場合があります。</div>
-      <div class="mb-0"><strong>Q.</strong> 共有はできますか？<br><strong>A.</strong> 現状は個人利用を想定しています。共有が必要な場合はプロジェクト方針に沿って対応します。</div>
-    </section>
-
-    <section id="env" class="section">
-      <h5 class="mb-2">対応環境</h5>
-      <ul class="mb-0">
-        <li>Android: Chrome最新版推奨</li>
-        <li>iOS: Safari最新版（モーション許可が必要）</li>
-        <li>PC: Chrome / Edge 最新版</li>
-      </ul>
-    </section>
-
-    <section id="battery" class="section">
-      <h5 class="mb-2">バッテリー節約のコツ</h5>
-      <ul class="mb-0">
-        <li>画面の明るさを下げる、不要なアプリを閉じる。</li>
-        <li>記録中は不要な通信を控える（音楽ストリーミング等）。</li>
-        <li>可能なら車載充電器を使用してください。</li>
-      </ul>
-    </section>
-
-    <section id="safety" class="section">
-      <h5 class="mb-2">安全運転に関する注意</h5>
-      <p class="mb-0">操作や画面注視は停車時に行い、走行中は音声操作をご利用ください。道路交通法および各国の法令に従い、安全運転を最優先してください。</p>
-    </section>
-
-    
-  </main>
-
-  <nav class="navbar navbar-expand custom-nav-bar fixed-bottom">
-    <div class="container-fluid justify-content-center">
-      <ul class="navbar-nav w-100 text-center">
-        <li class="nav-item flex-fill custom-nav-item"><a class="nav-link custom-nav-link" href="{{ url_for('views.home') }}">ホーム</a></li>
-        <li class="nav-item flex-fill custom-nav-item"><a class="nav-link custom-nav-link" href="{{ url_for('views.recording_start') }}">運転</a></li>
-        <li class="nav-item flex-fill custom-nav-item"><a class="nav-link custom-nav-link" href="{{ url_for('sessions.results_page') }}">リザルト</a></li>
-        <li class="nav-item flex-fill custom-nav-item"><a class="nav-link custom-nav-link" href="{{ url_for('views.map_editor') }}">マップ</a></li>
-        <li class="nav-item flex-fill custom-nav-item border-end-0"><a class="nav-link custom-nav-link active" href="{{ url_for('views.explain') }}">説明</a></li>
-      </ul>
-    </div>
-  </nav>
-
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-</body>
-</html>
