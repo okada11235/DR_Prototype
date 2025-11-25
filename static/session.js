@@ -338,11 +338,6 @@ export async function flushLogsNow() {
     console.log("=== flushLogsNow COMPLETED ===");
 }
 
-<<<<<<< HEAD
-// === 褒めチェックは無効 ===
-=======
-// 褒めチェック開始
->>>>>>> 08908fde963ef1d4a946b7b9af42c7f393a267af
 export function startPraiseCheck() {
     console.log("⏸️ 定期褒めチェックは無効化されています。");
 }

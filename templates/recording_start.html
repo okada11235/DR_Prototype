@@ -233,7 +233,7 @@
   </script>
   <!-- ✅ ルート記録（優先ルート用、助言なし） -->
   <script src="{{ url_for('static', filename='route_recorder.js') }}"></script>
-  <script type="module" defer src="{{ url_for('static', filename='main.js') }}?v=20251121"></script>
+  <script type="module" src="{{ url_for('static', filename='main.js') }}"></script>
   <!-- ✅ priority_map.js を普通のスクリプトとして読み込む -->
   <script src="{{ url_for('static', filename='priority_map.js') }}"></script>
 
@@ -241,34 +241,29 @@
   document.addEventListener('DOMContentLoaded', () => {
     const setupBtn = document.getElementById('route-setup-button');
 
-      // === ルート設定ボタン（修正版） ===
-    setupBtn.addEventListener("click", async () => {
+    // === ルート設定ボタン（修正版） ===
+  setupBtn.addEventListener("click", async () => {
+    try {
+      // ★ 自動でルート名を生成（後から変更できる）
+      const autoName = "新しいルート " + new Date().toLocaleString();
 
-      // ★★★ ここに確認メッセージ追加！ ★★★
-      const ok = confirm("新しいルートの記録を開始しますか？\n（ルート名は後で変更できます）");
-      if (!ok) return;
+      // ルートモード ON
+      localStorage.setItem("priorityRouteRecordingActive", "true");
 
-      try {
-        // ★ 自動でルート名を生成（後から変更できる）
-        const autoName = "新しいルート " + new Date().toLocaleString();
+      // ★ 名前入力なしで開始
+      await window.priorityRouteAPI.start(autoName);
 
-        // ルートモード ON
-        localStorage.setItem("priorityRouteRecordingActive", "true");
+      // 記録中ページへ遷移
+      window.location.assign("/recording/active");
 
-        // ★ 名前入力なしで開始
-        await window.priorityRouteAPI.start(autoName);
+    } catch (e) {
+      console.error("ルート設定に失敗:", e);
+      alert("ルート設定に失敗しました");
 
-        // 記録中ページへ遷移
-        window.location.assign("/recording/active");
-
-      } catch (e) {
-        console.error("ルート設定に失敗:", e);
-        alert("ルート設定に失敗しました");
-
-        // ページ再読み込み時、ルート未選択ならピンを消す
-        if (!localStorage.getItem("CURRENT_ROUTE_ID")) {
-            if (window.clearPins) clearPins();
-        }
+      // ページ再読み込み時、ルート未選択ならピンを消す
+if (!localStorage.getItem("CURRENT_ROUTE_ID")) {
+    if (window.clearPins) clearPins();
+}
 
     }
   });
@@ -314,12 +309,12 @@
   </script>
 
  <script>
-  document.addEventListener("DOMContentLoaded", async () => {
-    const userId = window.FLASK_USER_ID || localStorage.getItem("CURRENT_USER_ID");
-    const selectEl = document.getElementById("saved-routes-select");
-    const showBtn = document.getElementById("show-route-btn");
-    const delBtn = document.getElementById("delete-route-btn");
-    const startBtn = document.getElementById("start-button");
+document.addEventListener("DOMContentLoaded", async () => {
+  const userId = window.FLASK_USER_ID || localStorage.getItem("CURRENT_USER_ID");
+  const selectEl = document.getElementById("saved-routes-select");
+  const showBtn = document.getElementById("show-route-btn");
+  const delBtn = document.getElementById("delete-route-btn");
+  const startBtn = document.getElementById("start-button");
 
   if (!window.firebase || !firebase.firestore) {
     console.error("Firebase が初期化されていません。");
@@ -417,236 +412,103 @@
       startBtn.style.opacity = "0.6";
       return;
     }
-    const db = firebase.firestore();
 
-    if (typeof window.resetState === "function") {
-        console.log("🧹 State reset");
-        window.resetState();
-    }
-
-    // === ルート一覧ロード ===
-    async function loadSavedRoutes() {
-      selectEl.innerHTML = `<option value="">読み込み中...</option>`;
-      const qs = await db.collection("priority_routes")
-        .where("user_id", "==", userId)
-        .orderBy("created_at", "desc")
-        .get();
-
-      if (qs.empty) {
-        selectEl.innerHTML = `<option value="">保存されたルートはありません</option>`;
-        startBtn.disabled = true;
-        startBtn.style.opacity = "0.6";
-        return;
-      }
-
-      selectEl.innerHTML = `<option value="">-- ルートを選択してください --</option>`;
-      qs.forEach(doc => {
-        const d = doc.data();
-        const opt = document.createElement("option");
-        opt.value = doc.id;
-        opt.textContent = d.name || `ルート (${new Date(d.created_at?.toDate?.() || Date.now()).toLocaleString()})`;
-        selectEl.appendChild(opt);
-      });
-
-          // ★ 前回使ったルートがあれば自動選択する
-      const lastRouteId = localStorage.getItem("LAST_USED_ROUTE_ID");
-
-      if (lastRouteId && selectEl.querySelector(`option[value="${lastRouteId}"]`)) {
-
-          // セレクトボックスに反映
-          selectEl.value = lastRouteId;
-
-          // STARTボタン有効化
-          startBtn.disabled = false;
-          startBtn.style.opacity = "1";
-
-          // マップ描画用にも保存
-          localStorage.setItem("CURRENT_ROUTE_ID", lastRouteId);
-      }
-
-    }
-    
-
-    await loadSavedRoutes();
-    
-
-    // === 表示ボタン ===
-    showBtn.addEventListener("click", async () => {
-        const id = selectEl.value;
-        if (!id) return alert("ルートを選択してください。");
-        if (!window._priorityMapInstance) {
-          return alert("マップがまだ読み込まれていません。");
-        }
-
-        // 🔥 ピンとルートをまず消す
-        if (window.clearPins) clearPins();
-        if (window.clearDisplayedRoutes) clearDisplayedRoutes();
-
-        try {
-          // ルート描画
-          await drawRouteById(window._priorityMapInstance, id);
-          
-          // 🔥 ピン表示（表示ボタンを押したときにだけ）
-          await loadPins(window._priorityMapInstance);
-
-          alert("✅ ルートとピンをマップに描画しました。");
-        } catch (e) {
-          console.error(e);
-          alert("ルートの描画に失敗しました。");
-        }
+    selectEl.innerHTML = `<option value="">-- ルートを選択してください --</option>`;
+    qs.forEach(doc => {
+      const d = doc.data();
+      const opt = document.createElement("option");
+      opt.value = doc.id;
+      opt.textContent = d.name || `ルート (${new Date(d.created_at?.toDate?.() || Date.now()).toLocaleString()})`;
+      selectEl.appendChild(opt);
     });
 
+        // ★ 前回使ったルートがあれば自動選択する
+    const lastRouteId = localStorage.getItem("LAST_USED_ROUTE_ID");
 
+    if (lastRouteId && selectEl.querySelector(`option[value="${lastRouteId}"]`)) {
 
-    // === 削除ボタン ===
-    delBtn.addEventListener("click", async () => {
-      const id = selectEl.value;
-      if (!id) return alert("削除するルートを選択してください。");
+        // セレクトボックスに反映
+        selectEl.value = lastRouteId;
 
-      const ok = confirm("このルートを削除しますか？");
-      if (!ok) return;
-
-      try {
-        // 🔥 1. このルートに紐づくピンを全削除
-        const pinsSnap = await db.collection("priority_pins")
-          .where("route_id", "==", id)
-          .get();
-
-        const batch = db.batch();
-        pinsSnap.forEach(doc => batch.delete(doc.ref));
-        await batch.commit();
-
-        console.log(`🗑 ルート削除に伴い ${pinsSnap.size} 個のピンを削除しました`);
-
-        // 🔥 2. ルート本体を削除
-        await db.collection("priority_routes").doc(id).delete();
-
-        alert("🗑️ ルートと関連ピンを削除しました。");
-
-        // 🔥 3. UI 更新
-        await loadSavedRoutes();
-
-        // 🔥 4. 選択ルートの記憶を解除
-        localStorage.removeItem("CURRENT_ROUTE_ID");
-
-      } catch (e) {
-        console.error(e);
-        alert("削除に失敗しました。");
-      }
-    });
-
-    // === 名前変更ボタン ===
-    const renameBtn = document.getElementById("rename-route-btn");
-
-    renameBtn.addEventListener("click", async () => {
-      const routeId = selectEl.value;
-      if (!routeId) return alert("名前を変更するルートを選択してください。");
-
-      const newName = prompt("新しいルート名を入力してください：");
-      if (!newName || newName.trim() === "") return;
-
-      try {
-        await db.collection("priority_routes").doc(routeId).update({
-          name: newName.trim()
-        });
-
-        alert("ルート名を変更しました。");
-        await loadSavedRoutes(); // ⭐ リストを再読み込み
-
-      } catch (e) {
-        console.error(e);
-        alert("名前変更に失敗しました。");
-      }
-    });
-
-
-    // === ルート選択時 ===
-    selectEl.addEventListener("change", () => {
-      const id = selectEl.value;
-
-      if (id) {
-        // ルート選択中
-        localStorage.setItem("CURRENT_ROUTE_ID", id);
+        // STARTボタン有効化
         startBtn.disabled = false;
         startBtn.style.opacity = "1";
 
-        // ❌ ピンはまだ表示しない
-        // （loadPins を呼ばない）
-        
-        // ルート線とピンを全て消す
-        if (window.clearDisplayedRoutes) clearDisplayedRoutes();
-        if (window.clearPins) clearPins();
-
-    } else {
-        // ルート未選択
-        localStorage.removeItem("CURRENT_ROUTE_ID");
-        startBtn.disabled = true;
-        startBtn.style.opacity = "0.6";
-
-        // 🔥 ピン削除
-        if (window.clearPins) clearPins();
-
-        // 🔥 ルート線削除
-        if (window.clearDisplayedRoutes) clearDisplayedRoutes();
+        // マップ描画用にも保存
+        localStorage.setItem("CURRENT_ROUTE_ID", lastRouteId);
     }
-    });
 
-    startBtn.addEventListener("click", async () => {
-      const routeId = localStorage.getItem("CURRENT_ROUTE_ID");
-      if (!routeId) return alert("ルートを選択してください");
+  }
 
-      // ★★★ 確認メッセージを追加 ★★★
-      const ok = confirm("記録を開始してよろしいですか？\n（走行ルートの記録が開始されます）");
-      if (!ok) return;
 
-      // 二重押し防止（iOSは特に必要）
-      startBtn.disabled = true;
+  await loadSavedRoutes();
 
-      localStorage.setItem("LAST_USED_ROUTE_ID", routeId);
 
-      // --- 1️⃣ セッション開始（絶対に成功するまで待つ） ---
-      let sessionId = null;
+  // === 表示ボタン ===
+showBtn.addEventListener("click", async () => {
+    const id = selectEl.value;
+    if (!id) return alert("ルートを選択してください。");
+    if (!window._priorityMapInstance) {
+      return alert("マップがまだ読み込まれていません。");
+    }
 
-      try {
-        sessionId = await window.startSession();
-      } catch (e) {
-        console.error("startSession failed", e);
-        alert("セッション開始に失敗しました。もう一度お試しください。");
-        startBtn.disabled = false;
-        return;
-      }
+    // 🔥 ピンとルートをまず消す
+    if (window.clearPins) clearPins();
+    if (window.clearDisplayedRoutes) clearDisplayedRoutes();
 
-      // ここが重要：undefined なら進ませない
-      if (!sessionId || typeof sessionId !== "string") {
-        console.error("❌ sessionId is invalid:", sessionId);
-        alert("セッションIDの取得に失敗しました。");
-        startBtn.disabled = false;
-        return;
-      }
+    try {
+      // ルート描画
+      await drawRouteById(window._priorityMapInstance, id);
 
-      console.log("session started:", sessionId);
+      // 🔥 ピン表示（表示ボタンを押したときにだけ）
+      await loadPins(window._priorityMapInstance);
 
-      // --- 2️⃣ ルートを紐づけ（例外処理つき） ---
-      try {
-        const r = await fetch(`/api/set_route_to_session/${sessionId}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ route_id: routeId })
-        });
-        console.log("set_route status:", r.status);
-      } catch (e) {
-        console.error("Route linking failed:", e);
-        alert("ルート設定に失敗しました。");
-        startBtn.disabled = false;
-        return;
-      }
+      alert("✅ ルートとピンをマップに描画しました。");
+    } catch (e) {
+      console.error(e);
+      alert("ルートの描画に失敗しました。");
+    }
+});
 
-      // --- 3️⃣ 記録画面へ ---
-      window.location.assign("/recording/active");
-    });
+
+
+  // === 削除ボタン ===
+  delBtn.addEventListener("click", async () => {
+    const id = selectEl.value;
+    if (!id) return alert("削除するルートを選択してください。");
+
+    const ok = confirm("このルートを削除しますか？");
+    if (!ok) return;
+
+    try {
+      // 🔥 1. このルートに紐づくピンを全削除
+      const pinsSnap = await db.collection("priority_pins")
+        .where("route_id", "==", id)
+        .get();
+
+      const batch = db.batch();
+      pinsSnap.forEach(doc => batch.delete(doc.ref));
+      await batch.commit();
+
+      console.log(`🗑 ルート削除に伴い ${pinsSnap.size} 個のピンを削除しました`);
+
+      // 🔥 2. ルート本体を削除
+      await db.collection("priority_routes").doc(id).delete();
+
+      alert("🗑️ ルートと関連ピンを削除しました。");
+
+      // 🔥 3. UI 更新
+      await loadSavedRoutes();
+
+      // 🔥 4. 選択ルートの記憶を解除
+      localStorage.removeItem("CURRENT_ROUTE_ID");
+
+    } catch (e) {
+      console.error(e);
+      alert("削除に失敗しました。");
+    }
   });
 
-<<<<<<< HEAD
   // === 名前変更ボタン ===
 const renameBtn = document.getElementById("rename-route-btn");
 
@@ -684,7 +546,7 @@ selectEl.addEventListener("change", () => {
 
     // ❌ ピンはまだ表示しない
     // （loadPins を呼ばない）
-    
+
     // ルート線とピンを全て消す
     if (window.clearDisplayedRoutes) clearDisplayedRoutes();
     if (window.clearPins) clearPins();
@@ -858,9 +720,6 @@ selectEl.addEventListener("change", () => {
 });
 
 </script>
-=======
-  </script>
->>>>>>> 08908fde963ef1d4a946b7b9af42c7f393a267af
   <script>
     window.FLASK_USER_ID = "{{ current_user.id }}";
     localStorage.setItem("CURRENT_USER_ID", "{{ current_user.id }}");
