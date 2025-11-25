@@ -67,51 +67,61 @@ async function initMap() {
         }
         const isOwner = pin.user_id === CURRENT_USER_ID; // ← 現在ログイン中ユーザーID（下で定義）
 
-        let infoContent = `
-          <div style="min-width:220px;">
-            <label>メモ:</label><br>
-            <input type="text" id="memo_${pin.id}" 
-                  value="${pin.label || ''}" 
-                  placeholder="内容を入力" 
-                  style="width:150px; margin-bottom:4px;" 
-                  ${isOwner ? "" : "disabled"}><br>
+        let infoContent = `
+          <div style="min-width:220px; font-size:13px; line-height:1.5;">
 
-            <label style="font-size:13px;">
-              <input type="checkbox" id="speak_${pin.id}" 
-                ${pin.speak_enabled ? "checked" : ""} 
-                ${isOwner ? "" : "disabled"}>
-              読み上げる
-            </label><br>
+              <div style="display:flex; align-items:center; margin-bottom:8px;">
+                  <label for="memo_${pin.id}" style="width:70px;">メモ:</label>
+                  <input type="text" id="memo_${pin.id}" 
+                      value="${pin.label || ''}" 
+                      placeholder="内容を入力" 
+                      style="flex:1; padding:4px 6px; border:1px solid #ccc; border-radius:3px;" 
+                      ${isOwner ? "" : "disabled"}>
+              </div>
 
-            <label>注意レベル:</label><br>
-            <select id="priority_${pin.id}" style="width:160px; margin-bottom:4px;" ${isOwner ? '' : 'disabled'}>
-              <option value="1" ${priorityLevel===1?'selected':''}>1 (オレンジ)</option>
-              <option value="2" ${priorityLevel===2?'selected':''}>2 (紫)</option>
-              <option value="3" ${priorityLevel===3?'selected':''}>3 (赤)</option>
-            </select><br>
+              <div style="display:flex; align-items:center; margin-bottom:8px;">
+                  <label for="speak_${pin.id}" style="width:70px;">読み上げ:</label>
+                  <input type="checkbox" id="speak_${pin.id}" 
+                      ${pin.speak_enabled ? "checked" : ""} 
+                      ${isOwner ? "" : "disabled"}>
+              </div>
 
-            <label>読み上げ時間帯(任意):</label><br>
-            <input type="time" id="tw_start_${pin.id}" value="${firstWin?.start || ''}" ${isOwner ? '' : 'disabled'}>
-            〜
-            <input type="time" id="tw_end_${pin.id}" value="${firstWin?.end || ''}" ${isOwner ? '' : 'disabled'}><br>
-        `;
+              <div style="display:flex; align-items:center; margin-bottom:8px;">
+                  <label for="priority_${pin.id}" style="width:70px;">レベル:</label>
+                  <select id="priority_${pin.id}" style="flex:1; padding:3px; border:1px solid #ccc; border-radius:3px;" ${isOwner ? '' : 'disabled'}>
+                      <option value="1" ${priorityLevel===1?'selected':''}>1 (オレンジ)</option>
+                      <option value="2" ${priorityLevel===2?'selected':''}>2 (紫)</option>
+                      <option value="3" ${priorityLevel===3?'selected':''}>3 (赤)</option>
+                  </select>
+              </div>
 
-        if (isOwner) {
-          infoContent += `
-            <button onclick="updatePinLabel('${pin.id}')">💾 保存</button>
-            <button onclick="deletePin('${pin.id}')"
-                    style="margin-left:5px; background-color:#f55; color:#fff; border:none; padding:3px 8px; border-radius:4px;">
-                    🗑 削除
-            </button>
+              <div style="display:flex; align-items:center; margin-bottom:12px;">
+                  <label style="width:70px;">時間帯:</label>
+                  <input type="time" id="tw_start_${pin.id}" value="${firstWin?.start || ''}" style="width:80px; padding:3px; border:1px solid #ccc; border-radius:3px;" ${isOwner ? '' : 'disabled'}>
+                  <span style="padding:0 4px;">〜</span>
+                  <input type="time" id="tw_end_${pin.id}" value="${firstWin?.end || ''}" style="width:80px; padding:3px; border:1px solid #ccc; border-radius:3px;" ${isOwner ? '' : 'disabled'}>
+              </div>
           `;
-        }
 
-        infoContent += `
-            <div style="font-size:12px; color:#666; margin-top:6px;">
-              作成者: ${pin.user_name || "不明"}
-            </div>
-          </div>
-        `;
+          if (isOwner) {
+              infoContent += `
+                  <div style="text-align:right; margin-top:10px;">
+                      <button onclick="updatePinLabel('${pin.id}')"
+                          style="background-color:#5c6bc0; color:#fff; border:none; padding:5px 10px; border-radius:4px; margin-right:5px; cursor:pointer;">保存</button>
+                      <button onclick="deletePin('${pin.id}')"
+                          style="background-color:#f55; color:#fff; border:none; padding:5px 10px; border-radius:4px; cursor:pointer;">削除</button>
+                  </div>
+              `;
+          }
+
+          // 作成者表示は最後に統合し、最後の<div>で閉じる
+          infoContent += `
+              <div style="text-align:right;">
+                  <span style="font-size:10px; color:#999; display:block; margin-top:4px;">
+                      作成者: ${pin.user_name || "不明"}
+                  </span>
+              </div>
+          </div>`;
 
 
         const info = new google.maps.InfoWindow({ content: infoContent });
@@ -151,184 +161,332 @@ async function initMap() {
   }
 
   // === 🖱️ マップクリックで新しいピンを追加 ===
-  map.addListener("click", async (event) => {
-    const lat = event.latLng.lat();
-    const lng = event.latLng.lng();
-    console.log(`🖱️ マップクリック: ${lat}, ${lng}`);
+  map.addListener("click", async (event) => {
+    const lat = event.latLng.lat();
+    const lng = event.latLng.lng();
+    console.log(`🖱️ マップクリック: ${lat}, ${lng}`);
 
-    try {
-      // Firestoreへ追加
-      const res = await fetch("/api/add_manual_pin", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lat, lng, label: "" }),
-      });
-      const result = await res.json();
-      if (result.status === "success") {
-        console.log("✅ 新しい仮ピンを追加しました");
+    // ⭐ 変更点: FirestoreへのAPI呼び出しを削除し、クライアント側で仮ピンを作成する
+    try {
+        // 新規作成ピンには、一時的なユニークIDを割り当てる (保存時にピンIDが確定する)
+        const pinId = `temp_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        const isOwner = true; // クリックしたユーザーが作成者なのでtrueで固定
+        // CURRENT_USER_NAME が定義されている前提
+        const userName = window.CURRENT_USER_NAME || "自分"; 
 
-        const pinId = result.pin_id;
-        const userId = result.user_id;
-        const userName = result.user_name || "不明";
-
-        const marker = new google.maps.Marker({
-          position: { lat, lng },
-          map,
-          icon: getPriorityIconUrl(1),
-          title: "(未入力ピン)",
-        });
-
-        const isOwner = userId === CURRENT_USER_ID;
-
-        let infoContent = `
-          <div style="min-width:220px;">
-            <label>メモ:</label><br>
-            <input type="text" id="memo_${pinId}" 
-                  value="" 
-                  placeholder="内容を入力" 
-                  style="width:150px; margin-bottom:4px;" 
-                  ${isOwner ? "" : "disabled"}><br>
-
-            <label style="font-size:13px;">
-              <input type="checkbox" id="speak_${pinId}" checked ${isOwner ? "" : "disabled"}>
-              読み上げる
-            </label><br>
-
-            <label>注意レベル:</label><br>
-            <select id="priority_${pinId}" style="width:160px; margin-bottom:4px;" ${isOwner ? '' : 'disabled'}>
-              <option value="1" selected>1 (オレンジ)</option>
-              <option value="2">2 (紫)</option>
-              <option value="3">3 (赤)</option>
-            </select><br>
-
-            <label>読み上げ時間帯(任意):</label><br>
-            <input type="time" id="tw_start_${pinId}" ${isOwner ? '' : 'disabled'}>
-            〜
-            <input type="time" id="tw_end_${pinId}" ${isOwner ? '' : 'disabled'}><br>
-        `;
-
-        if (isOwner) {
-          infoContent += `
-            <button onclick="updatePinLabel('${pinId}')">💾 保存</button>
-            <button onclick="deletePin('${pinId}')"
-                    style="margin-left:5px; background-color:#f55; color:#fff; border:none; padding:3px 8px; border-radius:4px;">
-                    🗑 削除
-            </button>
-          `;
-        }
-
-        infoContent += `
-            <div style="font-size:12px; color:#666; margin-top:6px;">
-              作成者: ${userName}
-            </div>
-          </div>
-        `;
-
-        const info = new google.maps.InfoWindow({ content: infoContent });
-
-        marker.addListener("click", () => {
-          for (const key in window.currentInfoWindows) {
-            window.currentInfoWindows[key].close();
-          }
-          info.open(map, marker);
-        });
-
-        // 🔹 登録
+        const marker = new google.maps.Marker({
+          position: { lat, lng },
+          map,
+          icon: "http://maps.google.com/mapfiles/ms/icons/green-dot.png",
+          title: "(新規未保存ピン)",
+          // ドラッグ可能にする（ドラッグ＆ドロップで位置修正できるように）
+          draggable: true, 
+        });
+        
+        // ピンに一時IDを付与
         marker.id = pinId;
-        window.currentMarkers.push(marker);
-        window.currentInfoWindows[pinId] = info;
 
-        // 3. ⭐ 追加：情報ウィンドウを直ちに開く
-        // 他のInfoWindowを閉じる処理を入れます
-        for (const key in window.currentInfoWindows) {
-            if (key !== pinId) { // 今開いたばかりのものは除く
-                window.currentInfoWindows[key].close();
-            }
-        }
+        let infoContent = `
+          <div style="min-width:220px; font-size:13px; line-height:1.5;">
+              
+              <div style="display:flex; align-items:center; margin-bottom:8px;">
+                  <label for="memo_${pinId}" style="width:70px;">メモ:</label>
+                  <input type="text" id="memo_${pinId}" 
+                      placeholder="内容" 
+                      style="flex:1; padding:4px 6px; border:1px solid #ccc; border-radius:3px;" 
+                      ${isOwner ? "" : "disabled"}>
+              </div>
+              
+              <div style="display:flex; align-items:center; margin-bottom:8px;">
+                  <label for="speak_${pinId}" style="width:70px;">読み上げ:</label>
+                  <input type="checkbox" id="speak_${pinId}" checked 
+                      style="margin-left:0;"
+                      ${isOwner ? "" : "disabled"}>
+              </div>
+
+              <div style="display:flex; align-items:center; margin-bottom:8px;">
+                  <label for="priority_${pinId}" style="width:70px;">レベル:</label>
+                  <select id="priority_${pinId}" style="flex:1; padding:3px; border:1px solid #ccc; border-radius:3px;" ${isOwner ? '' : 'disabled'}>
+                      <option value="1" selected>1 (オレンジ)</option>
+                      <option value="2">2 (紫)</option>
+                      <option value="3">3 (赤)</option>
+                  </select>
+              </div>
+              
+
+              <div style="display:flex; align-items:center; margin-bottom:12px;">
+                  <label style="width:70px;">時間帯:</label>
+                  <input type="time" id="tw_start_${pinId}" style="width:80px; padding:3px; border:1px solid #ccc; border-radius:3px;" ${isOwner ? '' : 'disabled'}>
+                  <span style="padding:0 4px;">〜</span>
+                  <input type="time" id="tw_end_${pinId}" style="width:80px; padding:3px; border:1px solid #ccc; border-radius:3px;" ${isOwner ? '' : 'disabled'}>
+              </div>
+
+              <div style="text-align:right;">
+                  <button onclick="updatePinLabel('${pinId}')"
+                      style="background:#5c6bc0; color:#fff; border:none; padding:5px 10px; border-radius:4px; margin-right:5px; cursor:pointer;"
+                      ${isOwner ? '' : 'disabled'}>保存</button>
+                  <button onclick="deletePin('${pinId}')"
+                      style="background:#f55; color:#fff; border:none; padding:5px 10px; border-radius:4px; cursor:pointer;"
+                      ${isOwner ? '' : 'disabled'}>削除</button>
+              </div>
+              
+              <div style="text-align:right;">
+                  <span style="font-size:10px; color:#999; display:block; margin-top:4px;">
+                      作成者: ${userName}
+                  </span>
+              </div>
+          </div>`;
+
+        const info = new google.maps.InfoWindow({ content: infoContent });
+
+        marker.addListener("click", () => {
+          for (const key in window.currentInfoWindows) {
+            window.currentInfoWindows[key].close();
+          }
+          info.open(map, marker);
+        });
+        
+        // マーカーのドラッグ終了イベントを監視し、情報ウィンドウを閉じる
+        marker.addListener('dragend', () => {
+             info.close();
+        });
+
+        // 🔹 登録
+        window.currentMarkers.push(marker);
+        window.currentInfoWindows[pinId] = info;
+
+        // 続けて情報ウィンドウを開く
+        for (const key in window.currentInfoWindows) {
+          if (key !== pinId) {
+            window.currentInfoWindows[key].close();
+          }
+        }
         info.open(map, marker);
-        // メモ入力欄にフォーカスを当てる（ユーザー体験の向上）
+
         google.maps.event.addListener(info, 'domready', function() {
             document.getElementById(`memo_${pinId}`)?.focus();
         });
-      }else {
-        console.warn("⚠️ Firestore保存失敗:", result.error);
-      }
-    } catch (e) {
-      console.error("❌ サーバー保存エラー:", e);
-    }
-  });
+        google.maps.event.addListener(info, "domready", () => {
+          const prioEl = document.getElementById(`priority_${pinId}`);
+          if (prioEl) {
+            prioEl.addEventListener("change", () => {
+              const lvl = Number(prioEl.value || 1);
+              marker.setIcon(getPriorityIconUrl(lvl));
+            });
+          }
+        });
+
+    } catch (e) {
+      console.error("❌ クライアントでの仮ピン作成エラー:", e);
+    }
+  });
 }
 
-// === ピン更新 ===
+// === ピン更新（新規登録/更新） ===
 async function updatePinLabel(pinId) {
-  const memo = document.getElementById(`memo_${pinId}`).value.trim();
-  const speakEnabled = document.getElementById(`speak_${pinId}`).checked; // ✅ チェック状態取得
-  const priorityEl = document.getElementById(`priority_${pinId}`);
-  const twStartEl = document.getElementById(`tw_start_${pinId}`);
-  const twEndEl = document.getElementById(`tw_end_${pinId}`);
+  const memoEl = document.getElementById(`memo_${pinId}`);
+  const speakEl = document.getElementById(`speak_${pinId}`);
+  const priorityEl = document.getElementById(`priority_${pinId}`);
+  const twStartEl = document.getElementById(`tw_start_${pinId}`);
+  const twEndEl = document.getElementById(`tw_end_${pinId}`);
 
-  if (!memo) return alert("メモを入力してください。");
+  const memo = memoEl.value.trim();
+  const speakEnabled = speakEl.checked; 
+  
+  if (!memo) return alert("メモを入力してください。");
+    
+  const marker = window.currentMarkers.find((m) => m.id === pinId);
+  if (!marker) return alert("エラー: ピンが見つかりません。");
 
-  try {
-    const body = { id: pinId, label: memo, speak_enabled: speakEnabled };
-    if (priorityEl) {
-      const lvl = parseInt(priorityEl.value || '1', 10);
-      body.priority_level = isNaN(lvl) ? 1 : Math.min(3, Math.max(1, lvl));
-    }
-    if (twStartEl && twEndEl) {
-      const s = twStartEl.value || '';
-      const e = twEndEl.value || '';
-      if (s && e) {
-        body.speak_time_windows = [{ start: s, end: e }];
-      } else {
-        body.speak_time_windows = [];
-      }
-    }
-    const res = await fetch("/api/update_pin", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const result = await res.json();
-    if (result.status === "success") {
-      alert("✅ ピンを更新しました！");
-      const marker = window.currentMarkers.find((m) => m.id === pinId);
-      if (marker) {
-        // アイコンを注意レベルに応じて更新
-        const lvl = priorityEl ? parseInt(priorityEl.value || '1', 10) : 1;
-        marker.setIcon(getPriorityIconUrl(lvl));
-        marker.setTitle(memo);
-      }
-      window.currentInfoWindows[pinId]?.close();
-    } else {
-      alert("❌ 更新失敗: " + result.error);
-    }
-  } catch (err) {
-    console.error("❌ updatePinLabel error:", err);
-  }
+  try {
+    // マーカーの現在の位置を取得（ドラッグされている可能性があるため）
+    const position = marker.getPosition();
+    const lat = position.lat();
+    const lng = position.lng();
+    
+    // 登録するデータ本体を構築
+    const body = { lat, lng, label: memo, speak_enabled: speakEnabled };
+    
+    let priorityLevel = 1;
+    if (priorityEl) {
+      const lvl = parseInt(priorityEl.value || '1', 10);
+      body.priority_level = isNaN(lvl) ? 1 : Math.min(3, Math.max(1, lvl));
+      priorityLevel = body.priority_level;
+    }
+    
+    let timeWindows = [];
+    if (twStartEl && twEndEl) {
+      const s = twStartEl.value || '';
+      const e = twEndEl.value || '';
+      if (s && e) {
+        body.speak_time_windows = [{ start: s, end: e }];
+        timeWindows = body.speak_time_windows;
+      } else {
+        body.speak_time_windows = [];
+      }
+    }
+
+    let apiUrl;
+    let isNewPin = pinId.startsWith('temp_'); // 💡 新規ピン判定ロジック
+    
+    if (isNewPin) {
+        // 新規登録 (ピンIDはAPI側で生成されるため不要)
+        apiUrl = "/api/add_manual_pin";
+    } else {
+        // 既存ピンの更新
+        apiUrl = "/api/update_pin";
+        body.id = pinId; // 既存ピンIDを渡す
+    }
+
+    const res = await fetch(apiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    
+    const result = await res.json();
+    let finalPinId = pinId;
+    
+    if (result.status === "success") {
+        alert(`✅ ピンを${isNewPin ? '登録' : '更新'}しました！`);
+        
+        // 新規登録の場合、クライアント側の仮IDをFirestoreの確定IDに置き換える
+        if (isNewPin) {
+            const newPinId = result.pin_id;
+            finalPinId = newPinId;
+            
+            // 1. currentMarkers内のIDを更新
+            const markerIndex = window.currentMarkers.findIndex(m => m.id === pinId);
+            if (markerIndex !== -1) {
+                window.currentMarkers[markerIndex].id = newPinId;
+                window.currentMarkers[markerIndex].title = memo; // タイトルも更新
+            }
+            
+            // 2. currentInfoWindowsのキーを更新
+            window.currentInfoWindows[newPinId] = window.currentInfoWindows[pinId];
+            delete window.currentInfoWindows[pinId];
+            
+            // 3. マーカーオブジェクトにも確定IDを反映
+            marker.id = newPinId;
+            
+            // 4. マーカーをドラッグ不可に戻す（新規作成時のみ）
+            marker.setDraggable(false); 
+        }
+
+        // アイコンを注意レベルに応じて更新
+        const lvl = body.priority_level || 1;
+        marker.setIcon(getPriorityIconUrl(lvl));
+        marker.setTitle(memo); // タイトル更新
+
+        window.currentInfoWindows[marker.id]?.close();
+    } else {
+        alert(`❌ ${isNewPin ? '登録' : '更新'}失敗: ` + result.error);
+        return; // 失敗時は再構築・再オープンしない
+    }
+
+    // 💡 InfoWindowのHTMLをinitMapと同じ構造で再構築
+    const firstWin = timeWindows[0] || {};
+    const isOwner = true; // updatePinLabelを呼び出したユーザー＝作成者と想定
+
+    let infoContent = `
+    <div style="min-width:220px; font-size:13px; line-height:1.5;">
+        
+        <div style="display:flex; align-items:center; margin-bottom:8px;">
+            <label for="memo_${finalPinId}" style="width:70px;">メモ:</label>
+            <input type="text" id="memo_${finalPinId}" 
+                value="${memo || ''}" 
+                placeholder="内容を入力" 
+                style="flex:1; padding:4px 6px; border:1px solid #ccc; border-radius:3px;" 
+                ${isOwner ? "" : "disabled"}>
+        </div>
+        
+        <div style="display:flex; align-items:center; margin-bottom:8px;">
+            <label for="speak_${finalPinId}" style="width:70px;">読み上げ:</label>
+            <input type="checkbox" id="speak_${finalPinId}" 
+                ${speakEnabled ? "checked" : ""} 
+                style="margin-left:0;"
+                ${isOwner ? "" : "disabled"}>
+        </div>
+
+        <div style="display:flex; align-items:center; margin-bottom:8px;">
+            <label for="priority_${finalPinId}" style="width:70px;">レベル:</label>
+            <select id="priority_${finalPinId}" style="flex:1; padding:3px; border:1px solid #ccc; border-radius:3px;" ${isOwner ? '' : 'disabled'}>
+                <option value="1" ${priorityLevel===1?'selected':''}>1 (オレンジ)</option>
+                <option value="2" ${priorityLevel===2?'selected':''}>2 (紫)</option>
+                <option value="3" ${priorityLevel===3?'selected':''}>3 (赤)</option>
+            </select>
+        </div>
+        
+        <div style="display:flex; align-items:center; margin-bottom:12px;">
+            <label style="width:70px;">時間帯:</label>
+            <input type="time" id="tw_start_${finalPinId}" value="${firstWin?.start || ''}" style="width:80px; padding:3px; border:1px solid #ccc; border-radius:3px;" ${isOwner ? '' : 'disabled'}>
+            <span style="padding:0 4px;">〜</span>
+            <input type="time" id="tw_end_${finalPinId}" value="${firstWin?.end || ''}" style="width:80px; padding:3px; border:1px solid #ccc; border-radius:3px;" ${isOwner ? '' : 'disabled'}>
+        </div>
+
+        <div style="text-align:right;">
+            <button onclick="updatePinLabel('${finalPinId}')"
+                style="background-color:#5c6bc0; color:#fff; border:none; padding:5px 10px; border-radius:4px; margin-right:5px; cursor:pointer;"
+                ${isOwner ? '' : 'disabled'}>保存</button>
+            <button onclick="deletePin('${finalPinId}')"
+                style="background-color:#f55; color:#fff; border:none; padding:5px 10px; border-radius:4px; cursor:pointer;"
+                ${isOwner ? '' : 'disabled'}>削除</button>
+        </div>
+        
+        <div style="text-align:right;">
+            <span style="font-size:10px; color:#999; display:block; margin-top:4px;">
+                作成者: ${window.CURRENT_USER_NAME || "自分"}
+            </span>
+        </div>
+    </div>`;
+
+
+    // InfoWindow を開き直す
+    const info = window.currentInfoWindows[finalPinId];
+    if (info) {
+      info.setContent(infoContent); 
+      info.open(map, marker);
+    }
+  } catch (err) {
+    console.error("❌ updatePinLabel error:", err);
+  }
 }
 
 // === ピン削除 ===
 async function deletePin(pinId) {
-  if (!confirm("このピンを削除しますか？")) return;
-  try {
-    const res = await fetch("/api/delete_pin", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: pinId }),
-    });
-    const result = await res.json();
-    if (result.status === "success") {
-      alert("🗑 ピンを削除しました");
-      const marker = window.currentMarkers.find((m) => m.id === pinId);
-      if (marker) marker.setMap(null);
-      delete window.currentInfoWindows[pinId];
-    } else {
-      alert("❌ 削除失敗: " + result.error);
-    }
-  } catch (err) {
-    console.error("❌ deletePin error:", err);
-  }
+if (!confirm("このピンを削除しますか？")) return;
+    
+  const isTemporary = pinId.startsWith('temp_');
+    
+  try {
+        if (!isTemporary) {
+            // 既存ピンの場合のみAPIをコール
+            const res = await fetch("/api/delete_pin", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ id: pinId }),
+            });
+            const result = await res.json();
+            if (result.status !== "success") {
+                alert("❌ 削除失敗: " + result.error);
+                return;
+            }
+        }
+    
+    alert(`🗑 ピンを削除しました${isTemporary ? '（未保存）' : ''}`);
+    const marker = window.currentMarkers.find((m) => m.id === pinId);
+    if (marker) marker.setMap(null);
+    delete window.currentInfoWindows[pinId];
+    
+    // currentMarkers配列からも削除
+    window.currentMarkers = window.currentMarkers.filter(m => m.id !== pinId);
+    
+  } catch (err) {
+    console.error("❌ deletePin error:", err);
+  }
 }
+
+
+
 
 window.initMap = initMap;
