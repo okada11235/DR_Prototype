@@ -17,7 +17,7 @@ def start():
     try:
         # ユーザーIDを一意のキーとして使用
         user_id = current_user.id
-        print(f"Session start request from user: {user_id}")
+        print(f"=== Session start request from user: {user_id} ===")
         
         # トランザクションを使用して原子的にチェック&作成
         @firestore.transactional
@@ -60,6 +60,42 @@ def start():
     except Exception as e:
         print(f"Error starting session: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+# 既存のアクティブセッションをチェック
+@sessions_bp.route('/check_active', methods=['GET'])
+@login_required
+def check_active():
+    try:
+        user_id = current_user.id
+        print(f"=== Check active session for user: {user_id} ===")
+        print(f"   Authenticated: {current_user.is_authenticated}")
+        print(f"   Request method: {request.method}")
+        print(f"   Cookies: {request.cookies}")
+        
+        sessions_ref = db.collection('sessions')
+        query = sessions_ref.where('user_id', '==', user_id).where('status', '==', 'active')
+        existing_sessions = list(query.stream())
+        
+        if existing_sessions:
+            session_id = existing_sessions[0].id
+            session_data = existing_sessions[0].to_dict()
+            print(f"✅ Found active session: {session_id}")
+            return jsonify({
+                'has_active': True,
+                'session_id': session_id,
+                'route_id': session_data.get('route_id')
+            }), 200, {'Content-Type': 'application/json'}
+        else:
+            print(f"✅ No active session for user {user_id}")
+            return jsonify({'has_active': False}), 200, {'Content-Type': 'application/json'}
+            
+    except Exception as e:
+        print(f"❌ Error checking active session: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 
 from math import radians, sin, cos, sqrt, atan2
 

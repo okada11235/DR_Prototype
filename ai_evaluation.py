@@ -15,7 +15,11 @@ db = firestore.Client()
 # === 通過しなかった時の定義 ===
 NOT_PASSED_STATS = {
     "avg_speed": 0, "mean_gx": 0, "mean_gz": 0,
-    "std_gx": 0, "std_gz": 0, "max_gx": 0, "max_gz": 0
+    "std_gx": 0, "std_gz": 0, "max_gx": 0, "max_gz": 0,
+    "min_gx": 0, "min_gz": 0, "median_gx": 0, "median_gz": 0,
+    "max_speed": 0, "min_speed": 0, "median_speed": 0,
+    "speed_range": 0, "acceleration_count": 0, "deceleration_count": 0,
+    "sharp_turn_count": 0, "data_points": 0
 }
 NOT_PASSED_COMMENT = "この重点ポイントは今回の走行で通過しなかったようです。次回、挑戦してみましょう！"
 
@@ -42,17 +46,18 @@ def get_gemini_model(model_name: str = "gemini-2.0-flash"):
 
 
 # ==========================================================
-#  フォーカスタイプごとのデータ範囲設定
+#  フォーカスタイプごとのデータ範囲設定（拡張版）
 # ==========================================================
 def get_time_window_for_focus(focus_type):
+    """より広範囲のデータを取得してフィードバックの質を向上"""
     if focus_type in ["brake_soft", "stop_smooth"]:
-        return 5000, 2000   # 減速系：前を重視
+        return 8000, 3000   # 減速系：前を重視（拡張）
     elif focus_type in ["accel_smooth"]:
-        return 2000, 5000   # 加速系：後ろを重視
+        return 3000, 8000   # 加速系：後ろを重視（拡張）
     elif focus_type in ["turn_stability"]:
-        return 2000, 2000   # 旋回系：中心重視
+        return 4000, 4000   # 旋回系：中心重視（拡張）
     else:
-        return 5000, 5000   # スムーズ・その他
+        return 8000, 8000   # スムーズ・その他（拡張）
 
 
 # ==========================================================
@@ -121,17 +126,110 @@ def get_focus_rating(stats, focus_type):
 
 
 # ==========================================================
-#  前回データとの比較
+#  詳細統計データの計算
+# ==========================================================
+def calculate_detailed_stats(gx_vals, gz_vals, speeds):
+    """より詳細な統計データを計算"""
+    stats = {
+        "avg_speed": sum(speeds)/len(speeds) if speeds else 0,
+        "mean_gx": sum(gx_vals)/len(gx_vals) if gx_vals else 0,
+        "mean_gz": sum(gz_vals)/len(gz_vals) if gz_vals else 0,
+        "std_gx": statistics.pstdev(gx_vals) if len(gx_vals) > 1 else 0,
+        "std_gz": statistics.pstdev(gz_vals) if len(gz_vals) > 1 else 0,
+        "max_gx": max(gx_vals, default=0),
+        "max_gz": max(gz_vals, default=0),
+        "min_gx": min(gx_vals, default=0),
+        "min_gz": min(gz_vals, default=0),
+        "median_gx": statistics.median(gx_vals) if gx_vals else 0,
+        "median_gz": statistics.median(gz_vals) if gz_vals else 0,
+        "std_speed": statistics.pstdev(speeds) if len(speeds) > 1 else 0,
+        "max_speed": max(speeds, default=0),
+        "min_speed": min(speeds, default=0),
+        "median_speed": statistics.median(speeds) if speeds else 0,
+        "speed_range": (max(speeds, default=0) - min(speeds, default=0)),
+        "data_points": len(gx_vals)
+    }
+    
+    # 急加速・急減速の回数をカウント（閾値: 0.25G以上）
+    stats["acceleration_count"] = sum(1 for gz in gz_vals if gz > 0.25)
+    stats["deceleration_count"] = sum(1 for gz in gz_vals if gz < -0.25)
+    
+    # 急ハンドルの回数をカウント（閾値: 0.25G以上）
+    stats["sharp_turn_count"] = sum(1 for gx in gx_vals if abs(gx) > 0.25)
+    
+    # 時系列パターン分析（前半・後半の比較）
+    if len(gx_vals) >= 4:
+        mid_point = len(gx_vals) // 2
+        first_half_std_gx = statistics.pstdev(gx_vals[:mid_point]) if mid_point > 1 else 0
+        second_half_std_gx = statistics.pstdev(gx_vals[mid_point:]) if mid_point > 1 else 0
+        stats["gx_stability_trend"] = second_half_std_gx - first_half_std_gx
+        
+        first_half_std_gz = statistics.pstdev(gz_vals[:mid_point]) if mid_point > 1 else 0
+        second_half_std_gz = statistics.pstdev(gz_vals[mid_point:]) if mid_point > 1 else 0
+        stats["gz_stability_trend"] = second_half_std_gz - first_half_std_gz
+    else:
+        stats["gx_stability_trend"] = 0
+        stats["gz_stability_trend"] = 0
+    
+    return stats
+
+
+# ==========================================================
+#  複数回の走行データ取得（直近3回分）
+# ==========================================================
+def get_historical_stats(user_id, session_id, pin_id, limit=3):
+    """直近N回分の走行データを取得して比較"""
+    prev_sessions = (
+        db.collection("sessions")
+        .where("user_id", "==", user_id)
+        .where("status", "==", "completed")
+        .order_by("end_time", direction=firestore.Query.DESCENDING)
+        .stream()
+    )
+    
+    historical_data = []
+    for sdoc in prev_sessions:
+        if sdoc.id == session_id:
+            continue  # 今回のセッションを除外
+        
+        fb_ref = db.collection("sessions").document(sdoc.id)\
+            .collection("focus_feedbacks").document(pin_id)
+        
+        fb_doc = fb_ref.get()
+        if fb_doc.exists:
+            fb_data = fb_doc.to_dict()
+            historical_data.append({
+                "session_id": sdoc.id,
+                "stats": fb_data.get("stats"),
+                "rating": fb_data.get("rating"),
+                "created_at": fb_data.get("created_at")
+            })
+            
+            if len(historical_data) >= limit:
+                break
+    
+    return historical_data
+
+
+# ==========================================================
+#  前回データとの詳細比較
 # ==========================================================
 def compare_focus_stats(prev_stats, current_stats):
     if not prev_stats:
         return None, "前回データが見つからなかったため、今回は単独での評価です。"
+    
+    # より詳細な差分計算
     diff = {
         "avg_speed_diff": current_stats["avg_speed"] - prev_stats["avg_speed"],
         "gx_diff": current_stats["mean_gx"] - prev_stats["mean_gx"],
         "gz_diff": current_stats["mean_gz"] - prev_stats["mean_gz"],
         "std_gx_diff": current_stats["std_gx"] - prev_stats["std_gx"],
-        "std_gz_diff": current_stats["std_gz"] - prev_stats["std_gz"]
+        "std_gz_diff": current_stats["std_gz"] - prev_stats["std_gz"],
+        "max_gx_diff": current_stats.get("max_gx", 0) - prev_stats.get("max_gx", 0),
+        "max_gz_diff": current_stats.get("max_gz", 0) - prev_stats.get("max_gz", 0),
+        "acceleration_count_diff": current_stats.get("acceleration_count", 0) - prev_stats.get("acceleration_count", 0),
+        "deceleration_count_diff": current_stats.get("deceleration_count", 0) - prev_stats.get("deceleration_count", 0),
+        "sharp_turn_count_diff": current_stats.get("sharp_turn_count", 0) - prev_stats.get("sharp_turn_count", 0),
     }
 
     # === diffを自然文に変換 ===
@@ -173,42 +271,84 @@ def compare_focus_stats(prev_stats, current_stats):
 
 
 # ==========================================================
-#  AIフィードバック生成（Gemini 呼び出し）
+#  AIフィードバック生成（Gemini 呼び出し・生データ版）
 # ==========================================================
-def generate_ai_focus_feedback(focus_type_name, current_stats, diff, rating, diff_text):
+def generate_ai_focus_feedback(focus_type_name, current_stats, diff, rating, diff_text, historical_data=None, raw_data=None):
     """
-    OpenAI ではなく Gemini を使ってフィードバック文章を生成する。
-    GEMINI_API_KEY（キー文字列）が環境変数に入っている前提。
+    Gemini を使って詳細なフィードバック文章を生成する。
+    生のgセンサーデータと速度データをすべて渡して、より詳細な分析を実現。
     """
     model = get_gemini_model()
     if model is None:
-        # キー未設定など
         return "AIフィードバック用の設定がまだ完了していないため、自動コメントを生成できませんでした。"
 
-    # --- プロンプト構築（元の形式をほぼ維持） ---
+    # 過去データとの比較（直近3回分）
+    historical_comparison = ""
+    if historical_data and len(historical_data) > 0:
+        historical_comparison = "\n【過去の走行との比較】\n"
+        for i, hist in enumerate(historical_data[:3], 1):
+            hist_stats = hist.get("stats", {})
+            hist_rating = hist.get("rating", "不明")
+            if i == 1:
+                historical_comparison += f"- 前回: 評価「{hist_rating}」"
+            else:
+                historical_comparison += f"- {i}回前: 評価「{hist_rating}」"
+            
+            if hist_stats:
+                std_gx_compare = current_stats["std_gx"] - hist_stats.get("std_gx", 0)
+                std_gz_compare = current_stats["std_gz"] - hist_stats.get("std_gz", 0)
+                
+                if std_gx_compare < -0.02 or std_gz_compare < -0.02:
+                    historical_comparison += "（今回の方が安定）\n"
+                elif std_gx_compare > 0.02 or std_gz_compare > 0.02:
+                    historical_comparison += "（今回の方が不安定）\n"
+                else:
+                    historical_comparison += "（ほぼ同じ）\n"
+    
+    # 生データをフォーマット（時系列で表示）
+    raw_data_text = ""
+    if raw_data:
+        raw_data_text = "\n【この地点の全計測データ（時系列）】\n"
+        raw_data_text += "時刻, 左右G(gx), 前後G(gz), 速度(km/h)\n"
+        for i, point in enumerate(raw_data, 1):
+            raw_data_text += f"{i}, {point['gx']:.3f}, {point['gz']:.3f}, {point['speed']:.1f}\n"
+        
+        raw_data_text += "\n※ 左右G(gx): 正=右旋回、負=左旋回\n"
+        raw_data_text += "※ 前後G(gz): 正=加速、負=減速\n"
+    
+    # --- 詳細プロンプト構築（生データを含む） ---
     prompt = f"""
     あなたは運転コーチAI『ドライボ』です。
     この地点は「{focus_type_name}」を意識するよう設定されていました。
-    以下のデータをもとに、今回の運転がどのような特徴を持っていたか、そして前回と比べてどう変化したかをコメントしてください。
+    以下の**実際の計測データすべて**をもとに、今回の運転の特徴と改善点をコメントしてください。
 
-    【走行データの概要】
-    - 平均速度: {current_stats['avg_speed']:.1f} km/h
-    - 前後の揺れ（加減速の滑らかさ）:
-        平均 {current_stats['mean_gz']:.3f}、ばらつき {current_stats['std_gz']:.3f}、最大値 {current_stats['max_gz']:.3f}
-    - 左右の揺れ（ハンドル操作やカーブの滑らかさ）:
-        平均 {current_stats['mean_gx']:.3f}、ばらつき {current_stats['std_gx']:.3f}、最大値 {current_stats['max_gx']:.3f}
+    {raw_data_text}
 
-    【前回との比較】
+    【統計サマリー】
+    - 平均速度: {current_stats['avg_speed']:.1f} km/h（最高 {current_stats.get('max_speed', 0):.1f} km/h、最低 {current_stats.get('min_speed', 0):.1f} km/h）
+    - データ計測点数: {current_stats.get('data_points', 0)}点
+    - 急加速: {current_stats.get('acceleration_count', 0)}回
+    - 急ブレーキ: {current_stats.get('deceleration_count', 0)}回
+    - 急ハンドル: {current_stats.get('sharp_turn_count', 0)}回
+
+    【前回との直接比較】
     {diff_text}
+    {historical_comparison}
+
+    【今回の総合評価】
+    {rating}
 
     出力条件:
+    - 上記の時系列データから運転パターンを詳しく分析してください
+    - 例えば「最初は安定していたが途中で急ブレーキがあった」「カーブ中に左右の揺れが連続した」など、具体的な場面を指摘する
     - 専門用語や数値(Gx, Gzなど)を使わず、わかりやすい言葉で説明する
     - 「前後の揺れ」→加減速、「左右の揺れ」→ハンドル操作やカーブの滑らかさ として自然に説明する
     - 数値をそのまま書かず、「揺れが少なかった」「少し強めだった」などの表現を使う
-    - 優しい口調で2〜3文
-    - 必ず前回との比較を含め、「良くなった点」「安定している点」「もう少し改善できる点」をバランス良く述べる
-    - もし改善が見られたら「成長」「上達」「安定」といった言葉を使う
-    - 最後に前向きな一言と絵文字を添える（例：「この調子です！😊」「少しずつ上達していますね🚗✨」）
+    - 優しい口調で3〜5文程度（生データを分析するため少し詳しめに）
+    - 良くなった点、安定している点、改善できる点をバランス良く述べる
+    - 時系列データから見える「運転の癖」や「改善のヒント」を具体的に提示する
+    - 過去の走行との比較から「成長の軌跡」や「継続している課題」にも触れる
+    - 最後に前向きな一言と絵文字を添える（例：「この調子です！😊」「着実に上達していますね🚗✨」）
     """
 
     try:
@@ -375,49 +515,41 @@ def analyze_focus_points_for_session(session_id: str, user_id: str) -> dict:
             results[pin_id] = {"ai_comment": comment, "rating": "なし", "passed": True}
             continue
 
-        # --- 統計値算出 ---
+        # --- 詳細統計値算出 ---
         gx_vals = [g.get("g_x", 0) for g in nearby]
         gz_vals = [g.get("g_z", 0) for g in nearby]
         speeds = [g.get("speed", 0) for g in nearby]
 
-        current_stats = {
-            "avg_speed": sum(speeds)/len(speeds) if speeds else 0,
-            "mean_gx": sum(gx_vals)/len(gx_vals),
-            "mean_gz": sum(gz_vals)/len(gz_vals),
-            "std_gx": statistics.pstdev(gx_vals) if len(gx_vals) > 1 else 0,
-            "std_gz": statistics.pstdev(gz_vals) if len(gz_vals) > 1 else 0,
-            "max_gx": max(gx_vals, default=0),
-            "max_gz": max(gz_vals, default=0),
-            "std_speed": statistics.pstdev(speeds) if len(speeds) > 1 else 0
-        }
+        current_stats = calculate_detailed_stats(gx_vals, gz_vals, speeds)
 
-        # --- 前回データ取得（比較用） ---
-        prev_stats = None
+        # --- 生データを整形（AIに渡すため） ---
+        raw_data_points = []
+        for g in nearby:
+            raw_data_points.append({
+                "gx": g.get("g_x", 0),
+                "gz": g.get("g_z", 0),
+                "speed": g.get("speed", 0)
+            })
 
-        prev_sessions = (
-            db.collection("sessions")
-            .where("user_id", "==", user_id)
-            .where("status", "==", "completed")
-            .order_by("end_time", direction=firestore.Query.DESCENDING)
-            .stream()
-        )
-
-        for sdoc in prev_sessions:
-            if sdoc.id == session_id:
-                continue  # 今回のセッションを除外
-
-            # 今回のpin_idに対応する前回の focus_feedback を探す
-            fb_ref = db.collection("sessions").document(sdoc.id)\
-                .collection("focus_feedbacks").document(pin_id)
-
-            fb_doc = fb_ref.get()
-            if fb_doc.exists:
-                prev_stats = fb_doc.to_dict().get("stats")
-                break
+        # --- 過去データ取得（直近3回分） ---
+        historical_data = get_historical_stats(user_id, session_id, pin_id, limit=3)
+        
+        # 直前のデータを取得
+        prev_stats = historical_data[0].get("stats") if historical_data else None
 
         diff, diff_text = compare_focus_stats(prev_stats, current_stats)
         rating = get_focus_rating(current_stats, focus_type)
-        ai_comment = generate_ai_focus_feedback(focus_type_name, current_stats, diff, rating, diff_text)
+        
+        # より詳細なフィードバック生成（生データをすべて渡す）
+        ai_comment = generate_ai_focus_feedback(
+            focus_type_name, 
+            current_stats, 
+            diff, 
+            rating, 
+            diff_text,
+            historical_data,  # 過去データ
+            raw_data_points   # 追加：生の計測データをすべて渡す
+        )
 
         # ✅ 要約（短縮版フィードバック）を追加
         short_comment = summarize_feedback(ai_comment, diff_text)

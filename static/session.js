@@ -139,7 +139,7 @@ export function startSession() {
             let data;
 
             try {
-                const res = await fetch('/start', { method: 'POST' });
+                const res = await fetch('/sessions/start', { method: 'POST' });
                 if (!res.ok) throw new Error('サーバーエラー');
                 data = await res.json();
             } catch (err) {
@@ -195,7 +195,7 @@ export async function endSession() {
 
     let data;
     try {
-        const res = await fetch('/end', {
+        const res = await fetch('/sessions/end', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ session_id: sessionId })
@@ -230,7 +230,7 @@ export function startLogFlush() {
         // Gログ
         if (window.gLogBuffer.length > 0) {
             const logsToSend = window.gLogBuffer.splice(0, window.gLogBuffer.length);
-            fetch('/log_g_only', {
+            fetch('/sessions/log_g_only', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ session_id: window.sessionId, g_logs: logsToSend })
@@ -240,7 +240,7 @@ export function startLogFlush() {
         // AVG-G
         if (window.avgGLogBuffer && window.avgGLogBuffer.length > 0) {
             const avgToSend = window.avgGLogBuffer.splice(0, window.avgGLogBuffer.length);
-            fetch('/log_avg_g_bulk', {
+            fetch('/sessions/log_avg_g_bulk', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ session_id: window.sessionId, avg_g_logs: avgToSend })
@@ -250,7 +250,7 @@ export function startLogFlush() {
         // GPSログ
         if (window.gpsLogBuffer.length > 0) {
             const logsToSend = window.gpsLogBuffer.splice(0, window.gpsLogBuffer.length);
-            fetch('/log_gps_bulk', {
+            fetch('/sessions/log_gps_bulk', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ session_id: window.sessionId, gps_logs: logsToSend })
@@ -271,7 +271,7 @@ export async function flushLogsNow() {
 
     if (window.gLogBuffer.length > 0) {
         const logs = window.gLogBuffer.splice(0, window.gLogBuffer.length);
-        await fetch('/log_g_only', {
+        await fetch('/sessions/log_g_only', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ session_id: window.sessionId, g_logs: logs })
@@ -280,7 +280,7 @@ export async function flushLogsNow() {
 
     if (window.avgGLogBuffer?.length > 0) {
         const logs = window.avgGLogBuffer.splice(0, window.avgGLogBuffer.length);
-        await fetch('/log_avg_g_bulk', {
+        await fetch('/sessions/log_avg_g_bulk', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ session_id: window.sessionId, avg_g_logs: logs })
@@ -289,7 +289,7 @@ export async function flushLogsNow() {
 
     if (window.gpsLogBuffer.length > 0) {
         const logs = window.gpsLogBuffer.splice(0, window.gpsLogBuffer.length);
-        await fetch('/log_gps_bulk', {
+        await fetch('/sessions/log_gps_bulk', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ session_id: window.sessionId, gps_logs: logs })
@@ -300,11 +300,6 @@ export async function flushLogsNow() {
 }
 
 // === 褒めチェックは無効 ===
-export function startPraiseCheck() {
-    console.log("⏸️ 定期褒めチェックは無効化されています。");
-}
-
-// 褒めチェック開始
 export function startPraiseCheck() {
     console.log("⏸️ 定期褒めチェックは無効化されています。");
 }

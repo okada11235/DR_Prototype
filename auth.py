@@ -1,5 +1,5 @@
 # auth.py
-from flask import Blueprint, render_template, request, redirect, url_for, flash
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from flask_login import login_user, logout_user, login_required
 from firebase_admin import auth, firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
@@ -72,7 +72,12 @@ def login():
 
                 if 'password_hash' in user_data and bcrypt_instance.check_password_hash(user_data['password_hash'], password):
                     user = User(user_uid, username)
-                    login_user(user)
+                    # セッションを永続化（24時間有効）
+                    session.permanent = True
+                    login_user(user, remember=True)
+                    print(f"✅ User {username} ({user_uid}) logged in successfully")
+                    print(f"   Session ID: {user.get_id()}")
+                    print(f"   Session permanent: {session.permanent}")
                     return redirect(url_for('views.index'))
                 else:
                     flash('ログインに失敗しました')

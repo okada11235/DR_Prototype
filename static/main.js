@@ -96,45 +96,10 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log('Start button found:', !!startButton);
     console.log('End button found:', !!endButton);
 
-    // ▶ 記録開始ボタン
+    // ▶ 記録開始ボタン（recording_start.htmlで独自に処理されるためここでは何もしない）
+    // recording_start.html内のインラインスクリプトでルート選択とセッション作成を行う
     if (startButton && !startButton.hasEventListener) {
-        console.log('Adding click listener to start button');
-        startButton.addEventListener('click', () => {
-            // ルートの存在チェック（アクティブ・保存済みの両方を考慮）
-            const routeIdLS = localStorage.getItem('priorityRouteId');
-            let latestRouteExists = false;
-            try {
-                if (window.priorityRouteAPI && window.priorityRouteAPI.getLatestRouteId) {
-                    const latestId = window.priorityRouteAPI.getLatestRouteId();
-                    latestRouteExists = !!latestId;
-                }
-            } catch (e) { console.warn('Failed to check latest route id:', e); }
-
-            if (!routeIdLS && !latestRouteExists) {
-                const doSetup = confirm('ルートが設定されていません。ルート設定を開始しますか？');
-                if (doSetup) {
-                    if (window.priorityRouteAPI && window.priorityRouteAPI.start) {
-                        try {
-                            window.priorityRouteAPI.start();
-                            window.location.assign('/recording/active');
-                        } catch (e) {
-                            console.error('ルート設定開始に失敗:', e);
-                            alert('ルート設定の開始に失敗しました。ネットワークや位置情報の許可をご確認ください。');
-                        }
-                    } else {
-                        alert('ルート設定機能が読み込まれていません');
-                    }
-                }
-                return; // ルート未設定時は通常の運転開始をしない
-            }
-
-            const confirmStart = confirm('記録を開始してよろしいですか？');
-            if (confirmStart) {
-                startSession();
-            } else {
-                console.log('Recording start canceled by user.');
-            }
-        });
+        console.log('Start button found - handled by recording_start.html inline script');
         startButton.hasEventListener = true;
     }
 

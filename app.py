@@ -21,7 +21,7 @@ init_auth(bcrypt)
 
 # Blueprintの登録
 app.register_blueprint(auth_bp)
-app.register_blueprint(sessions_bp)
+app.register_blueprint(sessions_bp, url_prefix='/sessions')
 app.register_blueprint(views_bp)
 if transcribe_bp is not None:
     app.register_blueprint(transcribe_bp)
