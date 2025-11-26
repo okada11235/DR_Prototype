@@ -197,6 +197,13 @@ def end():
         except Exception as e:
             print("AI evaluation error:", e)
 
+        # ★ 総合運転スコア計算（失敗してもセッション完了は続行）
+        try:
+            from score import calculate_session_overall_score
+            calculate_session_overall_score(session_id, current_user.id)
+        except Exception as e:
+            print("Score calculation error:", e)
+
         # ★★★ 最重要：必ず session_id を返す ★★★
         return jsonify({
             'status': result.get('status', 'ok'),

@@ -188,6 +188,7 @@
                 <div id="overall-score-display" class="score-number">--</div>
             </div>
             <div class="score-number-subtext">/ 100</div>
+            <div id="overall-score-comment" style="margin-top:10px;color:#00796b;font-size:1em;"></div>
         </div>
         <!-- --------------------------------------- -->
 
@@ -257,11 +258,13 @@
         async function loadOverallScore(sessionId) {
             const scoreDisplayEl = document.getElementById("overall-score-display");
             const scoreCircleEl = document.getElementById("overall-score-section").querySelector('.score-circle');
+            const scoreCommentEl = document.getElementById("overall-score-comment");
             
             // スコアが計算されるまでローディング表示
             scoreDisplayEl.textContent = "00";
             scoreDisplayEl.style.color = "#ccc";
             scoreCircleEl.style.borderColor = "#e0f7fa";
+            scoreCommentEl.textContent = "";
 
             const docRef = db.collection("sessions").doc(sessionId);
 
@@ -270,17 +273,19 @@
                 if (!doc.exists) {
                     scoreDisplayEl.textContent = "N/A";
                     scoreDisplayEl.style.color = "#ff0000";
+                    scoreCommentEl.textContent = "スコアデータが見つかりませんでした。";
                     unsubscribe(); 
                     return;
                 }
 
                 const data = doc.data();
                 const score = data.overall_score; // Python側で設定するフィールド名
+                const scoreComment = data.score_comment || "";
 
                 if (score !== undefined && score !== null) {
                     const roundedScore = Math.round(score);
                     scoreDisplayEl.textContent = roundedScore;
-                    
+                    scoreCommentEl.textContent = scoreComment;
                     // スコアに応じて色を調整
                     let colorCode = "#2090c2";
                     let borderColorCode = "#2b8ca6";
@@ -301,10 +306,11 @@
 
                     unsubscribe(); // スコアが取得できたら監視を停止
                 } else {
-                     // スコアがまだ計算されていない場合はローディング状態を維持
+                    // スコアがまだ計算されていない場合はローディング状態を維持
                     scoreDisplayEl.textContent = "00";
                     scoreDisplayEl.style.color = "#ccc"; 
                     scoreCircleEl.style.borderColor = "#e0f7fa";
+                    scoreCommentEl.textContent = "";
                 }
 
             }, error => {

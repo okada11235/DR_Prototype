@@ -34,7 +34,16 @@ def calculate_jerk_and_stability(avg_g_logs: list, sample_rate_hz: float = 10.0)
     speeds = np.array([g.get("speed", 0.0) for g in avg_g_logs]) # 速度 (km/h)
 
     if len(gz_vals) < 2:
-        return None, 0
+        # データ点数が極端に少ない場合も最低限のダミー値を返す
+        return {
+            "jerk_z_count": 0,
+            "jerk_x_count": 0,
+            "total_jerk_events": 0,
+            "jerk_events_per_km": 0.0,
+            "speed_std": 0.0,
+            "total_distance_km": 0.1,
+            "data_points": len(gz_vals),
+        }
 
     # 1. 加速度の変化率 (Jerk) の計算 (numpy.diffを使用)
     # Jerk = d(Acceleration) / dt
@@ -92,8 +101,8 @@ def calculate_overall_driving_score(jerk_stats: dict):
     
     スコア計算式: 100 - (重みA * Jerk Events per km) - (重みB * Speed Std)
     """
-    if not jerk_stats:
-        return 0, "データ不足"
+    if not jerk_stats or jerk_stats.get("data_points", 0) == 0:
+        return 0, "データ点数が少ないため参考値です。データ不足"
 
     # 重みパラメータの決定 (調整可能)
     # A: Jerk Events per km の重み (急操作の回数がスコアに与える影響)
@@ -148,9 +157,20 @@ def calculate_session_overall_score(session_id: str, user_id: str) -> dict:
         for d in sess_ref.collection("avg_g_logs").order_by("timestamp").stream()
     ]
     
-    if not avg_g_logs or len(avg_g_logs) < 10: # 最低限のデータ点数
-        print(f"⚠️ ログデータが不足しています（{len(avg_g_logs)}点）。スコア計算をスキップします。")
-        return {"overall_score": 0, "comment": "データ不足によりスコア計算ができませんでした。"}
+    if not avg_g_logs or len(avg_g_logs) < 5: # 最低限のデータ点数を5点に緩和
+        print(f"⚠️ ログデータが非常に少ないです（{len(avg_g_logs)}点）。参考値としてスコアを計算します。")
+        # データが少ない場合も計算は行うが、コメントで警告
+        jerk_stats = calculate_jerk_and_stability(avg_g_logs)
+        overall_score, score_comment = calculate_overall_driving_score(jerk_stats)
+        score_comment = "データ点数が少ないため参考値です。" + score_comment
+        score_data = {
+            "overall_score": overall_score,
+            "score_comment": score_comment,
+            "calculated_at": datetime.now(JST),
+            "jerk_stats": jerk_stats
+        }
+        sess_ref.update(score_data)
+        return score_data
     
     # 1. ジャークと安定性指標の計算
     jerk_stats = calculate_jerk_and_stability(avg_g_logs)
