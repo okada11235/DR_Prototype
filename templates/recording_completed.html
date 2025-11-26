@@ -1,323 +1,428 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ドライブバディ - 記録完了</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ドライブバディ - 記録完了</title>
 
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
 
-  <style>
-    body {
-      font-family: "Hiragino Kaku Gothic ProN", sans-serif;
-      background-color: #cdeae0;
-      color: #333;
-      margin: 0;
-      padding-bottom: 55px;
-    }
+    <style>
+        body {
+            font-family: "Hiragino Kaku Gothic ProN", sans-serif;
+            background-color: #cdeae0;
+            color: #333;
+            margin: 0;
+            padding-bottom: 55px;
+        }
 
-    header {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 15px;
-    }
+        header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 15px;
+        }
 
-    .logo-area { display: flex; align-items: center; gap: 10px; }
-    .logo-area img { width: 50px; height: 50px; }
-    .title { font-size: 1.5em; font-weight: bold; color: #2090c2; }
+        .logo-area { display: flex; align-items: center; gap: 10px; }
+        .logo-area img { width: 50px; height: 50px; }
+        .title { font-size: 1.5em; font-weight: bold; color: #2090c2; }
 
-    .main { text-align: center; padding: 20px; }
+        .main { text-align: center; padding: 20px; }
 
-    .robot { width: 80px; height: 80px; border-radius: 50%; background-color: #fff; border: 2px solid #2b8ca6; margin-bottom: 5px; }
+        .robot { width: 80px; height: 80px; border-radius: 50%; background-color: #fff; border: 2px solid #2b8ca6; margin-bottom: 5px; }
 
-    .main-title { color: #4db6ac; font-size: 1.8em; font-weight: bold; margin-bottom: 10px; }
+        .main-title { color: #4db6ac; font-size: 1.8em; font-weight: bold; margin-bottom: 10px; }
 
-    .drive-info {
-      display: flex; justify-content: center; gap: 40px;
-      font-weight: bold; margin-bottom: 20px;
-    }
+        .drive-info {
+            display: flex; justify-content: center; gap: 40px;
+            font-weight: bold; margin-bottom: 20px;
+        }
 
-    .section {
-      background-color: #fff;
-      border-radius: 8px;
-      margin: 15px auto;
-      padding: 15px 20px;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.1);
-      width: 90%;
-      text-align: left;
-    }
+        /* --- 総合スコア表示用スタイル --- */
+        .score-card {
+            margin: 20px auto 30px auto;
+            padding: 20px;
+            background-color: #fff;
+            border-radius: 12px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+            max-width: 300px;
+            text-align: center;
+            border: 1px solid #e1f5fe;
+        }
 
-    .pin-feedback {
-      background: #f5fbfd;
-      border-left: 6px solid #4db6ac;
-      padding: 10px 12px;
-      margin: 10px 0;
-      border-radius: 5px;
-      transition: transform 0.2s;
-    }
+        .score-label {
+            color: #2090c2;
+            font-size: 1.1em;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
 
-    .pin-feedback:hover { transform: scale(1.01); }
+        .score-circle {
+            position: relative;
+            width: 150px;
+            height: 150px;
+            margin: 0 auto;
+            border-radius: 50%;
+            background: #f0f8ff; /* Light blue background */
+            border: 8px solid #e0f7fa; /* Very light border */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.05);
+            transition: all 0.5s;
+        }
 
-    .pin-label {
-      font-weight: bold;
-      color: #007c91;
-      font-size: 1.05em;
-    }
+        .score-number {
+            font-size: 3.5em;
+            font-weight: 900;
+            color: #ccc; /* Initial loading color */
+            position: relative;
+            z-index: 10;
+        }
+        
+        .score-number-subtext {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #2090c2;
+            margin-top: 5px;
+        }
+        /* --------------------------------- */
 
-    .pin-comment { margin-top: 6px; color: #333; }
+        .section {
+            background-color: #fff;
+            border-radius: 8px;
+            margin: 15px auto;
+            padding: 15px 20px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+            width: 90%;
+            text-align: left;
+        }
 
-    .rating-badge {
-      display: inline-block;
-      font-weight: bold;
-      border-radius: 12px;
-      padding: 2px 8px;
-      font-size: 0.9em;
-      margin-left: 8px;
-    }
+        .pin-feedback {
+            background: #f5fbfd;
+            border-left: 6px solid #4db6ac;
+            padding: 10px 12px;
+            margin: 10px 0;
+            border-radius: 5px;
+            transition: transform 0.2s;
+        }
 
-    .rating-good { background: #b3e5fc; color: #0277bd; }
-    .rating-verygood { background: #c8e6c9; color: #2e7d32; }
-    .rating-normal { background: #fff9c4; color: #795548; }
-    .rating-bad { background: #ffcdd2; color: #c62828; }
-    .rating-none { background: #e0e0e0; color: #555; }
+        .pin-feedback:hover { transform: scale(1.01); }
 
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
+        .pin-label {
+            font-weight: bold;
+            color: #007c91;
+            font-size: 1.05em;
+        }
 
-    .custom-nav-bar {
-      background: #378da0;
-      border-top: 2px solid #5a7d8d;
-      height: 45px;
-    }
-  </style>
+        .pin-comment { margin-top: 6px; color: #333; }
+
+        .rating-badge {
+            display: inline-block;
+            font-weight: bold;
+            border-radius: 12px;
+            padding: 2px 8px;
+            font-size: 0.9em;
+            margin-left: 8px;
+        }
+
+        .rating-good { background: #b3e5fc; color: #0277bd; }
+        .rating-verygood { background: #c8e6c9; color: #2e7d32; }
+        .rating-normal { background: #fff9c4; color: #795548; }
+        .rating-bad { background: #ffcdd2; color: #c62828; }
+        .rating-none { background: #e0e0e0; color: #555; }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .custom-nav-bar {
+            background: #378da0;
+            border-top: 2px solid #5a7d8d;
+            height: 45px;
+        }
+    </style>
 </head>
 
 <body>
-  <header>
-    <div class="logo-area">
-      <img src="{{ url_for('static', filename='img/icon.png') }}" alt="ロゴ">
-      <div class="title">ドライブバディ</div>
-    </div>
-  </header>
+    <header>
+        <div class="logo-area">
+            <!-- 実際の環境に合わせてimgタグのURLを修正してください -->
+            <img src="https://placehold.co/50x50/2090c2/ffffff?text=DB" alt="ロゴ">
+            <div class="title">ドライブバディ</div>
+        </div>
+    </header>
 
-  <main class="main">
-    <img src="{{ url_for('static', filename='img/robot.png') }}" alt="ドライボ" class="robot">
-    <div class="main-title">お疲れさまでした！</div>
+    <main class="main">
+        <!-- 実際の環境に合わせてimgタグのURLを修正してください -->
+        <img src="https://placehold.co/80x80/2b8ca6/ffffff?text=AI" alt="ドライボ" class="robot">
+        <div class="main-title">お疲れさまでした！</div>
 
-    <div id="completed-route-name" 
-     style="font-size:1.3em; font-weight:bold; margin: 10px 0; color:#007c91;">
-  今回走ったルート：読み込み中...
-</div>
+        <!-- 走行時間と走行距離 -->
+        <div class="drive-info">
+            <div>走行時間<br>
+                <span id="total-time">
+                    {% if session and session.start_time and session.end_time %}
+                        {{ ((session.end_time - session.start_time).total_seconds() // 60)|int }}:
+                        {{ ((session.end_time - session.start_time).total_seconds() % 60)|int }}
+                    {% else %}
+                        --:--
+                    {% endif %}
+                </span>
+            </div>
 
-    <div class="drive-info">
-      <div>走行時間<br>
-        <span id="total-time">
-          {% if session and session.start_time and session.end_time %}
-            {{ ((session.end_time - session.start_time).total_seconds() // 60)|int }}:
-            {{ ((session.end_time - session.start_time).total_seconds() % 60)|int }}
-          {% else %}
-            --:--
-          {% endif %}
-        </span>
-      </div>
+            <div>走行距離<br>
+                <span id="total-distance">
+                    {% if session and session.distance %}
+                        {{ '%.2f'|format(session.distance) }} km
+                    {% else %}
+                        -- km
+                    {% endif %}
+                </span>
+            </div>
+        </div>
 
-      <div>走行距離<br>
-        <span id="total-distance">
-          {% if session and session.distance %}
-            {{ '%.2f'|format(session.distance) }} km
-          {% else %}
-            -- km
-          {% endif %}
-        </span>
-      </div>
-    </div>
+        <!-- --- 総合スコア表示エリア (NEW) --- -->
+        <div id="overall-score-section" class="score-card">
+            <div class="score-label">総合運転スコア (Overall Score)</div>
+            <div class="score-circle">
+                <div id="overall-score-display" class="score-number">--</div>
+            </div>
+            <div class="score-number-subtext">/ 100</div>
+        </div>
+        <!-- --------------------------------------- -->
 
-    <!-- ローディング -->
-    <div id="loading-section" class="section">
-      <h2>🤖 フィードバック生成中...</h2>
-      <p style="text-align:center;">
-        <div style="display:inline-block;width:22px;height:22px;border:3px solid #f3f3f3;border-top:3px solid #2090c2;border-radius:50%;animation:spin 1s linear infinite;margin-right:10px;"></div>
-        AIが走行データを分析しています...
-      </p>
-      <p id="loading-hint" style="text-align:center;color:#007c91;font-size:0.9em;margin-top:5px;">
-        （走行距離が長い場合生成に時間がかかります。）
-      </p>
-    </div>
+        <div id="completed-route-name" 
+            style="font-size:1.3em; font-weight:bold; margin: 10px 0; color:#007c91;">
+            今回走ったルート：読み込み中...
+        </div>
 
-    <!-- 重点ポイントごとのフィードバック -->
-    <div id="focus-feedback-section" class="section" style="display:none;">
-      <h2>重点ポイントごとの評価</h2>
-      <div id="focus-feedback-list"></div>
-    </div>
+        <!-- ローディング -->
+        <div id="loading-section" class="section">
+            <h2>🤖 フィードバック生成中...</h2>
+            <p style="text-align:center;">
+                <div style="display:inline-block;width:22px;height:22px;border:3px solid #f3f3f3;border-top:3px solid #2090c2;border-radius:50%;animation:spin 1s linear infinite;margin-right:10px;"></div>
+                AIが走行データを分析しています...
+            </p>
+            <p id="loading-hint" style="text-align:center;color:#007c91;font-size:0.9em;margin-top:5px;">
+                （走行距離が長い場合生成に時間がかかります。）
+            </p>
+        </div>
 
-    {% if session %}
-      <div style="margin-top: 20px;">
-        <a href="{{ url_for('sessions.detail_result_page', session_id=session.id) }}" class="btn btn-primary">
-          🚗 記録の詳細を確認する
-        </a>
-      </div>
-    {% endif %}
-  </main>
+        <!-- 重点ポイントごとのフィードバック -->
+        <div id="focus-feedback-section" class="section" style="display:none;">
+            <h2>重点ポイントごとの評価</h2>
+            <div id="focus-feedback-list"></div>
+        </div>
 
-  <!-- ✅ Firebase -->
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+        {% if session %}
+            <div style="margin-top: 20px;">
+                <!-- `url_for` はFlaskなどのテンプレートエンジン機能です。環境に合わせて適切に修正してください。 -->
+                <a href="{{ url_for('sessions.detail_result_page', session_id=session.id) }}" class="btn btn-primary">
+                    🚗 記録の詳細を確認する
+                </a>
+            </div>
+        {% endif %}
+    </main>
 
-  <script>
-    const firebaseConfig = {
-      apiKey: "AIzaSyCEuouICKd32x3-4y5QzA_2ovq8pydvez4",
-      authDomain: "drive-prototype-32ef0.firebaseapp.com",
-      projectId: "drive-prototype-32ef0",
-      storageBucket: "drive-prototype-32ef0.firebasestorage.app",
-      messagingSenderId: "500916744769",
-      appId: "1:500916744769:web:d5a529ef05d15bb2934cc0"
-    };
+    <!-- ✅ Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 
-    firebase.initializeApp(firebaseConfig);
-    async function loadCompletedRouteName() {
-  const routeNameEl = document.getElementById("completed-route-name");
-  const routeId = localStorage.getItem("priorityRouteId");
+    <script>
+        // Firestoreの設定 (環境に合わせて修正してください)
+        const firebaseConfig = {
+            apiKey: "AIzaSyCEuouICKd32x3-4y5QzA_2ovq8pydvez4",
+            authDomain: "drive-prototype-32ef0.firebaseapp.com",
+            projectId: "drive-prototype-32ef0",
+            storageBucket: "drive-prototype-32ef0.firebasestorage.app",
+            messagingSenderId: "500916744769",
+            appId: "1:500916744769:web:d5a529ef05d15bb2934cc0"
+        };
 
-  if (!routeId) {
-    routeNameEl.textContent = "取得できませんでした";
-    return;
-  }
-
-  try {
-    const doc = await db.collection("priority_routes").doc(routeId).get();
-    if (!doc.exists) {
-      routeNameEl.textContent = "不明なルート";
-      return;
-    }
-
-    const data = doc.data();
-    routeNameEl.textContent = data.name || "（名前なし）";
-
-  } catch (e) {
-    console.error("ルート名取得エラー:", e);
-    routeNameEl.textContent = "取得に失敗しました";
-  }
-}
-
-    const db = firebase.firestore();
-
-    function getRatingBadge(rating) {
-      switch (rating) {
-        case "とてもいい": return `<span class="rating-badge rating-verygood">😁 とてもいい</span>`;
-        case "いい": return `<span class="rating-badge rating-good">😊 いい</span>`;
-        case "ふつう": return `<span class="rating-badge rating-normal">😐 ふつう</span>`;
-        case "わるい": return `<span class="rating-badge rating-bad">😢 わるい</span>`;
-        default: return `<span class="rating-badge rating-none">未評価</span>`;
-      }
-    }
-
-    async function loadFocusFeedbacks(sessionId) {
-      const listDiv = document.getElementById("focus-feedback-list");
-      const section = document.getElementById("focus-feedback-section");
-      const loading = document.getElementById("loading-section");
-      const hint = document.getElementById("loading-hint");
-
-      loading.style.display = "block";
-      section.style.display = "none";
-      listDiv.innerHTML = "";
-
-      const ref = db.collection("sessions")
-        .doc(sessionId)
-        .collection("focus_feedbacks")
-        .orderBy("created_at", "desc");
-
-      ref.onSnapshot(snapshot => {
-        if (snapshot.empty) {
-          hint.textContent = "分析中です。順次フィードバックが表示されます...";
-          return;
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        
+        // 評価バッジを生成するヘルパー関数
+        function getRatingBadge(rating) {
+            switch (rating) {
+                case "とてもいい": return `<span class="rating-badge rating-verygood">😁 とてもいい</span>`;
+                case "いい": return `<span class="rating-badge rating-good">😊 いい</span>`;
+                case "ふつう": return `<span class="rating-badge rating-normal">😐 ふつう</span>`;
+                case "わるい": return `<span class="rating-badge rating-bad">😢 わるい</span>`;
+                default: return `<span class="rating-badge rating-none">未評価</span>`;
+            }
         }
 
-        loading.style.display = "none";
-        section.style.display = "block";
+        // 走行セッションの総合スコアをリアルタイムで読み込む関数
+        async function loadOverallScore(sessionId) {
+            const scoreDisplayEl = document.getElementById("overall-score-display");
+            const scoreCircleEl = document.getElementById("overall-score-section").querySelector('.score-circle');
+            
+            // スコアが計算されるまでローディング表示
+            scoreDisplayEl.textContent = "00";
+            scoreDisplayEl.style.color = "#ccc";
+            scoreCircleEl.style.borderColor = "#e0f7fa";
 
-        const existingIds = Array.from(
-          document.querySelectorAll(".pin-feedback")
-        ).map(div => div.dataset.id);
+            const docRef = db.collection("sessions").doc(sessionId);
 
-        snapshot.docChanges().forEach(change => {
-          if (change.type === "added") {
-            const d = change.doc.data();
-            d.id = change.doc.id;
+            // onSnapshotを使ってリアルタイムにスコアの更新を待ちます
+            const unsubscribe = docRef.onSnapshot(doc => {
+                if (!doc.exists) {
+                    scoreDisplayEl.textContent = "N/A";
+                    scoreDisplayEl.style.color = "#ff0000";
+                    unsubscribe(); 
+                    return;
+                }
 
-            if (existingIds.includes(d.id)) return;
+                const data = doc.data();
+                const score = data.overall_score; // Python側で設定するフィールド名
 
-            const badge = getRatingBadge(d.rating);
-            const div = document.createElement("div");
-            div.className = "pin-feedback";
-            div.dataset.id = d.id;
+                if (score !== undefined && score !== null) {
+                    const roundedScore = Math.round(score);
+                    scoreDisplayEl.textContent = roundedScore;
+                    
+                    // スコアに応じて色を調整
+                    let colorCode = "#2090c2";
+                    let borderColorCode = "#2b8ca6";
 
-            div.innerHTML = `
-              <div class="pin-label">📍 ${d.pin_label || "(ラベルなし)"} ${badge}</div>
-              <div style="margin-left:1.2em;color:#00796b;font-size:0.95em;">
-                🎯 ${d.focus_label || "意識ポイント未設定"}
-              </div>
-              <div class="pin-comment">
-                💬 ${(d.short_comment || "コメントなし").replace(/\n/g, "<br>")}
-                <div style="text-align:right;margin-top:4px;">
-                  <a href="/feedback_detail_completed/${sessionId}/${d.id}"
-                    style="color:#007bff;font-size:0.9em;text-decoration:none;">
-                    ➡ 詳細を見る
-                  </a>
-                </div>
-              </div>
-            `;
+                    if (roundedScore >= 85) {
+                        colorCode = "#2e7d32"; // Very Good (Green)
+                        borderColorCode = "#a5d6a7";
+                    } else if (roundedScore >= 60) {
+                        colorCode = "#ffa000"; // Normal (Amber)
+                        borderColorCode = "#fff176";
+                    } else {
+                        colorCode = "#c62828"; // Bad (Red)
+                        borderColorCode = "#ef9a9a";
+                    }
 
-            listDiv.insertBefore(div, listDiv.firstChild);
-          }
+                    scoreDisplayEl.style.color = colorCode;
+                    scoreCircleEl.style.borderColor = borderColorCode;
+
+                    unsubscribe(); // スコアが取得できたら監視を停止
+                } else {
+                     // スコアがまだ計算されていない場合はローディング状態を維持
+                    scoreDisplayEl.textContent = "00";
+                    scoreDisplayEl.style.color = "#ccc"; 
+                    scoreCircleEl.style.borderColor = "#e0f7fa";
+                }
+
+            }, error => {
+                console.error("総合スコア読み込みエラー:", error);
+                scoreDisplayEl.textContent = "ERR";
+                scoreDisplayEl.style.color = "#ff0000";
+                scoreCircleEl.style.borderColor = "#ffcdd2";
+                unsubscribe();
+            });
+        }
+
+
+        // 重点ポイントごとのフィードバックをリアルタイムで読み込む関数
+        async function loadFocusFeedbacks(sessionId) {
+            const listDiv = document.getElementById("focus-feedback-list");
+            const section = document.getElementById("focus-feedback-section");
+            const loading = document.getElementById("loading-section");
+            const hint = document.getElementById("loading-hint");
+
+            loading.style.display = "block";
+            section.style.display = "none";
+            listDiv.innerHTML = "";
+
+            const ref = db.collection("sessions")
+                .doc(sessionId)
+                .collection("focus_feedbacks")
+                .orderBy("created_at", "desc");
+
+            ref.onSnapshot(snapshot => {
+                if (snapshot.empty && loading.style.display !== "none") {
+                    hint.textContent = "分析中です。順次フィードバックが表示されます...";
+                    return;
+                }
+
+                if (!snapshot.empty) {
+                    loading.style.display = "none";
+                    section.style.display = "block";
+                }
+
+                const existingIds = Array.from(
+                    document.querySelectorAll(".pin-feedback")
+                ).map(div => div.dataset.id);
+
+                snapshot.docChanges().forEach(change => {
+                    if (change.type === "added") {
+                        const d = change.doc.data();
+                        d.id = change.doc.id;
+
+                        if (existingIds.includes(d.id)) return;
+
+                        const badge = getRatingBadge(d.rating);
+                        const div = document.createElement("div");
+                        div.className = "pin-feedback";
+                        div.dataset.id = d.id;
+
+                        div.innerHTML = `
+                            <div class="pin-label">📍 ${d.pin_label || "(ラベルなし)"} ${badge}</div>
+                            <div style="margin-left:1.2em;color:#00796b;font-size:0.95em;">
+                                🎯 ${d.focus_label || "意識ポイント未設定"}
+                            </div>
+                            <div class="pin-comment">
+                                💬 ${(d.short_comment || "コメントなし").replace(/\n/g, "<br>")}
+                                <div style="text-align:right;margin-top:4px;">
+                                    <a href="/feedback_detail_completed/${sessionId}/${d.id}"
+                                        style="color:#007bff;font-size:0.9em;text-decoration:none;">
+                                        ➡ 詳細を見る
+                                    </a>
+                                </div>
+                            </div>
+                        `;
+
+                        listDiv.insertBefore(div, listDiv.firstChild);
+                    }
+                });
+            });
+        }
+        
+        // 走行ルート名を読み込む関数
+        async function loadCompletedRouteName() {
+            const routeNameEl = document.getElementById("completed-route-name");
+            // `recording_start.html` で保存したキーを使用
+            const routeId = localStorage.getItem("CURRENT_ROUTE_ID"); 
+
+            if (!routeId) {
+                routeNameEl.textContent = "今回走ったルート：取得できませんでした";
+                return;
+            }
+
+            routeNameEl.textContent = "今回走ったルート：読み込み中...";
+
+            try {
+                const doc = await db.collection("priority_routes").doc(routeId).get();
+                if (!doc.exists) {
+                    routeNameEl.textContent = "今回走ったルート：不明（データが見つかりません）";
+                    return;
+                }
+
+                const data = doc.data();
+                const routeName = data.name || "名称未設定";   
+
+                routeNameEl.textContent = `今回走ったルート：${routeName}`;
+            } catch (err) {
+                console.error("ルート名読み込みエラー:", err);
+                routeNameEl.textContent = "今回走ったルート：取得中にエラー";
+            }
+        }
+
+        // 全ての処理を開始
+        document.addEventListener("DOMContentLoaded", () => {
+            const sessionId = "{{ session.id }}"; 
+            
+            // ルート名とスコア、フィードバックの読み込みを開始
+            if (sessionId) {
+                loadCompletedRouteName();
+                loadOverallScore(sessionId); 
+                loadFocusFeedbacks(sessionId);
+            }
         });
-      });
-    }
-
-    document.addEventListener("DOMContentLoaded", () => {
-      const sessionId = "{{ session.id }}";
-
-      // Jinja で計算済みの走行時間と距離がすでに表示されているため JSでは何もしない
-
-      // AIフィードバック読み込み開始
-      if (sessionId) {
-        loadFocusFeedbacks(sessionId);
-      }
-    });
-  </script>
-
-  <script>
-document.addEventListener("DOMContentLoaded", async () => {
-  const db = firebase.firestore();
-
-  // 🔥 recording_start.html で保存したルートID
-  const routeId = localStorage.getItem("CURRENT_ROUTE_ID");
-  const labelEl = document.getElementById("completed-route-name");
-
-  if (!routeId) {
-    labelEl.textContent = "今回走ったルート：取得できませんでした";
-    return;
-  }
-
-  labelEl.textContent = "今回走ったルート：読み込み中...";
-
-  try {
-    const doc = await db.collection("priority_routes").doc(routeId).get();
-    if (!doc.exists) {
-      labelEl.textContent = "今回走ったルート：不明（データが見つかりません）";
-      return;
-    }
-
-    const data = doc.data();
-    const routeName = data.name || "名称未設定";   // ← Firestore の正しいフィールド
-
-    labelEl.textContent = `今回走ったルート：${routeName}`;
-  } catch (err) {
-    console.error("ルート名読み込みエラー:", err);
-    labelEl.textContent = "今回走ったルート：取得中にエラー";
-  }
-});
-</script>
-
+    </script>
 </body>
 </html>
