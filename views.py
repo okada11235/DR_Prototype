@@ -1096,14 +1096,24 @@ def feedback_log():
     from collections import Counter
     from datetime import datetime, timedelta
     try:
-        # 日付フィルターパラメータ取得
-        filter_date = request.args.get('date', '')
-        
+        # 期間フィルターパラメータ取得
+        start_date = request.args.get('start_date', '')
+        end_date = request.args.get('end_date', '')
+        filter_date = request.args.get('date', '')  # 旧式フィルタも一応残す
+
         # Firestoreから全フィードバック取得
         feedbacks_ref = db.collection('user_feedback').order_by('created_at', direction=firestore.Query.DESCENDING).stream()
         feedbacks = []
         date_counts = Counter()  # 日付ごとの件数
-        
+
+        # 日付範囲のdatetime生成
+        dt_start = None
+        dt_end = None
+        if start_date:
+            dt_start = datetime.strptime(start_date, '%Y-%m-%d').replace(tzinfo=JST)
+        if end_date:
+            dt_end = datetime.strptime(end_date, '%Y-%m-%d').replace(tzinfo=JST) + timedelta(days=1)
+
         for doc in feedbacks_ref:
             data = doc.to_dict()
             data['id'] = doc.id
@@ -1113,12 +1123,17 @@ def feedback_log():
                 # 日付をキーにしてカウント
                 date_key = data['created_at'].strftime('%Y-%m-%d')
                 date_counts[date_key] += 1
-                
-                # 日付フィルター適用
+
+                # 期間フィルター適用
+                if dt_start and data['created_at'] < dt_start:
+                    continue
+                if dt_end and data['created_at'] >= dt_end:
+                    continue
+                # 旧式1日フィルター
                 if filter_date:
                     if date_key != filter_date:
                         continue
-            
+
             feedbacks.append(data)
         
         # 集計処理
@@ -1173,7 +1188,9 @@ def feedback_log():
             pin_summary=pin_summary,
             solution_summary=solution_summary,
             date_counts=date_counts,
-            filter_date=filter_date
+            filter_date=filter_date,
+            start_date=start_date,
+            end_date=end_date
         )
     except Exception as e:
         print(f"Error in feedback_log: {e}")
