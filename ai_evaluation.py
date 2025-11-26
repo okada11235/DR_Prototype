@@ -191,23 +191,24 @@ def get_historical_stats(user_id, session_id, pin_id, limit=3):
     for sdoc in prev_sessions:
         if sdoc.id == session_id:
             continue  # 今回のセッションを除外
-        
+
         fb_ref = db.collection("sessions").document(sdoc.id)\
             .collection("focus_feedbacks").document(pin_id)
-        
+
         fb_doc = fb_ref.get()
         if fb_doc.exists:
             fb_data = fb_doc.to_dict()
-            historical_data.append({
-                "session_id": sdoc.id,
-                "stats": fb_data.get("stats"),
-                "rating": fb_data.get("rating"),
-                "created_at": fb_data.get("created_at")
-            })
-            
-            if len(historical_data) >= limit:
-                break
-    
+            stats = fb_data.get("stats")
+            # statsがNoneまたはNOT_PASSED_STATS（全て0）の場合は追加しない
+            if stats and any(v != 0 for v in stats.values()):
+                historical_data.append({
+                    "session_id": sdoc.id,
+                    "stats": stats,
+                    "rating": fb_data.get("rating"),
+                    "created_at": fb_data.get("created_at")
+                })
+                if len(historical_data) >= limit:
+                    break
     return historical_data
 
 
