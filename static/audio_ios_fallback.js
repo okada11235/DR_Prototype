@@ -18,7 +18,7 @@ window.loadEventAudio = async function() {
       window.audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
     const ctx = window.audioContext;
-    const response = await fetch("/static/audio/event_audio.wav");
+    const response = await fetch("/static/audio/combined_all.wav");
     const arrayBuffer = await response.arrayBuffer();
     window.eventAudioBuffer = await ctx.decodeAudioData(arrayBuffer);
     console.log("✅ event_audio.wav loaded successfully");
