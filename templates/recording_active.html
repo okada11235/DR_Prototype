@@ -51,12 +51,12 @@ tailwind.config = {
     width: 72px;
     height: 72px;
     border-radius: 50%;
+    background: orange;
     position: absolute;
     left: 50%;
     top: 50%;
     transform: translate(-50%, -50%);
-    overflow: hidden;
-    z-index: 5;
+    z-index: 2;  /* ← ロボより後ろで動く */
   }
 
   .gBallImg {
@@ -92,10 +92,24 @@ tailwind.config = {
     font-size: 12px;
     font-weight: 700;
     pointer-events: none;
-    z-index: 2;
+    z-index: 11;
     padding: 2px 4px;
     border-radius: 4px;
     transform: translate(-50%, -50%); /* 中央基準にする */
+  }
+
+  #gRobotCenter {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 10;  /* ロボットを前面にしたい時は 10 にする */
+    pointer-events: none;
+  }
+
+  #gRobotCenter img {
+    width: 60px;  /* ロボサイズ調整 */
+    height: auto;
   }
 </style>
 </head>
@@ -124,10 +138,14 @@ tailwind.config = {
 
   <!-- G-Bowl エリア（スタート後に表示） -->
   <div id="gBowlArea" class="mt-2 opacity-0 transition-opacity duration-300">
-      <!-- Gボール（ロボ画像） -->
-      <div id="gBall">
-        <img src="{{ url_for('static', filename='img/robot_active.png') }}" class="gBallImg">
+
+      <!-- 🔵 中央に固定されるロボット -->
+      <div id="gRobotCenter">
+          <img src="{{ url_for('static', filename='img/robot_active_new.png') }}">
       </div>
+
+      <!-- 🟠 Gボール（オレンジ背景で動く） -->
+      <div id="gBall"></div>
 
       <!-- G目盛リング（JSで生成する）-->
       <div id="gRings"></div>

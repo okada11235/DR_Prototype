@@ -429,6 +429,7 @@ def log_avg_g_bulk():
                 'g_z': float(log.get('g_z', 0.0)),
                 'rot_z': float(log.get('rot_z', 0.0)),
                 'speed': float(log.get('speed', 0.0)),
+                'delta_speed': float(log.get('delta_speed', 0.0)),
                 'event': log.get('event', 'normal'),
                 'quality': log.get('quality', 'unknown'),  # データ品質レベルを保存
                 'timestamp': ts_dt,

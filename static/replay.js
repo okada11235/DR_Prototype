@@ -71,6 +71,9 @@ function step() {
     const speed = log.speed;
     const rotZ = log.rot_z || 0; // avg_g_logsに保存されている平均角速度を使用
 
+    //const deltaSpeed = log.delta_speed ?? 0; // Firestoreに保存したdeltaSpeedを使う（最新版）
+
+    // 保存されてるデータから計算し直して判定する（旧）
     let deltaSpeed = 0;
     if (prevLog) {
         const dt = (log.timestamp_ms - prevLog.timestamp_ms) / 1000; // 秒
