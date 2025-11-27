@@ -93,6 +93,13 @@
         {% else %}
           <span class="rating-badge">未評価</span>
         {% endif %}
+        <br>
+        <strong>点数:</strong>
+        {% if feedback.score is not none %}
+          <span style="color:#2090c2;font-weight:bold;">🟢 {{ feedback.score }}点</span>
+        {% else %}
+          <span style="color:#aaa;">(未算出)</span>
+        {% endif %}
       </div>
 
       <div class="ai-comment">
