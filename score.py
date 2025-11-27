@@ -4,194 +4,172 @@ from datetime import datetime
 from google.cloud import firestore
 from pytz import timezone
 import os
-import numpy as np # 新たに追加: ジャーク計算のためにNumpyを使用
-# google.generativeai の初期化コードは省略
+import numpy as np  # ジャーク計算で使用
 
+# ==========================================================
+#  基本設定
+# ==========================================================
 JST = timezone("Asia/Tokyo")
 db = firestore.Client()
 
-# === 定義済みの定数などは省略 ===
+# 改良版スコアの重み（ユーザー指定：甘め設定）
+WEIGHT_A = 3.0  # jerk（イベント密度）側の重み
+WEIGHT_B = 2.0  # speed_std（速度ばらつき）側の重み
 
 # ==========================================================
-# 🚀 新規追加：加加速度 (Jerk) 関連の処理
+# 🚀 加加速度 (Jerk) と安定性指標の計算
 # ==========================================================
-
 def calculate_jerk_and_stability(avg_g_logs: list, sample_rate_hz: float = 10.0):
     """
     全走行ログからジャーク（加加速度）と速度の標準偏差を計算し、
     スコア計算に必要な指標を抽出する。
-    
-    Args:
-        avg_g_logs: avg_g_logs コレクションから取得した時系列データリスト
-        sample_rate_hz: センサーデータのサンプリングレート（例: 1秒間に10回）
-        
-    Returns:
-        dict: Jerk Events per km, 速度の標準偏差などスコア指標
-    """
-    # データを Numpy 配列に変換
-    gz_vals = np.array([g.get("g_z", 0.0) for g in avg_g_logs]) # 前後G
-    gx_vals = np.array([g.get("g_x", 0.0) for g in avg_g_logs]) # 左右G
-    speeds = np.array([g.get("speed", 0.0) for g in avg_g_logs]) # 速度 (km/h)
 
+    Args:
+        avg_g_logs: avg_g_logs コレクションから取得した時系列データ（dictのリスト）
+                    必要キー: g_x, g_z, speed, （あれば）distance_km
+        sample_rate_hz: サンプリングレート（例: 10Hz）
+
+    Returns:
+        dict: jerk_z_count / jerk_x_count / jerk_events_per_km / speed_std / total_distance_km / data_points
+    """
+    # Numpy配列化（欠損は0埋め）
+    gz_vals = np.array([float(g.get("g_z", 0.0)) for g in avg_g_logs])  # 前後G
+    gx_vals = np.array([float(g.get("g_x", 0.0)) for g in avg_g_logs])  # 左右G
+    speeds  = np.array([float(g.get("speed", 0.0)) for g in avg_g_logs])  # 速度 (km/h)
+
+    # データ点数が少なすぎる場合の早期リターン
     if len(gz_vals) < 2:
-        # データ点数が極端に少ない場合も最低限のダミー値を返す
         return {
             "jerk_z_count": 0,
             "jerk_x_count": 0,
             "total_jerk_events": 0,
             "jerk_events_per_km": 0.0,
             "speed_std": 0.0,
-            "total_distance_km": 0.1,
+            "total_distance_km": 0.1,  # 最低値を確保
             "data_points": len(gz_vals),
         }
 
-    # 1. 加速度の変化率 (Jerk) の計算 (numpy.diffを使用)
-    # Jerk = d(Acceleration) / dt
-    # dt はサンプリング間隔 (1 / sample_rate_hz)
-    dt = 1.0 / sample_rate_hz
-    
-    # 前後Gのジャーク (加減速の変化の唐突さ)
-    jerk_z = np.diff(gz_vals) / dt 
-    
-    # 左右Gのジャーク (ハンドリングの変化の唐突さ)
-    jerk_x = np.diff(gx_vals) / dt 
-    
-    # 2. ジャークイベントのカウント
-    
-    # 運転の急操作を測るためのジャーク閾値 (単位: G/s, 経験的に設定)
-    # G=9.8m/s^2 なので、1.0 G/s は 9.8 m/s^3 程度の変化率
-    JERK_THRESHOLD = 0.5 
-    
-    # Jerk_zが閾値を超えたイベント回数 (急加速/急減速)
-    jerk_z_count = np.sum(np.abs(jerk_z) > JERK_THRESHOLD)
-    
-    # Jerk_xが閾値を超えたイベント回数 (急ハンドル/急な車線変更)
-    jerk_x_count = np.sum(np.abs(jerk_x) > JERK_THRESHOLD)
+    # === 1) ジャーク (ΔG/Δt) の計算 ===
+    dt = 1.0 / float(sample_rate_hz)
+    jerk_z = np.diff(gz_vals) / dt   # 前後
+    jerk_x = np.diff(gx_vals) / dt   # 左右
 
-    # 3. 速度の標準偏差 (安定性)
-    # 速度データはGPSから取得し、平滑化されていないため、そのまま標準偏差を計算
-    if len(speeds) > 1:
-        speed_std = np.std(speeds)
-    else:
-        speed_std = 0.0
+    # === 2) ジャークイベントのカウント ===
+    # 閾値（G/s）。1.0 G/s ≈ 9.8 m/s^3
+    JERK_THRESHOLD = 0.5
+    jerk_z_count = int(np.sum(np.abs(jerk_z) > JERK_THRESHOLD))
+    jerk_x_count = int(np.sum(np.abs(jerk_x) > JERK_THRESHOLD))
 
-    # 4. 走行距離の計算 (正規化のため)
-    # ここでは、セッション情報から走行距離 (total_distance_km) を取得する前提
-    # 走行距離がない場合は、データ点数で代替するなどの措置が必要
-    total_distance_km = avg_g_logs[-1].get("distance_km", 1.0) # ログの最後の要素から距離を取得
-    if total_distance_km < 0.1: # 短すぎる走行は 0.1km で計算
-         total_distance_km = 0.1 
+    # === 3) 速度の標準偏差（そのまま） ===
+    speed_std = float(np.std(speeds)) if len(speeds) > 1 else 0.0
 
-    # 5. 正規化された指標の算出
-    jerk_events_per_km = (jerk_z_count + jerk_x_count) / total_distance_km
-    
+    # === 4) 走行距離の取得 ===
+    total_distance_km = avg_g_logs[-1].get("distance_km", 1.0)
+    try:
+        total_distance_km = float(total_distance_km)
+    except Exception:
+        total_distance_km = 1.0
+    if total_distance_km < 0.1:
+        total_distance_km = 0.1  # 極端な短距離は下限
+
+    # === 5) 正規化指標 ===
+    total_events = jerk_z_count + jerk_x_count
+    jerk_events_per_km = total_events / total_distance_km
+
     return {
-        "jerk_z_count": int(jerk_z_count),
-        "jerk_x_count": int(jerk_x_count),
-        "total_jerk_events": int(jerk_z_count + jerk_x_count),
+        "jerk_z_count": jerk_z_count,
+        "jerk_x_count": jerk_x_count,
+        "total_jerk_events": total_events,
         "jerk_events_per_km": float(jerk_events_per_km),
         "speed_std": float(speed_std),
         "total_distance_km": float(total_distance_km),
         "data_points": len(gz_vals),
     }
 
-def calculate_overall_driving_score(jerk_stats: dict):
+# ==========================================================
+# 🌙 改良版スコア計算（log1pで減点を緩和）
+# ==========================================================
+def calculate_overall_driving_score(jerk_stats: dict, A=WEIGHT_A, B=WEIGHT_B):
     """
-    ジャーク統計と標準偏差を使って総合スコアを計算する関数 (100点満点)。
-    
-    スコア計算式: 100 - (重みA * Jerk Events per km) - (重みB * Speed Std)
+    改良版：減点を log1p に通して極端な値でも飽和しやすくする
+      deduction = A*log1p(jerk_events_per_km) + B*log1p(speed_std)
+      score     = clamp(100 - deduction, 0, 100)
     """
     if not jerk_stats or jerk_stats.get("data_points", 0) == 0:
         return 0, "データ点数が少ないため参考値です。データ不足"
 
-    # 重みパラメータの決定 (調整可能)
-    # A: Jerk Events per km の重み (急操作の回数がスコアに与える影響)
-    WEIGHT_A = 2.0 
-    # B: Speed Std の重み (速度の安定性がスコアに与える影響)
-    WEIGHT_B = 3.0
-    
-    # 指標値
-    jerk_index = jerk_stats["jerk_events_per_km"]
-    speed_std_index = jerk_stats["speed_std"]
-    
-    # 基礎点 (100点) から減点
-    deduction = (WEIGHT_A * jerk_index) + (WEIGHT_B * speed_std_index)
-    
-    # 最終スコアを計算し、0〜100点に丸める
+    jerk_per_km = float(jerk_stats["jerk_events_per_km"])
+    speed_std   = float(jerk_stats["speed_std"])
+
+    from math import log1p
+    Jn = log1p(jerk_per_km)
+    Sn = log1p(speed_std)
+
+    deduction = A * Jn + B * Sn
     final_score = 100 - deduction
-    
-    if final_score < 0:
-        final_score = 0
-    elif final_score > 100:
-        final_score = 100
-        
-    final_score = round(final_score)
-    
-    # 運転評価コメントの生成
-    if final_score >= 90:
-        comment = "非常に滑らかで、ほとんど完璧な運転でした。素晴らしい！"
-    elif final_score >= 80:
-        comment = "安定性が高く、安全運転の意識が感じられます。急操作は非常に少ないです。"
-    elif final_score >= 70:
-        comment = "おおむね良好な運転ですが、加減速またはハンドルの操作に若干の揺れが見られました。"
-    else:
-        comment = "急な操作が散見されます。特に加減速の変化を滑らかにする練習をしましょう。"
+    final_score = 0 if final_score < 0 else (100 if final_score > 100 else round(final_score))
+
+    # コメント生成
+    if   final_score >= 90: comment = "非常に滑らかで、ほとんど完璧な運転でした。素晴らしい！"
+    elif final_score >= 80: comment = "安定性が高く、安全運転の意識が感じられます。急操作は非常に少ないです。"
+    elif final_score >= 70: comment = "おおむね良好な運転ですが、加減速またはハンドルの操作に若干の揺れが見られました。"
+    elif final_score >= 50: comment = "改善余地あり。急操作を減らし、速度変化を滑らかにするとスコアが上がります。"
+    else:                   comment = "急な操作が多く、速度のばらつきも大きい傾向です。特に加減速の滑らかさを意識しましょう。"
 
     return final_score, comment
 
-
 # ==========================================================
-# 📊 新規追加：メイン総合スコア解析
+# 📊 総合スコア解析（Firestore読み込み→計算→保存）
 # ==========================================================
-def calculate_session_overall_score(session_id: str, user_id: str) -> dict:
+def calculate_session_overall_score(session_id: str, user_id: str, sample_rate_hz: float = 10.0) -> dict:
     """
-    セッション全体のログを対象に、加加速度と標準偏差に基づく総合スコアを計算し、
-    Firestoreに保存する。
+    セッション全体のログを対象に、ジャークと速度ばらつきに基づく総合スコアを計算し、Firestoreに保存する。
     """
     sess_ref = db.collection("sessions").document(session_id)
-    
-    # ログの読み込み
-    # avg_g_logs には g_x, g_z, speed, distance_km (累積距離) が含まれている前提
+
+    # ログの読み込み（timestamp順）
     avg_g_logs = [
         d.to_dict()
         for d in sess_ref.collection("avg_g_logs").order_by("timestamp").stream()
     ]
-    
-    if not avg_g_logs or len(avg_g_logs) < 5: # 最低限のデータ点数を5点に緩和
+
+    if not avg_g_logs or len(avg_g_logs) < 5:
         print(f"⚠️ ログデータが非常に少ないです（{len(avg_g_logs)}点）。参考値としてスコアを計算します。")
-        # データが少ない場合も計算は行うが、コメントで警告
-        jerk_stats = calculate_jerk_and_stability(avg_g_logs)
+        jerk_stats = calculate_jerk_and_stability(avg_g_logs, sample_rate_hz=sample_rate_hz)
         overall_score, score_comment = calculate_overall_driving_score(jerk_stats)
         score_comment = "データ点数が少ないため参考値です。" + score_comment
         score_data = {
             "overall_score": overall_score,
             "score_comment": score_comment,
             "calculated_at": datetime.now(JST),
-            "jerk_stats": jerk_stats
+            "jerk_stats": jerk_stats,
+            "weights": {"A": WEIGHT_A, "B": WEIGHT_B},
+            "scoring_mode": "improved_log1p",
         }
         sess_ref.update(score_data)
         return score_data
-    
-    # 1. ジャークと安定性指標の計算
-    jerk_stats = calculate_jerk_and_stability(avg_g_logs)
-    
-    # 2. 総合スコアの計算
+
+    # 1) ジャーク＆安定性指標
+    jerk_stats = calculate_jerk_and_stability(avg_g_logs, sample_rate_hz=sample_rate_hz)
+
+    # 2) スコア
     overall_score, score_comment = calculate_overall_driving_score(jerk_stats)
-    
-    # 3. Firestoreに保存
+
+    # 3) Firestoreに保存
     score_data = {
         "overall_score": overall_score,
         "score_comment": score_comment,
         "calculated_at": datetime.now(JST),
-        "jerk_stats": jerk_stats # 詳細な指標も保存
+        "jerk_stats": jerk_stats,
+        "weights": {"A": WEIGHT_A, "B": WEIGHT_B},
+        "scoring_mode": "improved_log1p",
+        "sample_rate_hz_used": float(sample_rate_hz),
     }
-    
-    # sessionsドキュメント自体に保存
+
     sess_ref.update(score_data)
-    
-    print(f"✅ Session {session_id} の総合スコア: {overall_score}点 で更新されました。")
+    print(f"✅ Session {session_id} の総合スコア: {overall_score}点（log1p改良版 / A={WEIGHT_A}, B={WEIGHT_B}）で更新")
     return score_data
 
-# --- 他の関数（calculate_detailed_stats, get_focus_ratingなど）はそのまま利用 ---
-# ... (既存の関数群) ...
-# ... (既存の関数群) ...
+# --- 呼び出し例 ---
+# result = calculate_session_overall_score(session_id="YOUR_SESSION_ID", user_id="YOUR_USER_ID", sample_rate_hz=10.0)
+# print(result)

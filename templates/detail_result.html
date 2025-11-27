@@ -262,6 +262,9 @@
               <div class="pin-label">📍 ${d.pin_label || "(ラベルなし)"} ${badge}</div>
               <div style="margin-left:1.2em;color:#00796b;font-size:0.95em;">
                 🎯 ${d.focus_label || "意識ポイント未設定"}
+                <span style="margin-left:10px;color:#2090c2;font-weight:bold;">
+                  ${d.score !== undefined ? `🟢 ${d.score}点` : ""}
+                </span>
               </div>
               <div class="pin-comment">
                 💬 ${(d.short_comment || "コメントなし").replace(/\n/g, "<br>")}
@@ -335,28 +338,6 @@
     .rating-bad { background: #ffcdd2; color: #c62828; }
     .rating-none { background: #e0e0e0; color: #555; }
   </style>
-
-    <!-- ====== 音声ログ ====== -->
-    <div class="audio-section mt-4">
-      <h2>音声ログ</h2>
-      {% if audio_records and audio_records|length > 0 %}
-        <div class="audio-list">
-          {% for audio in audio_records %}
-            <div class="audio-item mb-3">
-              <audio controls preload="none" style="width:100%;">
-                <source src="{{ audio.url }}" type="audio/webm">
-                このブラウザでは音声再生がサポートされていません。
-              </audio>
-              <small class="text-muted">
-                {{ audio.created_at.strftime('%Y/%m/%d %H:%M:%S') if audio.created_at else '' }}
-              </small>
-            </div>
-          {% endfor %}
-        </div>
-      {% else %}
-        <div class="warn mt-2">録音データがありません</div>
-      {% endif %}
-    </div>
 
     <!-- ====== グラフ ====== -->
     <h2>G加速度＆速度グラフ</h2>
