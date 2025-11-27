@@ -114,62 +114,6 @@
       </div>
     </div>
 
-    <!-- 運転後フィードバック評価 -->
-    <div class="detail-card">
-      <h5 class="section-title">運転後フィードバック評価</h5>
-      {% set post_labels = {
-        'overall': '総合評価',
-        'clarity': '分かりやすさ',
-        'accuracy': '正確さ',
-        'helpfulness': '改善に役立つ度'
-      } %}
-      <div class="eval-grid">
-        {% for key, label in post_labels.items() %}
-          <div class="eval-item">
-            <div class="eval-label">{{ label }}</div>
-            <div class="eval-value">{{ feedback.get('post_drive_feedback', {}).get(key, '未回答') }}</div>
-          </div>
-        {% endfor %}
-      </div>
-    </div>
-
-    <!-- 重点ポイント設置評価 -->
-    <div class="detail-card">
-      <h5 class="section-title">重点ポイント設置評価</h5>
-      {% set focus_labels = {
-        'ease_view': '閲覧のしやすさ',
-        'ease_edit': '編集のしやすさ',
-        'ease_check': '内容の確認しやすさ'
-      } %}
-      <div class="eval-grid">
-        {% for key, label in focus_labels.items() %}
-          <div class="eval-item">
-            <div class="eval-label">{{ label }}</div>
-            <div class="eval-value">{{ feedback.get('focus_point_evaluation', {}).get(key, '未回答') }}</div>
-          </div>
-        {% endfor %}
-      </div>
-    </div>
-
-    <!-- マップピン機能評価 -->
-    <div class="detail-card">
-      <h5 class="section-title">マップピン機能評価</h5>
-      {% set pin_labels = {
-        'ease_add': 'ピン追加のしやすさ',
-        'ease_edit': 'ピン編集のしやすさ',
-        'speak_useful': '読み上げ機能の有用性',
-        'advanced_settings': '優先度/時間帯設定の使いやすさ'
-      } %}
-      <div class="eval-grid">
-        {% for key, label in pin_labels.items() %}
-          <div class="eval-item">
-            <div class="eval-label">{{ label }}</div>
-            <div class="eval-value">{{ feedback.get('map_pin_evaluation', {}).get(key, '未回答') }}</div>
-          </div>
-        {% endfor %}
-      </div>
-    </div>
-
     <!-- 課題解決評価 -->
     <div class="detail-card">
       <h5 class="section-title">課題解決評価</h5>

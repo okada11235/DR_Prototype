@@ -261,10 +261,10 @@
             const scoreCommentEl = document.getElementById("overall-score-comment");
             
             // スコアが計算されるまでローディング表示
-            scoreDisplayEl.textContent = "00";
-            scoreDisplayEl.style.color = "#ccc";
-            scoreCircleEl.style.borderColor = "#e0f7fa";
-            scoreCommentEl.textContent = "";
+                scoreDisplayEl.textContent = "計算中";
+                scoreDisplayEl.style.color = "#ccc";
+                scoreCircleEl.style.borderColor = "#e0f7fa";
+                scoreCommentEl.textContent = "";
 
             const docRef = db.collection("sessions").doc(sessionId);
 
@@ -306,8 +306,8 @@
 
                     unsubscribe(); // スコアが取得できたら監視を停止
                 } else {
-                    // スコアがまだ計算されていない場合はローディング状態を維持
-                    scoreDisplayEl.textContent = "00";
+                    // スコアがまだ計算されていない場合は「計算中」と表示
+                    scoreDisplayEl.textContent = "計算中";
                     scoreDisplayEl.style.color = "#ccc"; 
                     scoreCircleEl.style.borderColor = "#e0f7fa";
                     scoreCommentEl.textContent = "";

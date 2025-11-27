@@ -34,19 +34,17 @@
     <!-- 日付フィルター -->
     <div class="summary-card mb-3">
       <div class="row align-items-center">
-        <div class="col-md-6">
-          <h6 class="mb-2">日付で絞り込み</h6>
-          <select id="dateFilter" class="form-select" onchange="filterByDate(this.value)">
-            <option value="">全期間</option>
-            {% for date, count in date_counts.most_common() %}
-              <option value="{{ date }}" {% if filter_date == date %}selected{% endif %}>
-                {{ date }} ({{ count }}件)
-              </option>
-            {% endfor %}
-          </select>
+        <div class="col-md-7">
+          <h6 class="mb-2">期間で絞り込み</h6>
+          <form method="get" action="{{ url_for('views.feedback_log') }}" class="d-flex align-items-center gap-2">
+            <input type="date" name="start_date" class="form-control" value="{{ start_date|default('') }}" style="max-width:160px;">
+            <span class="mx-1">～</span>
+            <input type="date" name="end_date" class="form-control" value="{{ end_date|default('') }}" style="max-width:160px;">
+            <button type="submit" class="btn btn-primary btn-sm ms-2">集計</button>
+          </form>
         </div>
-        <div class="col-md-6 text-end">
-          {% if filter_date %}
+        <div class="col-md-5 text-end">
+          {% if start_date or end_date %}
             <a href="{{ url_for('views.feedback_log') }}" class="btn btn-sm btn-outline-secondary mt-3">フィルターをクリア</a>
           {% endif %}
         </div>
