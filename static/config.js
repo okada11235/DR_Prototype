@@ -67,8 +67,8 @@ export const audioFiles = {
     smooth_turn: [
         "/static/audio/smooth_turn.wav",
     ],
-    nomal_turn: [
-        "/static/audio/nomal_turn.wav",
+    normal_turn: [
+        "/static/audio/normal_turn.wav",
     ],
     excellent_accel: [
         "/static/audio/excellent_accel.wav",
@@ -76,8 +76,8 @@ export const audioFiles = {
     smooth_accel: [
         "/static/audio/smooth_accel.wav",
     ],
-    nomal_accel: [
-        "/static/audio/nomal_accel.wav",
+    normal_accel: [
+        "/static/audio/normal_accel.wav",
     ],
     excellent_brake: [
         "/static/audio/excellent_brake.wav",
@@ -85,8 +85,8 @@ export const audioFiles = {
     smooth_brake: [
         "/static/audio/smooth_brake.wav",
     ],
-    nomal_brake: [
-        "/static/audio/nomal_brake.wav",
+    normal_brake: [
+        "/static/audio/normal_brake.wav",
     ],
     stable_drive: [
         "/static/audio/stable_drive_2.wav",
