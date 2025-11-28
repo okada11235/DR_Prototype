@@ -660,6 +660,8 @@ def detail_result_page(session_id):
         "sudden_brakes": s.get("sudden_brakes"),
         "sudden_accels": s.get("sudden_accels"),
         "sharp_turns": s.get("sharp_turns"),
+        "overall_score": s.get("overall_score"),
+        "score_comment": s.get("score_comment"),
     }
 
     # 🔹 録音音声を取得
