@@ -214,6 +214,7 @@ function applyOrientationCorrection(gx, gy, gz) {
   if (isIOS) {
     // iOSはAndroidと全ての軸の符号が逆と仮定し、反転させてAndroid基準に統一する
     gx = -gx;
+    gy = -gy;
     gz = -gz;
   }
   // ----------------------------------------------------
