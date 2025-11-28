@@ -114,7 +114,7 @@
 
     .legend{display:flex;flex-wrap:wrap;gap:6px;padding:8px 10px;background:#ffffffcc;border-radius:8px;margin-top:8px;font-size:.85rem;backdrop-filter:blur(4px);justify-content:flex-start}
     .legend-item{display:flex;align-items:center;margin-right:10px;margin-bottom:4px}
-    .legend-color{width:14px;height:14px;border-radius:50%;margin-right:6px;border:1px solid #333}
+    .legend-color{width:20px;height:20px;border-radius:50%;margin-right:6px;border:1px solid #333}
     .warn{background:#fff3cd;color:#856404;border-radius:8px;padding:10px;text-align:center}
     .custom-nav-bar{background:#378da0;border-top:2px solid #5a7d8d;box-shadow:inset 0 0 5px rgba(0,0,0,.2);height:45px}
     .custom-nav-link{color:#fff;font-weight:bold;font-size:1rem;padding:0 1rem;line-height:41px;height:100%;display:block}
@@ -205,13 +205,27 @@
       </div>
   </div>
 
-<!-- === 重点ポイントフィードバック === -->
-<div class="section" id="feedback-section">
-  <h2><img src="{{ url_for('static', filename='img/robot_side.png') }}" alt="ドライボ" class="robot"> フィードバック</h2>
-  <div id="focus-feedback-list">
-    <p>AIフィードバックを読み込んでいます...</p>
+  <!-- === 総合スコア表示 === -->
+  <div class="section" style="margin-top: 10px; margin-bottom: 10px;">
+    <h2>📊 総合スコア</h2>
+    <div style="font-size: 1.2em; font-weight: bold; color: #2a7;">
+      {{ session.overall_score if session.overall_score is not none else "N/A" }} 点
+    </div>
+
+    {% if session.score_comment %}
+      <div style="margin-top: 6px; color: #444; font-size: 0.95em;">
+        {{ session.score_comment }}
+      </div>
+    {% endif %}
   </div>
-</div>
+
+  <!-- === 重点ポイントフィードバック === -->
+  <div class="section" id="feedback-section">
+    <h2><img src="{{ url_for('static', filename='img/robot_side.png') }}" alt="ドライボ" class="robot"> フィードバック</h2>
+    <div id="focus-feedback-list">
+      <p>AIフィードバックを読み込んでいます...</p>
+    </div>
+  </div>
 
   <!-- ✅ Firebase SDKの読み込みは必ずここで script タグで行う！ -->
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
@@ -431,10 +445,23 @@ const colorMap = {
   sharp_turn  :'#ff9500',  // オレンジ
   //unstable_drive:'#ffcc00',// 黄
   excellent_turn :'#007aff',  // 青
+  smooth_turn :'#007aff',
+  normal_turn :'#007aff',
   excellent_accel:'#5ac8fa',  // 水色
+  smooth_accel:'#5ac8fa',
+  normal_accel:'#5ac8fa',
   excellent_brake:'#a0efa5',  // 明るい緑
-  stable_drive:'#a88ee5',  // 紫
+  smooth_brake:'#a0efa5',
+  normal_brake:'#a0efa5',
+  //stable_drive:'#a88ee5',  // 紫
 };
+
+const borderLevelMap = {
+  normal:   "#000000",
+  smooth:   "#f7f700",
+  excellent:"#f70000",
+};
+
 const eventAxisMap = { sudden_brake:'gz', sudden_accel:'gz', sharp_turn:'gx', speed_violation:'speed' };
 
 /** ========= Chart.js 初期化 ========= */
@@ -470,30 +497,35 @@ function findLogByTimestamp(logs, ts, maxDiffMs=500){
   }
   return (min<=maxDiffMs)? closest : null;
 }
-function makeEventPoints(allTs, gpsLogs, axisKey){
+function makeEventPoints(allTs, gpsLogs, axisKey) {
   return {
-    radius: allTs.map(ts=>{
-      const log=findLogByTimestamp(gpsLogs,ts,500);
-      if(!log || !log.event || log.event==='normal') return 0;
-      if(axisKey==='speed') return 6;
-      if(eventAxisMap[log.event]===axisKey) return 6;
+    radius: allTs.map(ts => {
+      const log = findLogByTimestamp(gpsLogs, ts, 500);
+      if (!log || !log.event || log.event === 'normal') return 0;
+
+      if (axisKey === 'speed') return 8;
+      if (eventAxisMap[log.event] === axisKey) return 8;
       return 0;
     }),
-    background: allTs.map(ts=>{
-      const log=findLogByTimestamp(gpsLogs,ts,500);
-      if(!log || !log.event || log.event==='normal') return 'transparent';
-      if(axisKey==='speed') return colorMap[log.event]||'gray';
-      if(eventAxisMap[log.event]===axisKey) return colorMap[log.event]||'gray';
-      return 'transparent';
+
+    background: allTs.map(ts => {
+      const log = findLogByTimestamp(gpsLogs, ts, 500);
+      if (!log || !log.event || log.event === 'normal') return 'transparent';
+
+      const color = colorMap[log.event] || 'gray';
+      return color;
     }),
-    border: allTs.map(ts=>{
-      const log=findLogByTimestamp(gpsLogs,ts,500);
-      if(!log || !log.event || log.event==='normal') return 'transparent';
-      if(axisKey==='speed' || eventAxisMap[log.event]===axisKey) return '#000';
-      return 'transparent';
+
+    border: allTs.map(ts => {
+      const log = findLogByTimestamp(gpsLogs, ts, 500);
+      if (!log || !log.event || log.event === 'normal') return 'transparent';
+
+      const level = getEventLevel(log.event);
+      return borderLevelMap[level];   // ← ★枠線色を反映
     })
-  }
+  };
 }
+
 
 /** ========= グラフ描画 ========= */
 function renderGForceChart(canvasId, gpsLogs, gLogs){
@@ -540,7 +572,8 @@ function renderGForceChart(canvasId, gpsLogs, gLogs){
           pointStyle: ctx => (spPts.radius[ctx.dataIndex] > 0 ? 'circle' : false),
           pointRadius: ctx => spPts.radius[ctx.dataIndex],
           pointBackgroundColor: ctx => spPts.background[ctx.dataIndex],
-          pointBorderColor: ctx => spPts.border[ctx.dataIndex] }
+          pointBorderColor: ctx => spPts.border[ctx.dataIndex],
+          pointBorderWidth: 3, }
       ]
     },
     options:{
@@ -694,6 +727,12 @@ function resetChartZoom(canvasId) {
   chart.update('none'); // アニメーションなしで即時更新
 }
 
+function getEventLevel(eventName) {
+  if (eventName.startsWith("excellent")) return "excellent";
+  if (eventName.startsWith("smooth")) return "smooth";
+  return "normal";
+}
+
 /** ========= 地図 ========= */
 let mapInstance=null;
 function initMap(){
@@ -714,31 +753,45 @@ function initMap(){
     sharp_turn: '急カーブ',
     //unstable_drive: '不安定な運転',
     excellent_turn: 'とてもいいカーブ',
+    smooth_turn: 'いいカーブ',
+    normal_turn: '普通のカーブ',
     excellent_accel: 'とてもいい加速',
+    smooth_accel: 'いい加速',
+    normal_accel: '普通の加速',
     excellent_brake: 'とてもいい減速',
-    stable_drive: '安定した運転'
+    smooth_brake: 'いい減速',
+    normal_brake: '普通の減速',
+    //stable_drive: '安定した運転'
   };
   // 凡例
   const legend=document.getElementById('legend');
-  legend.innerHTML = Object.entries(colorMap).map(([k,c])=>(
-    `<div class="legend-item">
-      <span class="legend-color" style="background:${c}"></span>
-      <span>${labelMap[k] || k}</span>
-    </div>`
-  )).join('');
+  legend.innerHTML = Object.entries(colorMap).map(([k, c]) => {
+    const level = getEventLevel(k);              // ← レベル判定
+    const border = borderLevelMap[level];        // ← 枠の色を取得
+
+    return `
+      <div class="legend-item">
+        <span class="legend-color"
+              style="background:${c}; border: 3px solid ${border}"></span>
+        <span>${labelMap[k] || k}</span>
+      </div>
+    `;
+  }).join('');
 
   // イベントマーカー
   displayGpsLogs.forEach(log=>{
     if(log.event && log.event!=='normal'){
       const color=colorMap[log.event]||'gray';
+      const level = getEventLevel(log.event);
       const marker=new google.maps.Marker({
         position:{lat:log.latitude,lng:log.longitude},
         map: mapInstance,
         icon:{
           path: google.maps.SymbolPath.CIRCLE,
-          scale: 6,
+          scale: 8,
           fillColor: color, fillOpacity: .9,
-          strokeWeight: 1.5, strokeColor:'#000'
+          strokeColor: borderLevelMap[level],
+          strokeWeight: 3, 
         },
         title: String(log.event).replace(/_/g,' ')
       });

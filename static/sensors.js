@@ -30,6 +30,7 @@ let sampleCount = 0;
 let isCalibrating = false;
 let isCalibrated = false;
 let speedZeroStart = 0;   // 速度0が始まった時刻
+let stopCalibrated = false;
 const CALIBRATION_DELAY_MS = 1000; // 1秒間停車を待つ（3秒→1秒に短縮）
 const CALIBRATION_DURATION_MS = 2000; // 2秒間サンプリング
 let calibrationSamples = [];
@@ -260,6 +261,40 @@ function applyOrientationCorrection(gx, gy, gz) {
   return { gx: finalGx, gy: finalGy, gz: finalGz };
 }
 
+/** 停車中だけ実行される安全な再キャリブラッパー */
+function startStopReCalibration() {
+    if (isCalibrating) return;
+
+    console.log("📱 再キャリブ開始");
+
+    isCalibrating = true;
+    isCalibrated = false;
+    calibrationSamples = [];
+
+    // ① 2秒間サンプリング
+    setTimeout(() => {
+
+        // ② 平均化
+        if (calibrationSamples.length >= 15) {
+            const avg = meanVector(calibrationSamples);
+            gravityOffset = { ...avg };
+            orientationMode = detectOrientation(avg).mode;
+            console.log("✨ 再キャリブ成功:", gravityOffset, orientationMode);
+        } else {
+            console.warn("⚠️ 再キャリブ失敗 → 標準値");
+            gravityOffset = { x: 0, y: 0, z: -1 };
+            orientationMode = 'flat';
+        }
+
+        // ③ フラグ更新
+        isCalibrating = false;
+        isCalibrated = true;
+        stopCalibrated = false;
+
+    }, 2000);
+}
+
+
 // =======================
 // 平滑化（200ms移動平均＋σ=3）
 // =======================
@@ -334,55 +369,40 @@ export function handleDeviceMotion(event) {
   // 未キャリブ時は生の値
 
   // --- 修正箇所 2/3: 停車検出によるキャリブレーション起動 ---
-  if (!isCalibrated && !isCalibrating) {
-    const currentSpeed = window.currentSpeed ?? 0;
+  const currentSpeed = window.currentSpeed ?? 0;
 
-    if (currentSpeed < 1.0) { // 停車
+  // --- 停車判定 ---
+  if (currentSpeed < 1.0) {
+
       if (speedZeroStart === 0) {
-        speedZeroStart = now;
+          speedZeroStart = now;
+          stopCalibrated = false;
       }
 
-      // 3秒停車したらキャリブ開始
-      if (now - speedZeroStart >= CALIBRATION_DELAY_MS) {
-        console.log('🚗 停車状態を検知。自動キャリブレーションを実行します。');
-        speedZeroStart = 0;
+      const stoppedMs = now - speedZeroStart;
 
-        isCalibrating = true;
-        calibrationSamples = [];
-        gravityOffset = { x: 0, y: 0, z: 0 };
-
-        setTimeout(() => {
-          if (calibrationSamples.length >= 10) {
-            const avg = meanVector(calibrationSamples);
-            gravityOffset = { ...avg };
-            orientationMode = detectOrientation(avg).mode;
-            isCalibrated = true;
-
-            console.log(
-              '✅ 停車時キャリブ完了:',
-              'gravityOffset=', gravityOffset,
-              '/ orientation=', orientationMode
-            );
-            
-            // 既存データの品質レベルを 'calibrated' に更新
-            updateExistingDataQuality('calibrated');
-
-          } else {
-            console.warn('⚠️ 停車時キャリブ失敗: サンプル不足。重力補正が無効です。');
-            gravityOffset = { x: 0, y: 0, z: 0 };
-            orientationMode = 'unknown';
-          }
-
-          isCalibrating = false;
-        }, CALIBRATION_DURATION_MS);
-
-        return;
+      if (stoppedMs >= 2000 && !isCalibrating && !stopCalibrated) {
+          console.log("🔧 停車2秒 → 再キャリブ許可");
+          stopCalibrated = true;
+          isCalibrated = false;
       }
 
-    } else {
-      speedZeroStart = 0; // 走行中はリセット
-    }
+  } else {
+      speedZeroStart = 0;
+      stopCalibrated = false;
   }
+
+  // --- 再キャリブ開始条件 ---
+  // 動き出しておらず、isCalibrated=false に戻された時だけ発動
+  if (!isCalibrated && !isCalibrating) {
+    // 💡 修正点: isCalibrating=true の設定と return; を削除
+    // startStopReCalibration() は自身で isCalibrating を true/false に設定する。
+    // ここで return せず、下の !isCalibrated ブロックに進み、
+    // 未補正データ (raw) を記録・表示することでUIの固まりを防ぐ。
+    console.log("📱 停車2秒 → 初回キャリブと同じ処理で再キャリブ開始");
+    startStopReCalibration();
+  }
+
 
   // --- 修正箇所 3/3: キャリブ未完了でも基本データは記録 ---
   if (!isCalibrated) {
@@ -443,6 +463,7 @@ export function handleDeviceMotion(event) {
     g_z: smoothedG.z,
     rot_z: avgRotZ,
     speed,
+    delta_speed: deltaSpeed,
     event: eventType || 'normal',
     quality: 'calibrated' // 完全キャリブレーション済み
   });
@@ -490,12 +511,12 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now, recentLo
   const isTurning =
     speed >= 13 &&                // 右左折は必ず13km/h以上
     absSide >= 0.10 &&            // 横Gが出始めたら（蛇行は除外）
-    absRot >= 4;                  // rotZ 4deg/s以上で明確な方向転換
-  const isStable =
+    absRot >= 10;                  // rotZ 10deg/s以上で明確な方向転換
+/*const isStable =
     speed >= 20 &&
     absFwd < 0.12 &&
     absSide < 0.18 &&
-    Math.abs(rotZ) < 3;
+    Math.abs(rotZ) < 3;*/
 
   // 1. 条件判定とステート更新
   if (isTurning && absFwd < 0.25) {
@@ -504,31 +525,31 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now, recentLo
       if (drivingState.turnStart === 0) drivingState.turnStart = now;
       currentCondition = 'turn';
 
-  } else if (isAccelerating && deltaSpeed > 5 && absSide < 0.2 && speed >= 5) {
+  } else if (isAccelerating && deltaSpeed > 3 && absSide < 0.2 && speed >= 5) {
 
       // ---- 加速 ----
       if (drivingState.accelStart === 0) drivingState.accelStart = now;
       currentCondition = 'accel';
 
-  } else if (isBraking && deltaSpeed < -5 && absSide < 0.2 && speed >= 10) {
+  } else if (isBraking && deltaSpeed < -3 && absSide < 0.2 && speed >= 10) {
 
       // ---- 減速 ----
       if (drivingState.brakeStart === 0) drivingState.brakeStart = now;
       currentCondition = 'brake';
 
-  } else if (isStable) {
+  } /*else if (isStable) {
 
       // ---- 直進 ----
       if (drivingState.straightStart === 0) drivingState.straightStart = now;
       currentCondition = 'straight';
 
-  } else {
+  }*/ else {
 
       // ---- どの条件にも該当しない場合はリセット ----
       drivingState.turnStart = 0;
       drivingState.accelStart = 0;
       drivingState.brakeStart = 0;
-      drivingState.straightStart = 0;
+      //drivingState.straightStart = 0;
   }
   
   // 2. 継続時間チェックとイベント発火
@@ -536,7 +557,7 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now, recentLo
   let duration = 0;
 
   // --- ★ stable_drive の継続時間処理  直進判定---
-  if (currentCondition === 'straight') {
+/*if (currentCondition === 'straight') {
 
       // すでに straightStart がセット済みなら継続時間を計算
       const straightDuration = now - drivingState.straightStart;
@@ -554,15 +575,15 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now, recentLo
 
           return type;  // 他イベントより優先
       }
-  }
+  }*/
 
   //------------------------------------------------------
-  // 旋回継続時間チェック（0.75秒）→ 3段階の良い旋回 ＋ sharp
+  // 旋回継続時間チェック（0.25秒）→ 3段階の良い旋回 ＋ sharp
   //------------------------------------------------------
   if (drivingState.turnStart > 0) {
       const duration = now - drivingState.turnStart;
 
-      if (duration >= 750) {  // 0.75秒継続で旋回確定
+      if (duration >= 250) {  // 0.25秒継続で旋回確定
 
           // ★ 現行の sharp 判定用 G（速度で微調整）
           let sharpG = 0.32;
@@ -584,15 +605,15 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now, recentLo
               type = 'sharp_turn';
 
           // 2) とても良い（excellent）
-          } else if (absSide >= 0.12 && absSide < 0.16 && absRot >= 4) {
+          } else if (absSide >= 0.10 && absSide < 0.16 && absRot >= 6) {
               type = 'excellent_turn';
 
-          // 3) 良い（good）
-          } else if (absSide >= 0.16 && absSide < 0.20 && absRot >= 4) {
+          // 3) 良い（smooth）
+          } else if (absSide >= 0.16 && absSide < 0.22 && absRot >= 6) {
               type = 'smooth_turn';
 
           // 4) 普通（normal）
-          } else if (absSide >= 0.20 && absSide < sharpG && absRot >= 4) {
+          } else if (absSide >= 0.22 && absSide < sharpG && absRot >= 6) {
               type = 'normal_turn';
           }
 
@@ -619,7 +640,7 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now, recentLo
 
       const duration = now - drivingState.accelStart;
 
-      if (duration >= 500) { // 0.5秒継続 → 判定確定
+      if (duration >= 300) { // 0.3秒継続 → 判定確定
 
           const gzAbs = Math.abs(gz);
 
@@ -628,20 +649,20 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now, recentLo
           // -----------------------------
           // ★ 4段階加速ロジック
           // -----------------------------
-          if (gzAbs >= SUDDEN_ACCEL_G_THRESHOLD) {
-              accelType = "sudden_accel";     // 悪い
+          if (gzAbs >= 0.18) {
+              accelType = "sudden_accel";   // 悪い
           }
-          else if (gzAbs < 0.15) {
-              accelType = "excellent_accel";  // とても良い
+          else if (gzAbs < 0.08) {
+              accelType = "excellent_accel"; // とても良い
           }
-          else if (gzAbs < 0.20) {
-              accelType = "smooth_accel";       // 良い
+          else if (gzAbs < 0.12) {
+              accelType = "smooth_accel";    // 良い
           }
-          else if (gzAbs < 0.30) {
-              accelType = "normal_accel";     // 普通
+          else if (gzAbs < 0.18) {
+              accelType = "normal_accel";    // 普通
           }
           else {
-              accelType = "sudden_accel";     // 念のため fallback
+              accelType = "sudden_accel";
           }
 
           drivingState.accelStart = 0;
@@ -742,20 +763,20 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now, recentLo
           // -----------------------------
           let brakeType = null;
 
-          if (maxAbsG >= 0.40 || decelRate > 7.5) {
-              brakeType = "sudden_brake";          // 悪い
+          if (maxAbsG >= 0.30 || decelRate > 6.0) {
+              brakeType = "sudden_brake";         // 悪い
           }
-          else if (absAvgG < 0.16 && decelRate < 3.0) {
-              brakeType = "excellent_brake";       // とてもいい
+          else if (absAvgG < 0.14 && decelRate < 2.5) {
+              brakeType = "excellent_brake";      // とてもいい
           }
-          else if (absAvgG < 0.20 && decelRate < 4.5) {
-              brakeType = "smooth_brake";            // いい
+          else if (absAvgG < 0.20 && decelRate < 4.0) {
+              brakeType = "smooth_brake";         // いい
           }
-          else if (absAvgG < 0.25 && decelRate < 7.5) {
-              brakeType = "normal_brake";          // 普通
+          else if (absAvgG < 0.30 && decelRate < 6.0) {
+              brakeType = "normal_brake";         // 普通
           }
           else {
-              brakeType = "sudden_brake";
+              brakeType = "sudden_brake";         // fallback
           }
 
           // ===============================
@@ -795,11 +816,11 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now, recentLo
                 "sudden_brake":[31.043, 1.579],
                 "excellent_accel":[0, 2.837],
                 "smooth_accel":[18.152, 2.635],
-                "nomal_accel":[8.152, 2.571],
+                "normal_accel":[8.152, 2.571],
                 "sudden_accel":[28.578, 2.464],
                 "excellent_turn":[5.431, 2.72],
                 "smooth_turn":[23.234, 3.275],
-                "nomal_turn":[10.724, 2.485],
+                "normal_turn":[10.724, 2.485],
                 "sharp_turn":[15.283, 2.869],
                 "stable_drive":[26.55, 2.027],
                 "unstable_drive":[32.623, 2.005]
@@ -898,11 +919,11 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now, recentLo
           "sudden_brake":[31.043, 1.579],
           "excellent_accel":[0, 2.837],
           "smooth_accel":[18.152, 2.635],
-          "nomal_accel":[8.152, 2.571],
+          "normal_accel":[8.152, 2.571],
           "sudden_accel":[28.578, 2.464],
           "excellent_turn":[5.431, 2.72],
           "smooth_turn":[23.234, 3.275],
-          "nomal_turn":[10.724, 2.485],
+          "normal_turn":[10.724, 2.485],
           "sharp_turn":[15.283, 2.869],
           "stable_drive":[26.55, 2.027],
           "unstable_drive":[32.623, 2.005]
@@ -967,6 +988,7 @@ export function getCurrentG() {
 function resetMotion() {
   motionInitialized = false;
   sampleCount = 0;
+  stopCalibrated = false;
 
   gWindow.length = 0;
   smoothedG = { x: 0, y: 0, z: 0 };
