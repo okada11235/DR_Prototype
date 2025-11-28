@@ -11,7 +11,7 @@
 
 <style>
 body {
-    background-color: #cdeae0; /* ← ホームと同じ色に統一 */
+    background-color: #cdeae0; /* ホームと同じ背景色 */
 }
 
 @keyframes spin {
@@ -50,6 +50,7 @@ body {
     少々お待ちください
   </div>
 
+
 <script>
 const sessionId = "{{ session_id }}";
 
@@ -61,35 +62,33 @@ async function runEndTasks() {
 
     console.log("📡 データ送信開始", sessionId);
 
+    // ロボットを回す
+    const robot = document.getElementById("loadingRobot");
+    robot.style.animation = "spin 1.2s linear infinite";
+
     // ① セッション終了
-    updateUI("走行データを保存しています…", "サーバーに送信中", 20, true);
+    updateText("走行データを保存しています…", "サーバーに送信中");
     await fetch("/sessions/end", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ session_id: sessionId })
     });
 
-    // ② AI フィードバック生成
-    updateUI("AIフィードバックを生成しています…", "走行内容を分析中", 70, false);
+    // ② AI生成
+    updateText("AIフィードバックを生成しています…", "走行内容を分析中");
     await fetch(`/api/focus_feedback/${sessionId}`, { method: "POST" });
 
-    // ③ 完了
-    updateUI("完了しました！", "結果画面へ移動します", 100, false);
+    // 完了
+    updateText("完了しました！", "結果画面へ移動します");
 
     setTimeout(() => {
         window.location.href = `/recording/completed?session_id=${sessionId}`;
-    }, 700);
+    }, 600);
 }
 
-function updateUI(mainText, subText, progress, spin) {
+function updateText(mainText, subText) {
     document.getElementById("statusText").textContent = mainText;
     document.getElementById("subText").textContent = subText;
-
-    const bar = document.getElementById("progressBar");
-    bar.style.width = progress + "%";
-
-    const robot = document.getElementById("loadingRobot");
-    robot.style.animation = spin ? "spin 1.2s linear infinite" : "";
 }
 
 runEndTasks();
