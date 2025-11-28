@@ -508,11 +508,11 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now, recentLo
   
   let currentCondition = null;
   const isBraking = gz <= -0.13;
-  const isAccelerating = gz >= 0.13;
+  const isAccelerating = gz >= 0.10;
   const isTurning =
-    speed >= 13 &&                // 右左折は必ず13km/h以上
-    absSide >= 0.10 &&            // 横Gが出始めたら（蛇行は除外）
-    absRot >= 10;                  // rotZ 10deg/s以上で明確な方向転換
+    speed >= 6 &&                // 右左折は必ず13km/h以上
+    absSide >= 0.045 &&            // 横Gが出始めたら（蛇行は除外）
+    absRot >= 3.5;                  // rotZ 10deg/s以上で明確な方向転換
 /*const isStable =
     speed >= 20 &&
     absFwd < 0.12 &&
@@ -526,7 +526,7 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now, recentLo
       if (drivingState.turnStart === 0) drivingState.turnStart = now;
       currentCondition = 'turn';
 
-  } else if (isAccelerating && deltaSpeed > 3 && absSide < 0.2 && speed >= 5) {
+  } else if (isAccelerating && deltaSpeed > 1.2 && absSide < 0.2 && speed >= 3) {
 
       // ---- 加速 ----
       if (drivingState.accelStart === 0) drivingState.accelStart = now;
