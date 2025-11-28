@@ -134,25 +134,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
             // 🚘 通常の運転セッション終了
             relockAudio(); // 🔒 終了時にロック
-            await endSession(true); // Firestore保存含む
+            // まず flush + セッション終了だけ実施（内部では画面遷移させない）
+            await endSession(true);
 
-            // ✅ ここから重点ポイントAI評価を実行
-            try {
-                console.log(`🤖 重点ポイントAIフィードバック生成開始: session_id=${sessionId}`);
-                const res = await fetch(`/api/focus_feedback/${sessionId}`, { method: 'POST' });
-
-                if (res.ok) {
-                    const data = await res.json();
-                    console.log('✅ フィードバック生成成功:', data);
-                } else {
-                    console.error('❌ フィードバック生成APIエラー (HTTP):', res.status);
-                }
-            } catch (err) {
-                console.error('❌ フィードバック生成中に致命的なエラー:', err);
-            }
-
-            // 🧭 終了後にセッション一覧ページへ遷移
-            window.location.href = `/recording/completed?session_id=${window.sessionId}`;
+            // 🔄 すぐに loading 画面へ遷移してユーザーに「処理中」を見せる
+            window.location.href = `/sessions/recording/datasend?session_id=${window.sessionId}`;
         });
 
         endButton.hasEventListener = true;

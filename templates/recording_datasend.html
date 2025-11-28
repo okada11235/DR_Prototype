@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>データ送信中...</title>
+
+<!-- Tailwind -->
+<script src="https://cdn.tailwindcss.com"></script>
+
+<style>
+body {
+    background-color: #cdeae0; /* ← ホームと同じ色に統一 */
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.fade {
+  opacity: 0;
+  animation: fadeIn 0.6s forwards;
+}
+
+@keyframes fadeIn {
+  to { opacity: 1; }
+}
+</style>
+
+</head>
+
+<body class="flex flex-col items-center justify-center min-h-screen">
+
+  <!-- ロボット画像 -->
+  <div class="mb-6">
+    <img id="loadingRobot" src="/static/img/robot_new.png" 
+         class="w-28 h-28 animate-pulse"
+         alt="loading robot">
+  </div>
+
+  <!-- メインテキスト -->
+  <div class="text-center text-xl font-bold text-gray-700 mb-2 fade" id="statusText">
+    データを送信しています…
+  </div>
+
+  <!-- サブテキスト -->
+  <div class="text-center text-sm text-gray-500 fade" id="subText">
+    少々お待ちください
+  </div>
+
+<script>
+const sessionId = "{{ session_id }}";
+
+async function runEndTasks() {
+    if (!sessionId) {
+        console.error("No session_id");
+        return;
+    }
+
+    console.log("📡 データ送信開始", sessionId);
+
+    // ① セッション終了
+    updateUI("走行データを保存しています…", "サーバーに送信中", 20, true);
+    await fetch("/sessions/end", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId })
+    });
+
+    // ② AI フィードバック生成
+    updateUI("AIフィードバックを生成しています…", "走行内容を分析中", 70, false);
+    await fetch(`/api/focus_feedback/${sessionId}`, { method: "POST" });
+
+    // ③ 完了
+    updateUI("完了しました！", "結果画面へ移動します", 100, false);
+
+    setTimeout(() => {
+        window.location.href = `/recording/completed?session_id=${sessionId}`;
+    }, 700);
+}
+
+function updateUI(mainText, subText, progress, spin) {
+    document.getElementById("statusText").textContent = mainText;
+    document.getElementById("subText").textContent = subText;
+
+    const bar = document.getElementById("progressBar");
+    bar.style.width = progress + "%";
+
+    const robot = document.getElementById("loadingRobot");
+    robot.style.animation = spin ? "spin 1.2s linear infinite" : "";
+}
+
+runEndTasks();
+</script>
+
+</body>
+</html>

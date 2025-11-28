@@ -814,3 +814,9 @@ def set_route_to_session(session_id):
     except Exception as e:
         print(f"Error saving route_id: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
+    
+@sessions_bp.route("/recording/datasend")
+@login_required
+def recording_datasend():
+    session_id = request.args.get("session_id")
+    return render_template("recording_datasend.html", session_id=session_id)

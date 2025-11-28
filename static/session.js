@@ -219,10 +219,12 @@ export async function endSession() {
     if (window.isEndingSession) return;
     window.isEndingSession = true;
 
+    // 停止処理
     stopMotionDetection();
     stopGPSWatch();
     stopTimer();
 
+    // すべてのログをサーバに送る
     await flushLogsNow();
 
     const sessionId = window.sessionId;
@@ -232,27 +234,14 @@ export async function endSession() {
         return;
     }
 
-    let data;
-    try {
-        const res = await fetch('/sessions/end', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ session_id: sessionId })
-        });
-        data = await res.json();
-        console.log("END session response:", data);
-    } catch (err) {
-        alert("終了時にエラー発生: " + err.message);
-        window.isEndingSession = false;
-        return;
-    }
+    // 🚫 ここでは /sessions/end を呼ばない！
+    // 🚫 評価もしない！
+    // → datasend.html に全部任せる
 
     localStorage.removeItem('activeSessionId');
     localStorage.removeItem('sessionStartTime');
 
-    window.sessionId = null;
-
-    window.location.href = `/recording/completed?session_id=${data.session_id}`;
+    window.isEndingSession = false;
 }
 
 // === 定期ログフラッシュ ===
