@@ -64,81 +64,42 @@ def get_time_window_for_focus(focus_type):
 #  focus_typeごとの4段階評価ロジック
 # ==========================================================
 def get_focus_rating(stats, focus_type):
+    if not stats or all(v == 0 for v in stats.values()):
+        return "なし", 0
+
     gx, gz = abs(stats["mean_gx"]), abs(stats["mean_gz"])
     std_gx, std_gz = stats["std_gx"], stats["std_gz"]
-    rating = "ふつう"
     score = 70
 
     def clamp(val, minval, maxval):
         return max(minval, min(maxval, val))
 
     if focus_type in ["brake_soft", "stop_smooth"]:
-        # 理想値 abs(gz)=0.10, std_gz=0.04
         score = 100 - (abs(gz)-0.10)*400 - (std_gz-0.04)*500
         score = clamp(score, 40, 100)
-        if abs(gz) < 0.10 and std_gz < 0.04:
-            rating = "とてもいい"
-        elif abs(gz) < 0.15:
-            rating = "いい"
-        elif abs(gz) < 0.25:
-            rating = "ふつう"
-        else:
-            rating = "わるい"
-
     elif focus_type == "accel_smooth":
-        # 理想値 gz=0.10, std_gz=0.04
         score = 100 - (gz-0.10)*400 - (std_gz-0.04)*500
         score = clamp(score, 40, 100)
-        if gz < 0.10 and std_gz < 0.04:
-            rating = "とてもいい"
-        elif gz < 0.18:
-            rating = "いい"
-        elif gz < 0.25:
-            rating = "ふつう"
-        else:
-            rating = "わるい"
-
     elif focus_type == "turn_stability":
-        # 理想値 gx=0.10, std_gx=0.05
         score = 100 - (gx-0.10)*400 - (std_gx-0.05)*500
         score = clamp(score, 40, 100)
-        if gx < 0.10 and std_gx < 0.05:
-            rating = "とてもいい"
-        elif gx < 0.18:
-            rating = "いい"
-        elif gx < 0.25:
-            rating = "ふつう"
-        else:
-            rating = "わるい"
-
     elif focus_type == "smooth_overall":
-        # 理想値 std_gx=0.04, std_gz=0.04
         score = 100 - (std_gx-0.04)*600 - (std_gz-0.04)*600
         score = clamp(score, 40, 100)
-        if std_gx < 0.04 and std_gz < 0.04:
-            rating = "とてもいい"
-        elif std_gx < 0.06 and std_gz < 0.06:
-            rating = "いい"
-        elif std_gx < 0.09:
-            rating = "ふつう"
-        else:
-            rating = "わるい"
-
     elif focus_type == "speed_consistency":
         speed_std = stats.get("std_speed", 0)
-        # 理想値 speed_std=2.0
         score = 100 - (speed_std-2.0)*15
         score = clamp(score, 40, 100)
-        if speed_std < 2.0:
-            rating = "とてもいい"
-        elif speed_std < 4.0:
-            rating = "いい"
-        elif speed_std < 6.0:
-            rating = "ふつう"
-        else:
-            rating = "わるい"
 
     score = int(round(score))
+    if score >= 95:
+        rating = "とてもいい"
+    elif score >= 80:
+        rating = "いい"
+    elif score >= 60:
+        rating = "ふつう"
+    else:
+        rating = "わるい"
     return rating, score
 
 
