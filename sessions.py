@@ -664,6 +664,8 @@ def detail_result_page(session_id):
         "score_comment": s.get("score_comment"),
     }
 
+    route_id = s.get("route_id")
+
     # 🔹 録音音声を取得
     audio_records = get_audio_records(session_id)
 
@@ -672,6 +674,7 @@ def detail_result_page(session_id):
                            gps_logs=gps_logs,
                            avg_g_logs=avg_g_logs,
                            audio_records=audio_records,
+                           route_id=route_id,
                            display_error=None)
 
 # AI評価生成エンドポイント

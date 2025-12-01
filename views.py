@@ -553,6 +553,112 @@ def get_pins_all():
     except Exception as e:
         return jsonify({"status": "error", "error": str(e)}), 500
     
+# === Firestore API: 重点ポイントピン一覧取得 ===
+@views_bp.route('/api/get_priority_pins')
+@login_required
+def get_priority_pins():
+    try:
+        pins = []
+        docs = (
+            db.collection("priority_pins")
+            .where("user_id", "==", current_user.id)
+            .stream()
+        )
+        for doc in docs:
+            d = doc.to_dict()
+            d["id"] = doc.id
+            pins.append(d)
+
+        return jsonify({"status": "success", "pins": pins})
+    except Exception as e:
+        return jsonify({"status": "error", "error": str(e)}), 500
+    
+@views_bp.route('/api/add_priority_pin', methods=['POST'])
+@login_required
+def add_priority_pin():
+    data = request.get_json()
+
+    label = data.get("label")
+    lat = data.get("lat")
+    lng = data.get("lng")
+    focus_type = data.get("focus_type")
+    route_id = data.get("route_id")
+    user_id = current_user.id
+
+    if not all([label, lat, lng, focus_type, route_id]):
+        return jsonify({"status": "error", "error": "Missing required fields"}), 400
+
+    # focus_type → 日本語名（AI評価にも使う）
+    focus_names = {
+        "brake_soft": "穏やかな減速",
+        "accel_smooth": "滑らかな発進",
+        "turn_stability": "カーブの安定性",
+        "smooth_overall": "直進の安定性",
+        "stop_smooth": "停止直前の滑らかさ",
+        "speed_consistency": "一定速度の維持",
+    }
+    focus_label = focus_names.get(focus_type, "未設定")
+
+    pin_ref = db.collection("priority_pins").document()
+    pin_ref.set({
+        "id": pin_ref.id,
+        "label": label,
+        "lat": float(lat),
+        "lng": float(lng),
+        "focus_type": focus_type,
+        "focus_label": focus_label,
+        "route_id": route_id,
+        "user_id": user_id,
+        "created_at": firestore.SERVER_TIMESTAMP
+    })
+
+    return jsonify({"status": "success", "pin_id": pin_ref.id})
+
+@views_bp.route('/api/update_priority_pin', methods=['POST'])
+@login_required
+def update_priority_pin():
+    data = request.get_json()
+
+    pin_id = data.get("id")
+    label = data.get("label")
+    focus_type = data.get("focus_type")
+
+    if not pin_id:
+        return jsonify({"status": "error", "error": "Missing pin id"}), 400
+
+    focus_names = {
+        "brake_soft": "穏やかな減速",
+        "accel_smooth": "滑らかな発進",
+        "turn_stability": "カーブの安定性",
+        "smooth_overall": "直進の安定性",
+        "stop_smooth": "停止直前の滑らかさ",
+        "speed_consistency": "一定速度の維持",
+    }
+
+    update_data = {}
+    if label:
+        update_data["label"] = label
+    if focus_type:
+        update_data["focus_type"] = focus_type
+        update_data["focus_label"] = focus_names.get(focus_type, "未設定")
+
+    db.collection("priority_pins").document(pin_id).update(update_data)
+
+    return jsonify({"status": "success"})
+
+@views_bp.route('/api/delete_priority_pin', methods=['POST'])
+@login_required
+def delete_priority_pin():
+    data = request.get_json()
+    pin_id = data.get("id")
+
+    if not pin_id:
+        return jsonify({"status": "error", "error": "Missing pin id"}), 400
+
+    db.collection("priority_pins").document(pin_id).delete()
+
+    return jsonify({"status": "success"})
+    
 # === Firestore API: ピン削除 ===
 @views_bp.route('/api/delete_pin', methods=['POST'])
 @login_required

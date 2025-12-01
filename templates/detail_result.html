@@ -391,7 +391,7 @@
     <!-- ====== 地図 ====== -->
     <div class="map-section">
       <h2>走行ルートとイベント</h2>
-      <h3>マーカーをクリックしてその地点のGの変動を見たりイベントピンを設置しよう！<img src="{{ url_for('static', filename='img/robot_turnleft.png') }}" alt="ドライボ" class="robot"></h3>
+      <h3>マーカーをクリックしてその地点のGの変動を見たりイベントピン・重点ポイントを設置したりしよう！<img src="{{ url_for('static', filename='img/robot_turnleft.png') }}" alt="ドライボ" class="robot"></h3>
       <div id="map"></div>
       <div class="legend" id="legend"></div>
     </div>
@@ -426,13 +426,39 @@
     </div>
     </nav>
 
+    <!-- ===== イベントマーカー選択モーダル ===== -->
+    <div class="modal fade" id="markerOptionModal" tabindex="-1">
+      <div class="modal-dialog">
+        <div class="modal-content">
+
+          <div class="modal-header">
+            <h5 class="modal-title">この地点で何をしますか？</h5>
+            <button class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+
+          <div class="modal-body">
+            <button class="btn btn-primary w-100 mb-2" id="manual-pin-btn">
+              📍 イベントピンを設置
+            </button>
+            <button class="btn btn-success w-100 mb-2" id="priority-pin-btn">
+              ⭐ 重点ポイントを追加
+            </button>
+            <button class="btn btn-secondary w-100" id="zoom-graph-btn">
+              📈 グラフを拡大
+            </button>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
     <!-- ピン追加・編集モーダル -->
     <div class="modal fade" id="pinModal" tabindex="-1">
       <div class="modal-dialog">
         <div class="modal-content">
 
           <div class="modal-header">
-            <h5 class="modal-title">📍 ピン設定</h5>
+            <h5 class="modal-title">📍 イベントピン設定</h5>
             <button class="btn-close" data-bs-dismiss="modal"></button>
           </div>
 
@@ -498,14 +524,21 @@ let existingPins = [];
 // Firestore から既存ピン一覧をロード
 async function loadExistingPins() {
   try {
-    const res = await fetch("/api/get_pins");
-    const data = await res.json();
-    if (data.status === "success") {
-      existingPins = data.pins || [];
-      console.log("📍既存ピン読み込み", existingPins);
-    }
+    const manualRes = await fetch("/api/get_pins");
+    const manualData = await manualRes.json();
+
+    const priorityRes = await fetch("/api/get_priority_pins");
+    const priorityData = await priorityRes.json();
+
+    existingPins = [
+      ...(manualData.pins || []),
+      ...(priorityData.pins || [])
+    ];
+
+    console.log("📍既存ピン読み込み（manual + priority）", existingPins);
+
   } catch (e) {
-    console.error("❌ピン読み込みエラー", e);
+    console.error("❌ ピン読み込みエラー", e);
   }
 }
 
@@ -838,6 +871,90 @@ async function openPinEditModal(pin) {
   }
 }
 
+const CURRENT_ROUTE_ID = "{{ route_id }}";
+
+async function openPriorityPinModal(pin) {
+
+  const focusList = [
+    { key: "brake_soft",        label: "穏やかな減速" },
+    { key: "accel_smooth",      label: "滑らかな発進" },
+    { key: "turn_stability",    label: "カーブの安定性" },
+    { key: "smooth_overall",    label: "直進の安定性" },
+    { key: "stop_smooth",       label: "停止直前の滑らかさ" },
+    { key: "speed_consistency", label: "一定速度の維持" }
+  ];
+
+  // --- ラベル入力 ---
+  const newLabel = prompt(
+    "重点ポイントのラベルを入力してください：",
+    pin.label || ""
+  );
+  if (newLabel === null) return; // キャンセル
+
+  // --- 番号選択メニューを構築 ---
+  let menu = "意識するポイントを選んでください：\n";
+  focusList.forEach((f, i) => {
+    menu += `${i + 1}. ${f.label}\n`;
+  });
+
+  const num = prompt(menu, "1");
+  if (num === null) return;
+
+  const index = Number(num) - 1;
+  if (index < 0 || index >= focusList.length) {
+    alert("番号が正しくありません");
+    return;
+  }
+
+  const selected = focusList[index];
+
+  // --- 新規 or 更新 の分岐 ---
+  if (!pin.id) {
+    // ======================
+    //   🆕 新規追加
+    // ======================
+    const payload = {
+      lat: pin.lat,
+      lng: pin.lng,
+      label: newLabel,
+      focus_type: selected.key,
+      focus_label: selected.label,
+      route_id: CURRENT_ROUTE_ID,   // ← ★重要！
+      created_at: new Date(),
+    };
+
+    const res = await fetch("/api/add_priority_pin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json();
+    if (data.status === "success") {
+      alert("重点ポイントを追加しました！");
+      loadExistingPins(); 
+    } else {
+      alert("追加に失敗しました：" + data.error);
+    }
+
+  } else {
+    // ======================
+    //   ✏ 編集
+    // ======================
+    firebase.firestore().collection("priority_pins").doc(pin.id).update({
+      label: newLabel,
+      focus_type: selected.key,
+      focus_label: selected.label
+    }).then(() => {
+      alert("重点ポイントを更新しました！");
+      loadExistingPins();
+    }).catch(err => {
+      console.error(err);
+      alert("更新に失敗しました");
+    });
+  }
+}
+
 // 新規ピン設置
 async function createPinAt(lat, lng) {
   const label = prompt("ピンのラベル（任意）:");
@@ -855,6 +972,9 @@ async function createPinAt(lat, lng) {
     await loadExistingPins();
   }
 }
+
+let editingPriorityPin = null;
+let editingManualPin = null;
 
 let editingPin = null;
 let editingPos = null;
@@ -916,23 +1036,28 @@ async function handleEventMarkerClick(log, marker) {
   const lng = log.longitude;
 
   // 🔍 10m以内に既存ピンがあるか
-  const existed = existingPins.find(p =>
-    distanceM(lat, lng, p.lat, p.lng) < 10
+  const existed = existingPins.find(
+    p => distanceM(lat, lng, p.lat, p.lng) < 10
   );
 
   if (existed) {
-    const edit = confirm("この地点には既にピンがあります。\n編集しますか？\n(キャンセル＝グラフ拡大)");
-    if (edit) openPinEditModal(existed);
-    else highlightOnChart('gForceChart-{{ session.id }}', log);
-    return;
-  }
-
-  // 新規設置 or グラフ
-  const action = confirm("この地点で何をしますか？\nOK＝ピン設置\nキャンセル＝グラフ拡大");
-  if (action) {
-    createPinAt(lat, lng);
+    if (existed.route_id) {
+      // ★ priority pin
+      document.getElementById("priority-pin-btn").innerText = "⭐ 重点ポイントを編集";
+      document.getElementById("manual-pin-btn").innerText = "📍 新しいイベントピンを設置";
+      editingPriorityPin = existed;
+      editingManualPin = null;
+    } else {
+      // ★ manual pin
+      document.getElementById("manual-pin-btn").innerText = "📍 イベントピンを編集";
+      document.getElementById("priority-pin-btn").innerText = "⭐ 重点ポイントを追加";
+      editingManualPin = existed;
+      editingPriorityPin = null;
+    }
   } else {
-    highlightOnChart('gForceChart-{{ session.id }}', log);
+    // ピンなし
+    editingManualPin = null;
+    editingPriorityPin = null;
   }
 }
 
@@ -1001,44 +1126,70 @@ function initMap(){
         title: String(log.event).replace(/_/g,' ')
       });
       marker.addListener("click", () => {
-          const lat = log.latitude;
-          const lng = log.longitude;
 
-          // 🔍 既存ピン判定（半径10m）
-          const existed = existingPins.find(p =>
-              distanceM(lat, lng, p.lat, p.lng) < 10
-          );
+        selectedLog = log;
+        selectedLat = log.latitude;
+        selectedLng = log.longitude;
 
-          if (existed) {
-              // 既存あり → 編集 or グラフ拡大
-              const edit = confirm(
-                  "この地点には既にピンがあります。\n編集しますか？\n(キャンセル＝グラフ拡大)"
-              );
+        // 🔍 10m以内に既存ピンがあるか判定
+        const existed = existingPins.find(p =>
+          distanceM(selectedLat, selectedLng, p.lat, p.lng) < 10
+        );
 
-              if (edit) {
-                  // ここを openPinModal() に差し替える！
-                  openPinModal(existed, lat, lng);
+        if (existed) {
+          // ====== 既存ピンあり → 種類を判定 ======
+          const isPriority = !!existed.route_id;   // ← ★priority の判定！
 
-              } else {
-                  highlightOnChart('gForceChart-{{ session.id }}', log);
-              }
-              return;
-          }
+          document.getElementById("manual-pin-btn").innerText =
+            isPriority ? "📍 イベントピンを設置（別のピン）" : "📍 イベントピンを編集";
 
-          // 既存ピンなし → ピン or 拡大
-          const action = confirm(
-              "この地点で何をしますか？\nOK＝ピン設置\nキャンセル＝グラフ拡大"
-          );
+          document.getElementById("priority-pin-btn").innerText =
+            isPriority ? "⭐ 重点ポイントを編集" : "⭐ 重点ポイントを追加";
 
-          if (action) {
-              openPinModal(null, lat, lng);
-          } else {
-              highlightOnChart('gForceChart-{{ session.id }}', log);
-          }
+          editingPin = existed;
+
+        } else {
+          // ====== ピンなし → 新規追加 ======
+          document.getElementById("manual-pin-btn").innerText = "📍 イベントピンを設置";
+          document.getElementById("priority-pin-btn").innerText = "⭐ 重点ポイントを追加";
+          editingPin = null;
+        }
+
+        // モーダル表示
+        const modal = new bootstrap.Modal(
+          document.getElementById("markerOptionModal")
+        );
+        modal.show();
       });
     }
   });
 }
+
+document.getElementById("priority-pin-btn").onclick = () => {
+  if (editingPriorityPin) {
+    openPriorityPinModal(editingPriorityPin);
+  } else {
+    openPriorityPinModal({
+      lat: selectedLat, 
+      lng: selectedLng,
+      focus_type: "turn_stability",          // ★ 初期値
+      focus_label: "カーブの安定性"
+    });
+  }
+};
+
+document.getElementById("manual-pin-btn").onclick = () => {
+  if (editingManualPin) {
+    openPinModal(editingManualPin, selectedLat, selectedLng);
+  } else {
+    openPinModal(null, selectedLat, selectedLng);
+  }
+};
+
+document.getElementById("zoom-graph-btn").onclick = () => {
+  highlightOnChart('gForceChart-{{ session.id }}', selectedLog);
+};
+
 
 /** ========= 起動 ========= */
 document.addEventListener('DOMContentLoaded', ()=>{
