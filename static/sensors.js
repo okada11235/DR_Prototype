@@ -21,6 +21,13 @@ import { updateRealtimeScore } from './utils.js';
 
 console.log('=== sensors.js (高精度8分類+avg_g_logs) LOADED [FIXED: 継続時間判定] ===');
 
+// ============================
+// ボール描画用スムーズG
+// ============================
+window.smoothBallGX = 0;
+window.smoothBallGZ = 0;
+
+
 // =======================
 // 内部状態
 // =======================
@@ -423,6 +430,12 @@ export function handleDeviceMotion(event) {
   window.latestGX = gxs;
   window.latestGY = gys;
   window.latestGZ = gzs;
+
+  // === ボール専用のスムースG（滑らかにする） ===
+  const SMOOTH_FACTOR = 0.90; // 0.85〜0.93 が最適
+
+  window.smoothBallGX = window.smoothBallGX * SMOOTH_FACTOR + gxs * (1 - SMOOTH_FACTOR);
+  window.smoothBallGZ = window.smoothBallGZ * SMOOTH_FACTOR + gzs * (1 - SMOOTH_FACTOR);
 
   const speed = window.currentSpeed ?? 0;
 

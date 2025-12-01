@@ -414,8 +414,8 @@ tailwind.config = {
               return;
           }
 
-          const gx = window.latestGX ?? 0;
-          const gz = window.latestGZ ?? 0;
+          const gx = window.smoothBallGX ?? 0;
+          const gz = window.smoothBallGZ ?? 0;
 
           const { CENTER, SCALE, MAX_R } = cfg;
 
@@ -911,8 +911,8 @@ tailwind.config = {
 
         const { CENTER, MAX_R, SCALE } = cfg;
 
-        const gx = window.latestGX ?? 0;
-        const gz = window.latestGZ ?? 0;
+        const gx = window.smoothBallGX ?? 0;
+        const gz = window.smoothBallGZ ?? 0;
 
         let px = gx * SCALE;
         let py = gz * SCALE;
