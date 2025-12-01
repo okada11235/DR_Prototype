@@ -67,7 +67,7 @@ async function initMap() {
         }
         const isOwner = pin.user_id === CURRENT_USER_ID; // ← 現在ログイン中ユーザーID（下で定義）
 
-        let infoContent = `
+        let infoContent = `
           <div style="min-width:220px; font-size:13px; line-height:1.5;">
 
               <div style="display:flex; align-items:center; margin-bottom:8px;">
@@ -161,32 +161,32 @@ async function initMap() {
   }
 
   // === 🖱️ マップクリックで新しいピンを追加 ===
-  map.addListener("click", async (event) => {
-    const lat = event.latLng.lat();
-    const lng = event.latLng.lng();
-    console.log(`🖱️ マップクリック: ${lat}, ${lng}`);
+  map.addListener("click", async (event) => {
+    const lat = event.latLng.lat();
+    const lng = event.latLng.lng();
+    console.log(`🖱️ マップクリック: ${lat}, ${lng}`);
 
     // ⭐ 変更点: FirestoreへのAPI呼び出しを削除し、クライアント側で仮ピンを作成する
-    try {
-        // 新規作成ピンには、一時的なユニークIDを割り当てる (保存時にピンIDが確定する)
-        const pinId = `temp_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-        const isOwner = true; // クリックしたユーザーが作成者なのでtrueで固定
+    try {
+        // 新規作成ピンには、一時的なユニークIDを割り当てる (保存時にピンIDが確定する)
+        const pinId = `temp_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        const isOwner = true; // クリックしたユーザーが作成者なのでtrueで固定
         // CURRENT_USER_NAME が定義されている前提
         const userName = window.CURRENT_USER_NAME || "自分"; 
 
-        const marker = new google.maps.Marker({
-          position: { lat, lng },
-          map,
-          icon: "http://maps.google.com/mapfiles/ms/icons/green-dot.png",
-          title: "(新規未保存ピン)",
+        const marker = new google.maps.Marker({
+        position: { lat, lng },
+        map,
+          icon: "http://maps.google.com/mapfiles/ms/icons/green-dot.png",
+          title: "(新規未保存ピン)",
           // ドラッグ可能にする（ドラッグ＆ドロップで位置修正できるように）
           draggable: true, 
-        });
+        });
         
         // ピンに一時IDを付与
         marker.id = pinId;
 
-        let infoContent = `
+        let infoContent = `
           <div style="min-width:220px; font-size:13px; line-height:1.5;">
               
               <div style="display:flex; align-items:center; margin-bottom:8px;">
@@ -237,14 +237,14 @@ async function initMap() {
               </div>
           </div>`;
 
-        const info = new google.maps.InfoWindow({ content: infoContent });
+       const info = new google.maps.InfoWindow({ content: infoContent });
 
-        marker.addListener("click", () => {
-          for (const key in window.currentInfoWindows) {
-            window.currentInfoWindows[key].close();
-          }
-          info.open(map, marker);
-        });
+       marker.addListener("click", () => {
+          for (const key in window.currentInfoWindows) {
+            window.currentInfoWindows[key].close();
+          }
+            info.open(map, marker);
+       });
         
         // マーカーのドラッグ終了イベントを監視し、情報ウィンドウを閉じる
         marker.addListener('dragend', () => {

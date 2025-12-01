@@ -71,17 +71,17 @@ function step() {
     const speed = log.speed;
     const rotZ = log.rot_z || 0; // avg_g_logsに保存されている平均角速度を使用
 
-    //const deltaSpeed = log.delta_speed ?? 0; // Firestoreに保存したdeltaSpeedを使う（最新版）
+    const deltaSpeed = log.delta_speed ?? 0; // Firestoreに保存したdeltaSpeedを使う（最新版）
 
     // 保存されてるデータから計算し直して判定する（旧）
-    let deltaSpeed = 0;
-    if (prevLog) {
-        const dt = (log.timestamp_ms - prevLog.timestamp_ms) / 1000; // 秒
-        if (dt > 0) {
-            // deltaSpeed は km/h/s (加速度)
-            deltaSpeed = (speed - prevLog.speed) / dt; 
-        }
-    }
+    // let deltaSpeed = 0;
+    // if (prevLog) {
+    //     const dt = (log.timestamp_ms - prevLog.timestamp_ms) / 1000; // 秒
+    //     if (dt > 0) {
+    //         // deltaSpeed は km/h/s (加速度)
+    //         deltaSpeed = (speed - prevLog.speed) / dt; 
+    //     }
+    // }
 
     // ★ 修正点2: 直近のログをスライスして渡す (100ms間隔で30サンプル=3秒 + 現在ログ)
     const recentLogs = logs.slice(Math.max(0, idx - 30), idx + 1);
