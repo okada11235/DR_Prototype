@@ -474,6 +474,19 @@ export function handleDeviceMotion(event) {
   const gyElem = document.getElementById('g-y');
   const gzElem = document.getElementById('g-z');
 
+  if (gxElem) {
+    gxElem.textContent = gxs.toFixed(2);
+    applyGColor(gxElem, gxs);
+  }
+  if (gyElem) {
+    gyElem.textContent = gys.toFixed(2);
+    applyGColor(gyElem, gys);
+  }
+  if (gzElem) {
+    gzElem.textContent = gzs.toFixed(2);
+    applyGColor(gzElem, gzs);
+  }
+
   if (gxElem) gxElem.textContent = gxs.toFixed(2);
   if (gyElem) gyElem.textContent = gys.toFixed(2);
   if (gzElem) gzElem.textContent = gzs.toFixed(2);
@@ -483,6 +496,20 @@ export function handleDeviceMotion(event) {
       gy: gy,   // 上下（不要）
       gz: gz    // 前後
   };
+}
+
+function applyGColor(elem, g) {
+  const absG = Math.abs(g);
+
+  let color = "#00c853";   // とても良い（緑）
+
+  if (absG >= 0.15) {
+    color = "#ff5252";     // 悪い（赤）
+  } else if (absG >= 0.08) {
+    color = "#ffca28";     // 良い（黄）
+  }
+
+  elem.style.color = color;
 }
 
 // =======================

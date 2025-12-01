@@ -44,6 +44,11 @@ export function startTimer() {
         if (timerElement) {
             timerElement.textContent = `${mins}:${secs}`;
         }
+
+        const timerInline = document.getElementById('timerInline');
+        if (timerInline) {
+            timerInline.textContent = `${mins}:${secs}`;
+        }
     }
 
     // expose for other scripts to force update
