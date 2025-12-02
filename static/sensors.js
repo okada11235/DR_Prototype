@@ -68,6 +68,9 @@ let drivingState = {
     lastDetectedType: null
 };
 
+let lastAccelTime = 0;          // ← グローバルにする！！
+const ACCEL_COOLDOWN_MS = 1500; // 1.5秒
+
 // Firestore バッファ（session.js が10秒ごとに送信）
 if (!window.gLogBuffer) window.gLogBuffer = [];
 if (!window.avgGLogBuffer) window.avgGLogBuffer = [];
@@ -277,8 +280,6 @@ function applyOrientationCorrection(gx, gy, gz) {
       finalGz = gy;   // 前後はYにする（水平でも前後Gが取れる）
       break;
   }
-  // 🔧 微小な前後Gドリフトを除去（-0.04〜+0.04Gはゼロ扱い）
-  if (Math.abs(finalGz) < 0.04) finalGz = 0;
 
   // finalGx: 左右G (旋回G), finalGz: 前後G (加減速G)
   return { gx: finalGx, gy: finalGy, gz: finalGz };
@@ -563,35 +564,36 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now, recentLo
   
   let currentCondition = null;
   const isBraking = gz <= -0.13;
-  const isAccelerating = gz >= 0.10;
+  const accelDurationMs = 250;
+  // ---- 加速入り口判定（軽い発進でも入るように緩める）----
+  let isAcceleratingNew = false;
+
+  // ★ 加速クールダウン中は判定しない
+  if (now - lastAccelTime >= ACCEL_COOLDOWN_MS) {
+      isAcceleratingNew =
+          gz >= 0.06 && 
+          absSide < 0.2 && 
+          speed >= 1;
+  }
   const isTurning =
-    speed >= 6 &&                // 右左折は必ず13km/h以上
-    absSide >= 0.045 &&            // 横Gが出始めたら（蛇行は除外）
-    absRot >= 3.5;                  // rotZ 10deg/s以上で明確な方向転換
+    speed >= 5 &&             // ← 6 → 8 km/h に上げる
+    absSide >= 0.06 &&        // ← 0.045 → 0.06 に強化 (誤判定激減)
+    Math.abs(deltaSpeed) < 3; // ← ブレーキ/加速中は旋回に入れない
 /*const isStable =
     speed >= 20 &&
     absFwd < 0.12 &&
     absSide < 0.18 &&
     Math.abs(rotZ) < 3;*/
 
-  // -----------------------------
-  // ★ ブレーキ判定のスタート猶予（3秒間）
-  // -----------------------------
-  const recordingStartTime = window.recordingStartTime || 0;
-  if (now - recordingStartTime < 5000) {
-      return null;  // → 記録開始直後のブレーキ誤判定を完全に防ぐ
-  }
-
   // 1. 条件判定とステート更新
-  if (isTurning && absFwd < 0.25) {
+  if (isTurning) {
 
       // ---- 旋回判定（右左折開始） ----
       if (drivingState.turnStart === 0) drivingState.turnStart = now;
       currentCondition = 'turn';
 
-  } else if (isAccelerating && deltaSpeed > 1.2 && absSide < 0.2 && speed >= 3) {
-
-      // ---- 加速 ----
+  } else if (isAcceleratingNew) {
+    
       if (drivingState.accelStart === 0) drivingState.accelStart = now;
       currentCondition = 'accel';
 
@@ -642,103 +644,82 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now, recentLo
   }*/
 
   //------------------------------------------------------
-  // 旋回継続時間チェック（0.25秒）→ 3段階の良い旋回 ＋ sharp
+  // 旋回継続時間チェック（0.20〜0.25秒）
+  // rotZ は sharp のみで使う方式
   //------------------------------------------------------
   if (drivingState.turnStart > 0) {
+
       const duration = now - drivingState.turnStart;
 
-      if (duration >= 250) {  // 0.25秒継続で旋回確定
+      if (duration >= 120) {  // 少し短くして反応を良くする
 
-          // ★ 現行の sharp 判定用 G（速度で微調整）
-          let sharpG = 0.32;
-          let sharpRot = 10;
-
-          if (speed < 15) {
-              sharpG -= 0.03;
-          } else if (speed >= 30) {
-              sharpG += 0.03;
-          }
-
-          // -------------------------------
-          // ★ 4段階旋回ロジック
-          // -------------------------------
           let type = null;
 
-          // 1) 悪い：急旋回（sharp）
-          if (absSide >= sharpG && absRot >= sharpRot) {
-              type = 'sharp_turn';
-
-          // 2) とても良い（excellent）
-          } else if (absSide >= 0.10 && absSide < 0.16 && absRot >= 6) {
-              type = 'excellent_turn';
-
-          // 3) 良い（smooth）
-          } else if (absSide >= 0.16 && absSide < 0.22 && absRot >= 6) {
-              type = 'smooth_turn';
-
-          // 4) 普通（normal）
-          } else if (absSide >= 0.22 && absSide < sharpG && absRot >= 6) {
-              type = 'normal_turn';
+          // ★ sharp 判定：横Gが強く、かつ rotZ もそれなりに大きい場合のみ
+          if (absSide >= 0.32 && absRot >= 0.5) {
+              type = "sharp_turn";  // rare case
+          }
+          else if (absSide >= 0.22) {
+              type = "normal_turn";
+          }
+          else if (absSide >= 0.16) {
+              type = "smooth_turn";
+          }
+          else if (absSide >= 0.10) {
+              type = "excellent_turn";
           }
 
-          drivingState.turnStart = 0;
+          drivingState.turnStart = 0; // リセット
 
           if (type) {
-              // sharp_turn は従来通り「悪い」、他は3段階で返す
               lastEventTime = now;
               drivingState.lastDetectedType = type;
 
-              console.log(
-                `🎯 ${type} | gx=${gx.toFixed(2)}, rotZ=${rotZ.toFixed(2)}`
-              );
-
+              console.log(`🎯 ${type} | gx=${gx.toFixed(2)}, rotZ=${rotZ.toFixed(2)}`);
               return type;
           }
       }
   }
 
   // ===============================
-  // 🚗 加速判定（4段階：excellent / good / normal / sudden）
+  // 🚗 加速判定（普通の発進も確実に拾う版）
   // ===============================
+  // ---- 継続時間判定 ----
   if (drivingState.accelStart > 0) {
 
       const duration = now - drivingState.accelStart;
 
-      if (duration >= 300) { // 0.3秒継続 → 判定確定
+      if (duration >= accelDurationMs) {
 
           const gzAbs = Math.abs(gz);
-
           let accelType = null;
 
-          // -----------------------------
-          // ★ 4段階加速ロジック
-          // -----------------------------
-          if (gzAbs >= 0.18) {
-              accelType = "sudden_accel";   // 悪い
+          // --------------------------------------
+          // ★ 4段階分類（あなたのCSVに最適）
+          // --------------------------------------
+          if (gzAbs < 0.03) {
+              accelType = "excellent_accel";   // とてもいい加速
           }
-          else if (gzAbs < 0.08) {
-              accelType = "excellent_accel"; // とても良い
+          else if (gzAbs < 0.07) {
+              accelType = "smooth_accel";      // 良い加速
           }
-          else if (gzAbs < 0.12) {
-              accelType = "smooth_accel";    // 良い
-          }
-          else if (gzAbs < 0.18) {
-              accelType = "normal_accel";    // 普通
+          else if (gzAbs < 0.15) {
+              accelType = "normal_accel";      // 普通の加速
           }
           else {
-              accelType = "sudden_accel";
+              accelType = "sudden_accel";      // 急加速（悪い）
           }
 
-          drivingState.accelStart = 0;
+          // ★クールダウン開始
+          lastAccelTime = now;
 
-          // -----------------------------
-          // ▼ ここから従来と同じ、イベント返却処理
-          // -----------------------------
+          // リセット
+          drivingState.accelStart = 0;
           lastEventTime = now;
           drivingState.lastDetectedType = accelType;
 
           console.log(
-            `🎯 ${accelType} | gz=${gz.toFixed(2)}`
+            `🎯 加速判定(${accelType}) | gz=${gz.toFixed(2)}`
           );
 
           return accelType;
@@ -827,16 +808,16 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now, recentLo
           // -----------------------------
           let brakeType = null;
 
-          if (maxAbsG >= 0.30 || decelRate > 6.0) {
+          if (maxAbsG >= 0.30 || decelRate > 7) {
               brakeType = "sudden_brake";         // 悪い
           }
-          else if (absAvgG < 0.14 && decelRate < 2.5) {
+          else if (absAvgG < 0.13 && decelRate < 2.5) {
               brakeType = "excellent_brake";      // とてもいい
           }
-          else if (absAvgG < 0.20 && decelRate < 4.0) {
+          else if (absAvgG < 0.18 && decelRate < 4.8) {
               brakeType = "smooth_brake";         // いい
           }
-          else if (absAvgG < 0.30 && decelRate < 6.0) {
+          else if (absAvgG < 0.25 && decelRate < 7.0) {
               brakeType = "normal_brake";         // 普通
           }
           else {
