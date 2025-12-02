@@ -429,6 +429,7 @@ def log_avg_g_bulk():
                 'g_z': float(log.get('g_z', 0.0)),
                 'rot_z': float(log.get('rot_z', 0.0)),
                 'speed': float(log.get('speed', 0.0)),
+                'delta_speed': float(log.get('delta_speed', 0.0)),
                 'event': log.get('event', 'normal'),
                 'quality': log.get('quality', 'unknown'),  # データ品質レベルを保存
                 'timestamp': ts_dt,
@@ -659,7 +660,11 @@ def detail_result_page(session_id):
         "sudden_brakes": s.get("sudden_brakes"),
         "sudden_accels": s.get("sudden_accels"),
         "sharp_turns": s.get("sharp_turns"),
+        "overall_score": s.get("overall_score"),
+        "score_comment": s.get("score_comment"),
     }
+
+    route_id = s.get("route_id")
 
     # 🔹 録音音声を取得
     audio_records = get_audio_records(session_id)
@@ -669,6 +674,7 @@ def detail_result_page(session_id):
                            gps_logs=gps_logs,
                            avg_g_logs=avg_g_logs,
                            audio_records=audio_records,
+                           route_id=route_id,
                            display_error=None)
 
 # AI評価生成エンドポイント
@@ -811,3 +817,9 @@ def set_route_to_session(session_id):
     except Exception as e:
         print(f"Error saving route_id: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
+    
+@sessions_bp.route("/recording/datasend")
+@login_required
+def recording_datasend():
+    session_id = request.args.get("session_id")
+    return render_template("recording_datasend.html", session_id=session_id)

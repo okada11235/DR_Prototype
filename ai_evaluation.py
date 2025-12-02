@@ -64,65 +64,43 @@ def get_time_window_for_focus(focus_type):
 #  focus_typeごとの4段階評価ロジック
 # ==========================================================
 def get_focus_rating(stats, focus_type):
+    if not stats or all(v == 0 for v in stats.values()):
+        return "なし", 0
+
     gx, gz = abs(stats["mean_gx"]), abs(stats["mean_gz"])
     std_gx, std_gz = stats["std_gx"], stats["std_gz"]
-    rating = "ふつう"
+    score = 70
+
+    def clamp(val, minval, maxval):
+        return max(minval, min(maxval, val))
 
     if focus_type in ["brake_soft", "stop_smooth"]:
-        if abs(gz) < 0.10 and std_gz < 0.04:
-            rating = "とてもいい"
-        elif abs(gz) < 0.15:
-            rating = "いい"
-        elif abs(gz) < 0.25:
-            rating = "ふつう"
-        else:
-            rating = "わるい"
-
+        score = 100 - (abs(gz)-0.10)*400 - (std_gz-0.04)*500
+        score = clamp(score, 40, 100)
     elif focus_type == "accel_smooth":
-        if gz < 0.10 and std_gz < 0.04:
-            rating = "とてもいい"
-        elif gz < 0.18:
-            rating = "いい"
-        elif gz < 0.25:
-            rating = "ふつう"
-            # pass
-        else:
-            rating = "わるい"
-
+        score = 100 - (gz-0.10)*400 - (std_gz-0.04)*500
+        score = clamp(score, 40, 100)
     elif focus_type == "turn_stability":
-        if gx < 0.10 and std_gx < 0.05:
-            rating = "とてもいい"
-        elif gx < 0.18:
-            rating = "いい"
-        elif gx < 0.25:
-            rating = "ふつう"
-        else:
-            rating = "わるい"
-
+        score = 100 - (gx-0.10)*400 - (std_gx-0.05)*500
+        score = clamp(score, 40, 100)
     elif focus_type == "smooth_overall":
-        if std_gx < 0.04 and std_gz < 0.04:
-            rating = "とてもいい"
-        elif std_gx < 0.06 and std_gz < 0.06:
-            rating = "いい"
-        elif std_gx < 0.09:
-            rating = "ふつう"
-        else:
-            rating = "わるい"
-
+        score = 100 - (std_gx-0.04)*600 - (std_gz-0.04)*600
+        score = clamp(score, 40, 100)
     elif focus_type == "speed_consistency":
-        # 速度変動（標準偏差）で評価
         speed_std = stats.get("std_speed", 0)
+        score = 100 - (speed_std-2.0)*15
+        score = clamp(score, 40, 100)
 
-        if speed_std < 2.0:
-            rating = "とてもいい"   # ほぼ一定速度を維持
-        elif speed_std < 4.0:
-            rating = "いい"        # 少し変動があるが安定
-        elif speed_std < 6.0:
-            rating = "ふつう"      # 変動がやや大きい
-        else:
-            rating = "わるい"      # アクセル操作にばらつきあり
-
-    return rating
+    score = int(round(score))
+    if score >= 95:
+        rating = "とてもいい"
+    elif score >= 80:
+        rating = "いい"
+    elif score >= 60:
+        rating = "ふつう"
+    else:
+        rating = "わるい"
+    return rating, score
 
 
 # ==========================================================
@@ -539,23 +517,20 @@ def analyze_focus_points_for_session(session_id: str, user_id: str) -> dict:
         prev_stats = historical_data[0].get("stats") if historical_data else None
 
         diff, diff_text = compare_focus_stats(prev_stats, current_stats)
-        rating = get_focus_rating(current_stats, focus_type)
-        
-        # より詳細なフィードバック生成（生データをすべて渡す）
+        rating, score = get_focus_rating(current_stats, focus_type)
+
         ai_comment = generate_ai_focus_feedback(
-            focus_type_name, 
-            current_stats, 
-            diff, 
-            rating, 
+            focus_type_name,
+            current_stats,
+            diff,
+            rating,
             diff_text,
-            historical_data,  # 過去データ
-            raw_data_points   # 追加：生の計測データをすべて渡す
+            historical_data,
+            raw_data_points
         )
 
-        # ✅ 要約（短縮版フィードバック）を追加
         short_comment = summarize_feedback(ai_comment, diff_text)
 
-        # --- Firestoreに保存 ---
         sess_ref.collection("focus_feedbacks").document(pin_id).set({
             "created_at": datetime.now(JST),
             "pin_label": pin.get("label", ""),
@@ -564,8 +539,9 @@ def analyze_focus_points_for_session(session_id: str, user_id: str) -> dict:
             "stats": current_stats,
             "diff": diff,
             "rating": rating,
-            "ai_comment": ai_comment,       # ← 長文
-            "short_comment": short_comment, # ← 短文（追加）
+            "score": score,
+            "ai_comment": ai_comment,
+            "short_comment": short_comment,
             "passed": True
         })
 
@@ -574,6 +550,7 @@ def analyze_focus_points_for_session(session_id: str, user_id: str) -> dict:
             "focus_type": focus_type,
             "focus_label": focus_type_name,
             "rating": rating,
+            "score": score,
             "ai_comment": ai_comment,
             "stats": current_stats
         }

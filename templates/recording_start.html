@@ -133,26 +133,26 @@
     </div>
 
     <!-- ✅ 保存済みルート一覧セクション -->
-<div id="saved-routes-section"
-     style="width: 85%; margin: 20px auto; background: #fff; border-radius: 8px; 
-            box-shadow: 0 1px 4px rgba(0,0,0,0.1); padding: 15px; border: 2px solid #81c784;">
-  <h3 style="font-size: 1.2rem; color: #2e7d32; margin-bottom: 10px; text-align:center;">
-    ルート選択
-  </h3>
+    <div id="saved-routes-section"
+        style="width: 85%; margin: 20px auto; background: #fff; border-radius: 8px; 
+                box-shadow: 0 1px 4px rgba(0,0,0,0.1); padding: 15px; border: 2px solid #81c784;">
+      <h3 style="font-size: 1.2rem; color: #2e7d32; margin-bottom: 10px; text-align:center;">
+        ルート選択
+      </h3>
 
 
-  <div class="d-flex flex-wrap align-items-center justify-content-center" style="gap: 8px;">
-    <select id="saved-routes-select"
-            class="form-select"
-            style="width: 60%; max-width: 320px; display:inline-block;">
-      <option value="">読み込み中...</option>
-    </select>
+      <div class="d-flex flex-wrap align-items-center justify-content-center" style="gap: 8px;">
+        <select id="saved-routes-select"
+                class="form-select"
+                style="width: 60%; max-width: 320px; display:inline-block;">
+          <option value="">読み込み中...</option>
+        </select>
 
-    <button id="show-route-btn" class="btn btn-success" style="min-width:100px;">選択</button>
-    <button id="rename-route-btn" class="btn btn-warning" style="min-width:100px;">名前変更</button>
-    <button id="delete-route-btn" class="btn btn-danger" style="min-width:100px;">削除</button>
-  </div>
-</div>
+        <button id="show-route-btn" class="btn btn-success" style="min-width:100px;">選択</button>
+        <button id="rename-route-btn" class="btn btn-warning" style="min-width:100px;">名前変更</button>
+        <button id="delete-route-btn" class="btn btn-danger" style="min-width:100px;">削除</button>
+      </div>
+    </div>
 
 
 
@@ -234,33 +234,34 @@
     const setupBtn = document.getElementById('route-setup-button');
 
     // === ルート設定ボタン（修正版） ===
-  setupBtn.addEventListener("click", async () => {
-    try {
-      // ★ 自動でルート名を生成（後から変更できる）
-      const autoName = "新しいルート " + new Date().toLocaleString();
+    setupBtn.addEventListener("click", async () => {
+      // 🔥 ルート設定の確認
+      const ok = confirm("ルート設定を開始しますか？\n（走行ルートを記録します）");
+      if (!ok) return;
+      try {
+        // ★ 自動でルート名を生成（後から変更できる）
+        const autoName = "新しいルート " + new Date().toLocaleString();
 
-      // ルートモード ON
-      localStorage.setItem("priorityRouteRecordingActive", "true");
+        // ルートモード ON
+        localStorage.setItem("priorityRouteRecordingActive", "true");
 
-      // ★ 名前入力なしで開始
-      await window.priorityRouteAPI.start(autoName);
+        // ★ 名前入力なしで開始
+        await window.priorityRouteAPI.start(autoName);
 
-      // 記録中ページへ遷移
-      window.location.assign("/recording/active");
+        // 記録中ページへ遷移
+        window.location.assign("/recording/active");
 
-    } catch (e) {
-      console.error("ルート設定に失敗:", e);
-      alert("ルート設定に失敗しました");
+      } catch (e) {
+        console.error("ルート設定に失敗:", e);
+        alert("ルート設定に失敗しました");
 
-      // ページ再読み込み時、ルート未選択ならピンを消す
-if (!localStorage.getItem("CURRENT_ROUTE_ID")) {
-    if (window.clearPins) clearPins();
-}
+        // ページ再読み込み時、ルート未選択ならピンを消す
+        if (!localStorage.getItem("CURRENT_ROUTE_ID")) {
+            if (window.clearPins) clearPins();
+        }
 
-    }
-  });
-
-
+      }
+    });
   });
   </script>
 
@@ -301,417 +302,422 @@ if (!localStorage.getItem("CURRENT_ROUTE_ID")) {
   </script>
 
  <script>
-document.addEventListener("DOMContentLoaded", async () => {
-  const userId = window.FLASK_USER_ID || localStorage.getItem("CURRENT_USER_ID");
-  const selectEl = document.getElementById("saved-routes-select");
-  const showBtn = document.getElementById("show-route-btn");
-  const delBtn = document.getElementById("delete-route-btn");
-  const startBtn = document.getElementById("start-button");
+    document.addEventListener("DOMContentLoaded", async () => {
+      const userId = window.FLASK_USER_ID || localStorage.getItem("CURRENT_USER_ID");
+      const selectEl = document.getElementById("saved-routes-select");
+      const showBtn = document.getElementById("show-route-btn");
+      const delBtn = document.getElementById("delete-route-btn");
+      const startBtn = document.getElementById("start-button");
 
-  if (!window.firebase || !firebase.firestore) {
-    console.error("Firebase が初期化されていません。");
-    return;
-  }
-  const db = firebase.firestore();
-
-  // === 既存のアクティブセッションをチェック ===
-  try {
-    console.log("🔍 Checking active session...");
-    console.log("   User ID:", userId);
-    console.log("   Cookies:", document.cookie);
-    
-    const checkResponse = await fetch("/sessions/check_active", {
-      credentials: "same-origin"
-    });
-    
-    console.log("✅ Check active response received");
-    console.log("   Status:", checkResponse.status);
-    console.log("   Status Text:", checkResponse.statusText);
-    console.log("   Content-Type:", checkResponse.headers.get("content-type"));
-    
-    // 認証エラーチェック（401のみ）
-    if (checkResponse.status === 401) {
-      console.warn("❌ 認証エラー (401): ログインが必要です");
-      alert("ログインセッションが切れています。ログインページに移動します。");
-      window.location.href = "/login";
-      return;
-    }
-    
-    // HTMLレスポンスの場合（リダイレクト）
-    const contentType = checkResponse.headers.get("content-type") || "";
-    if (contentType.includes("text/html")) {
-      console.warn("⚠️ HTMLレスポンスを検出 - 認証リダイレクトの可能性");
-      alert("ログインセッションが切れています。ログインページに移動します。");
-      window.location.href = "/login";
-      return;
-    }
-    
-    if (checkResponse.ok) {
-      const checkData = await checkResponse.json();
-      if (checkData.has_active) {
-        console.log("既存のアクティブセッションを検出:", checkData.session_id);
-        
-        const continueSession = confirm(
-          "前回の運転が終了していません。\n\n" +
-          "「OK」= 前回の続きから記録\n" +
-          "「キャンセル」= 前回のセッションを終了して新規開始"
-        );
-        
-        if (continueSession) {
-          // 既存セッションを使用
-          localStorage.setItem("activeSessionId", checkData.session_id);
-          localStorage.setItem("sessionStartTime", Date.now().toString());
-          if (checkData.route_id) {
-            localStorage.setItem("CURRENT_ROUTE_ID", checkData.route_id);
-          }
-          window.location.assign("/recording/active");
-          return;
-        } else {
-          // 既存セッションを終了
-          await fetch("/sessions/end", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              session_id: checkData.session_id,
-              reflection: "自動終了",
-              sudden_accels: 0,
-              sudden_brakes: 0,
-              sharp_turns: 0,
-              stability: 0,
-              speed_violations: 0,
-              focus_point: ""
-            })
-          });
-          console.log("既存セッションを終了しました");
-        }
+      if (!window.firebase || !firebase.firestore) {
+        console.error("Firebase が初期化されていません。");
+        return;
       }
-    }
-  } catch (error) {
-    console.error("既存セッションチェックエラー:", error);
-  }
+      const db = firebase.firestore();
 
-  // === ルート一覧ロード ===
-  async function loadSavedRoutes() {
-    selectEl.innerHTML = `<option value="">読み込み中...</option>`;
-    const qs = await db.collection("priority_routes")
-      .where("user_id", "==", userId)
-      .orderBy("created_at", "desc")
-      .get();
-
-    if (qs.empty) {
-      selectEl.innerHTML = `<option value="">保存されたルートはありません</option>`;
-      startBtn.disabled = true;
-      startBtn.style.opacity = "0.6";
-      return;
-    }
-
-    selectEl.innerHTML = `<option value="">-- ルートを選択してください --</option>`;
-    qs.forEach(doc => {
-      const d = doc.data();
-      const opt = document.createElement("option");
-      opt.value = doc.id;
-      opt.textContent = d.name || `ルート (${new Date(d.created_at?.toDate?.() || Date.now()).toLocaleString()})`;
-      selectEl.appendChild(opt);
-    });
-
-        // ★ 前回使ったルートがあれば自動選択する
-    const lastRouteId = localStorage.getItem("LAST_USED_ROUTE_ID");
-
-    if (lastRouteId && selectEl.querySelector(`option[value="${lastRouteId}"]`)) {
-
-        // セレクトボックスに反映
-        selectEl.value = lastRouteId;
-
-        // STARTボタン有効化
-        startBtn.disabled = false;
-        startBtn.style.opacity = "1";
-
-        // マップ描画用にも保存
-        localStorage.setItem("CURRENT_ROUTE_ID", lastRouteId);
-    }
-
-  }
-
-
-  await loadSavedRoutes();
-
-
-  // === 表示ボタン ===
-showBtn.addEventListener("click", async () => {
-    const id = selectEl.value;
-    if (!id) return alert("ルートを選択してください。");
-    if (!window._priorityMapInstance) {
-      return alert("マップがまだ読み込まれていません。");
-    }
-
-    // 🔥 ピンとルートをまず消す
-    if (window.clearPins) clearPins();
-    if (window.clearDisplayedRoutes) clearDisplayedRoutes();
-
-    try {
-      // ルート描画
-      await drawRouteById(window._priorityMapInstance, id);
-
-      // 🔥 ピン表示（表示ボタンを押したときにだけ）
-      await loadPins(window._priorityMapInstance);
-
-      alert("✅ ルートとピンをマップに描画しました。");
-    } catch (e) {
-      console.error(e);
-      alert("ルートの描画に失敗しました。");
-    }
-});
-
-
-
-  // === 削除ボタン ===
-  delBtn.addEventListener("click", async () => {
-    const id = selectEl.value;
-    if (!id) return alert("削除するルートを選択してください。");
-
-    const ok = confirm("このルートを削除しますか？");
-    if (!ok) return;
-
-    try {
-      // 🔥 1. このルートに紐づくピンを全削除
-      const pinsSnap = await db.collection("priority_pins")
-        .where("route_id", "==", id)
-        .get();
-
-      const batch = db.batch();
-      pinsSnap.forEach(doc => batch.delete(doc.ref));
-      await batch.commit();
-
-      console.log(`🗑 ルート削除に伴い ${pinsSnap.size} 個のピンを削除しました`);
-
-      // 🔥 2. ルート本体を削除
-      await db.collection("priority_routes").doc(id).delete();
-
-      alert("🗑️ ルートと関連ピンを削除しました。");
-
-      // 🔥 3. UI 更新
-      await loadSavedRoutes();
-
-      // 🔥 4. 選択ルートの記憶を解除
-      localStorage.removeItem("CURRENT_ROUTE_ID");
-
-    } catch (e) {
-      console.error(e);
-      alert("削除に失敗しました。");
-    }
-  });
-
-  // === 名前変更ボタン ===
-const renameBtn = document.getElementById("rename-route-btn");
-
-renameBtn.addEventListener("click", async () => {
-  const routeId = selectEl.value;
-  if (!routeId) return alert("名前を変更するルートを選択してください。");
-
-  const newName = prompt("新しいルート名を入力してください：");
-  if (!newName || newName.trim() === "") return;
-
-  try {
-    await db.collection("priority_routes").doc(routeId).update({
-      name: newName.trim()
-    });
-
-    alert("ルート名を変更しました。");
-    await loadSavedRoutes(); // ⭐ リストを再読み込み
-
-  } catch (e) {
-    console.error(e);
-    alert("名前変更に失敗しました。");
-  }
-});
-
-
-// === ルート選択時 ===
-selectEl.addEventListener("change", () => {
-  const id = selectEl.value;
-
-  if (id) {
-    // ルート選択中
-    localStorage.setItem("CURRENT_ROUTE_ID", id);
-    startBtn.disabled = false;
-    startBtn.style.opacity = "1";
-
-    // ❌ ピンはまだ表示しない
-    // （loadPins を呼ばない）
-
-    // ルート線とピンを全て消す
-    if (window.clearDisplayedRoutes) clearDisplayedRoutes();
-    if (window.clearPins) clearPins();
-
-} else {
-    // ルート未選択
-    localStorage.removeItem("CURRENT_ROUTE_ID");
-    startBtn.disabled = true;
-    startBtn.style.opacity = "0.6";
-
-    // 🔥 ピン削除
-    if (window.clearPins) clearPins();
-
-    // 🔥 ルート線削除
-    if (window.clearDisplayedRoutes) clearDisplayedRoutes();
-}
-});
-
-
-
-  // 運転開始ボタン処理（統合スクリプト内）
-  startBtn.addEventListener("click", async () => {
-    const routeId = localStorage.getItem("CURRENT_ROUTE_ID");
-    if (!routeId) return alert("ルートを選択してください");
-
-    localStorage.setItem("LAST_USED_ROUTE_ID", routeId);
-
-    try {
-      // 1️⃣ セッション開始
-      const sessionResponse = await fetch("/sessions/start", {
-        method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "X-Requested-With": "XMLHttpRequest"
-        },
-        credentials: "same-origin"
-      });
-
-      console.log("Session response status:", sessionResponse.status);
-      console.log("Session response headers:", sessionResponse.headers.get("content-type"));
-
-      // レスポンスがHTMLの場合（ログインページへのリダイレクト）
-      const contentType = sessionResponse.headers.get("content-type") || "";
-      if (!sessionResponse.ok) {
-        console.error("Session API エラー:", sessionResponse.status, sessionResponse.statusText);
+      // === 既存のアクティブセッションをチェック ===
+      try {
+        console.log("🔍 Checking active session...");
+        console.log("   User ID:", userId);
+        console.log("   Cookies:", document.cookie);
         
-        if (sessionResponse.status === 401 || contentType.includes("text/html")) {
-          // 認証エラー → ログインページへ
+        const checkResponse = await fetch("/sessions/check_active", {
+          credentials: "same-origin"
+        });
+        
+        console.log("✅ Check active response received");
+        console.log("   Status:", checkResponse.status);
+        console.log("   Status Text:", checkResponse.statusText);
+        console.log("   Content-Type:", checkResponse.headers.get("content-type"));
+        
+        // 認証エラーチェック（401のみ）
+        if (checkResponse.status === 401) {
+          console.warn("❌ 認証エラー (401): ログインが必要です");
           alert("ログインセッションが切れています。ログインページに移動します。");
           window.location.href = "/login";
           return;
-        } else {
-          alert(`セッション開始に失敗しました (status: ${sessionResponse.status})`);
+        }
+        
+        // HTMLレスポンスの場合（リダイレクト）
+        const contentType = checkResponse.headers.get("content-type") || "";
+        if (contentType.includes("text/html")) {
+          console.warn("⚠️ HTMLレスポンスを検出 - 認証リダイレクトの可能性");
+          alert("ログインセッションが切れています。ログインページに移動します。");
+          window.location.href = "/login";
           return;
         }
-      }
-      
-      if (contentType.includes("text/html")) {
-        console.error("HTMLレスポンスを受信（認証リダイレクト）");
-        alert("ログインセッションが切れています。ログインページに移動します。");
-        window.location.href = "/login";
-        return;
-      }
-
-      const sessionData = await sessionResponse.json();
-      console.log("session response:", sessionData);
-
-      // 既存のアクティブセッションがある場合の処理
-      if (sessionData.status === 'warning' && sessionData.session_id) {
-        const useExisting = confirm("既にアクティブなセッションがあります。そのセッションを使用しますか？\n\n「OK」= 続きから記録\n「キャンセル」= 新しいセッションを開始（前のセッションは自動終了）");
         
-        if (useExisting) {
-          // 既存セッションを使用
-          localStorage.setItem("activeSessionId", sessionData.session_id);
-          localStorage.setItem("sessionStartTime", Date.now().toString());
-          
-          // 2️⃣ ルートIDを紐づける
-          await fetch(`/sessions/api/set_route_to_session/${sessionData.session_id}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ route_id: routeId })
+        if (checkResponse.ok) {
+          const checkData = await checkResponse.json();
+          if (checkData.has_active) {
+            console.log("既存のアクティブセッションを検出:", checkData.session_id);
+            
+            const continueSession = confirm(
+              "前回の運転が終了していません。\n\n" +
+              "「OK」= 前回の続きから記録\n" +
+              "「キャンセル」= 前回のセッションを終了して新規開始"
+            );
+            
+            if (continueSession) {
+              // 既存セッションを使用
+              localStorage.setItem("activeSessionId", checkData.session_id);
+              localStorage.setItem("sessionStartTime", Date.now().toString());
+              if (checkData.route_id) {
+                localStorage.setItem("CURRENT_ROUTE_ID", checkData.route_id);
+              }
+              window.location.assign("/recording/active");
+              return;
+            } else {
+              // 既存セッションを終了
+              await fetch("/sessions/end", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  session_id: checkData.session_id,
+                  reflection: "自動終了",
+                  sudden_accels: 0,
+                  sudden_brakes: 0,
+                  sharp_turns: 0,
+                  stability: 0,
+                  speed_violations: 0,
+                  focus_point: ""
+                })
+              });
+              console.log("既存セッションを終了しました");
+            }
+          }
+        }
+      } catch (error) {
+        console.error("既存セッションチェックエラー:", error);
+      }
+
+      // === ルート一覧ロード ===
+      async function loadSavedRoutes() {
+        selectEl.innerHTML = `<option value="">読み込み中...</option>`;
+        const qs = await db.collection("priority_routes")
+          .where("user_id", "==", userId)
+          .orderBy("created_at", "desc")
+          .get();
+
+        if (qs.empty) {
+          selectEl.innerHTML = `<option value="">保存されたルートはありません</option>`;
+          startBtn.disabled = true;
+          startBtn.style.opacity = "0.6";
+          return;
+        }
+
+        selectEl.innerHTML = `<option value="">-- ルートを選択してください --</option>`;
+        qs.forEach(doc => {
+          const d = doc.data();
+          const opt = document.createElement("option");
+          opt.value = doc.id;
+          opt.textContent = d.name || `ルート (${new Date(d.created_at?.toDate?.() || Date.now()).toLocaleString()})`;
+          selectEl.appendChild(opt);
+        });
+
+            // ★ 前回使ったルートがあれば自動選択する
+        const lastRouteId = localStorage.getItem("LAST_USED_ROUTE_ID");
+
+        if (lastRouteId && selectEl.querySelector(`option[value="${lastRouteId}"]`)) {
+
+            // セレクトボックスに反映
+            selectEl.value = lastRouteId;
+
+            // STARTボタン有効化
+            startBtn.disabled = false;
+            startBtn.style.opacity = "1";
+
+            // マップ描画用にも保存
+            localStorage.setItem("CURRENT_ROUTE_ID", lastRouteId);
+        }
+
+      }
+
+
+      await loadSavedRoutes();
+
+
+      // === 表示ボタン ===
+      showBtn.addEventListener("click", async () => {
+          const id = selectEl.value;
+          if (!id) return alert("ルートを選択してください。");
+          if (!window._priorityMapInstance) {
+            return alert("マップがまだ読み込まれていません。");
+          }
+
+          // 🔥 ピンとルートをまず消す
+          if (window.clearPins) clearPins();
+          if (window.clearDisplayedRoutes) clearDisplayedRoutes();
+
+          try {
+            // ルート描画
+            await drawRouteById(window._priorityMapInstance, id);
+
+            // 🔥 ピン表示（表示ボタンを押したときにだけ）
+            await loadPins(window._priorityMapInstance);
+
+            alert("✅ ルートとピンをマップに描画しました。");
+          } catch (e) {
+            console.error(e);
+            alert("ルートの描画に失敗しました。");
+          }
+      });
+
+
+
+      // === 削除ボタン ===
+      delBtn.addEventListener("click", async () => {
+        const id = selectEl.value;
+        if (!id) return alert("削除するルートを選択してください。");
+
+        const ok = confirm("このルートを削除しますか？");
+        if (!ok) return;
+
+        try {
+          // 🔥 1. このルートに紐づくピンを全削除
+          const pinsSnap = await db.collection("priority_pins")
+            .where("route_id", "==", id)
+            .get();
+
+          const batch = db.batch();
+          pinsSnap.forEach(doc => batch.delete(doc.ref));
+          await batch.commit();
+
+          console.log(`🗑 ルート削除に伴い ${pinsSnap.size} 個のピンを削除しました`);
+
+          // 🔥 2. ルート本体を削除
+          await db.collection("priority_routes").doc(id).delete();
+
+          alert("🗑️ ルートと関連ピンを削除しました。");
+
+          // 🔥 3. UI 更新
+          await loadSavedRoutes();
+
+          // 🔥 4. 選択ルートの記憶を解除
+          localStorage.removeItem("CURRENT_ROUTE_ID");
+
+        } catch (e) {
+          console.error(e);
+          alert("削除に失敗しました。");
+        }
+      });
+
+      // === 名前変更ボタン ===
+      const renameBtn = document.getElementById("rename-route-btn");
+
+      renameBtn.addEventListener("click", async () => {
+        const routeId = selectEl.value;
+        if (!routeId) return alert("名前を変更するルートを選択してください。");
+
+        const newName = prompt("新しいルート名を入力してください：");
+        if (!newName || newName.trim() === "") return;
+
+        try {
+          await db.collection("priority_routes").doc(routeId).update({
+            name: newName.trim()
           });
 
-          // 3️⃣ 記録画面へ
-          window.location.assign("/recording/active");
-          return;
-        } else {
-          // 既存セッションを終了してから新規作成
-          await fetch("/sessions/end", {
+          alert("ルート名を変更しました。");
+          await loadSavedRoutes(); // ⭐ リストを再読み込み
+
+        } catch (e) {
+          console.error(e);
+          alert("名前変更に失敗しました。");
+        }
+      });
+
+
+      // === ルート選択時 ===
+      selectEl.addEventListener("change", () => {
+        const id = selectEl.value;
+
+        if (id) {
+          // ルート選択中
+          localStorage.setItem("CURRENT_ROUTE_ID", id);
+          startBtn.disabled = false;
+          startBtn.style.opacity = "1";
+
+          // ❌ ピンはまだ表示しない
+          // （loadPins を呼ばない）
+
+          // ルート線とピンを全て消す
+          if (window.clearDisplayedRoutes) clearDisplayedRoutes();
+          if (window.clearPins) clearPins();
+
+      } else {
+          // ルート未選択
+          localStorage.removeItem("CURRENT_ROUTE_ID");
+          startBtn.disabled = true;
+          startBtn.style.opacity = "0.6";
+
+          // 🔥 ピン削除
+          if (window.clearPins) clearPins();
+
+          // 🔥 ルート線削除
+          if (window.clearDisplayedRoutes) clearDisplayedRoutes();
+      }
+      });
+
+
+
+      // 運転開始ボタン処理（統合スクリプト内）
+      startBtn.addEventListener("click", async () => {
+        const routeId = localStorage.getItem("CURRENT_ROUTE_ID");
+
+        // 🔥 運転開始の確認メッセージ
+        const ok = confirm("運転を開始しますか？");
+        if (!ok) return;
+
+        if (!routeId) return alert("ルートを選択してください");
+
+        localStorage.setItem("LAST_USED_ROUTE_ID", routeId);
+
+        try {
+          // 1️⃣ セッション開始
+          const sessionResponse = await fetch("/sessions/start", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ 
-              session_id: sessionData.session_id,
-              reflection: "自動終了",
-              sudden_accels: 0,
-              sudden_brakes: 0,
-              sharp_turns: 0,
-              stability: 0,
-              speed_violations: 0,
-              focus_point: ""
-            })
+            headers: { 
+              "Content-Type": "application/json",
+              "X-Requested-With": "XMLHttpRequest"
+            },
+            credentials: "same-origin"
           });
+
+          console.log("Session response status:", sessionResponse.status);
+          console.log("Session response headers:", sessionResponse.headers.get("content-type"));
+
+          // レスポンスがHTMLの場合（ログインページへのリダイレクト）
+          const contentType = sessionResponse.headers.get("content-type") || "";
+          if (!sessionResponse.ok) {
+            console.error("Session API エラー:", sessionResponse.status, sessionResponse.statusText);
+            
+            if (sessionResponse.status === 401 || contentType.includes("text/html")) {
+              // 認証エラー → ログインページへ
+              alert("ログインセッションが切れています。ログインページに移動します。");
+              window.location.href = "/login";
+              return;
+            } else {
+              alert(`セッション開始に失敗しました (status: ${sessionResponse.status})`);
+              return;
+            }
+          }
           
-          // 新しいセッションを作成（再試行）
-          const newSessionResponse = await fetch("/sessions/start", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" }
-          });
-          const newSessionData = await newSessionResponse.json();
-          
-          if (!newSessionData.session_id) {
+          if (contentType.includes("text/html")) {
+            console.error("HTMLレスポンスを受信（認証リダイレクト）");
+            alert("ログインセッションが切れています。ログインページに移動します。");
+            window.location.href = "/login";
+            return;
+          }
+
+          const sessionData = await sessionResponse.json();
+          console.log("session response:", sessionData);
+
+          // 既存のアクティブセッションがある場合の処理
+          if (sessionData.status === 'warning' && sessionData.session_id) {
+            const useExisting = confirm("既にアクティブなセッションがあります。そのセッションを使用しますか？\n\n「OK」= 続きから記録\n「キャンセル」= 新しいセッションを開始（前のセッションは自動終了）");
+            
+            if (useExisting) {
+              // 既存セッションを使用
+              localStorage.setItem("activeSessionId", sessionData.session_id);
+              localStorage.setItem("sessionStartTime", Date.now().toString());
+              
+              // 2️⃣ ルートIDを紐づける
+              await fetch(`/sessions/api/set_route_to_session/${sessionData.session_id}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ route_id: routeId })
+              });
+
+              // 3️⃣ 記録画面へ
+              window.location.assign("/recording/active");
+              return;
+            } else {
+              // 既存セッションを終了してから新規作成
+              await fetch("/sessions/end", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ 
+                  session_id: sessionData.session_id,
+                  reflection: "自動終了",
+                  sudden_accels: 0,
+                  sudden_brakes: 0,
+                  sharp_turns: 0,
+                  stability: 0,
+                  speed_violations: 0,
+                  focus_point: ""
+                })
+              });
+              
+              // 新しいセッションを作成（再試行）
+              const newSessionResponse = await fetch("/sessions/start", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" }
+              });
+              const newSessionData = await newSessionResponse.json();
+              
+              if (!newSessionData.session_id) {
+                alert("セッションの作成に失敗しました");
+                return;
+              }
+              
+              localStorage.setItem("activeSessionId", newSessionData.session_id);
+              localStorage.setItem("sessionStartTime", Date.now().toString());
+              
+              // 2️⃣ ルートIDを紐づける
+              await fetch(`/sessions/api/set_route_to_session/${newSessionData.session_id}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ route_id: routeId })
+              });
+
+              // 3️⃣ 記録画面へ
+              window.location.assign("/recording/active");
+              return;
+            }
+          }
+
+          // 新規セッションが正常に作成された場合
+          if (!sessionData.session_id) {
             alert("セッションの作成に失敗しました");
             return;
           }
-          
-          localStorage.setItem("activeSessionId", newSessionData.session_id);
+
+          localStorage.setItem("activeSessionId", sessionData.session_id);
           localStorage.setItem("sessionStartTime", Date.now().toString());
-          
+          console.log("✅ session started:", sessionData.session_id);
+
           // 2️⃣ ルートIDを紐づける
-          await fetch(`/sessions/api/set_route_to_session/${newSessionData.session_id}`, {
+          console.log("📌 Setting route_id:", routeId, "to session:", sessionData.session_id);
+          const r = await fetch(`/sessions/api/set_route_to_session/${sessionData.session_id}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ route_id: routeId })
           });
+          
+          console.log("📌 set_route response status:", r.status);
+          
+          if (!r.ok) {
+            const errorData = await r.json();
+            console.error("❌ set_route failed:", errorData);
+            alert(`ルート設定に失敗しました: ${errorData.message || 'Unknown error'}`);
+            return;
+          }
+          
+          const routeResult = await r.json();
+          console.log("✅ set_route result:", routeResult);
 
           // 3️⃣ 記録画面へ
+          console.log("🚗 Navigating to /recording/active");
           window.location.assign("/recording/active");
-          return;
+          
+        } catch (error) {
+          console.error("運転開始エラー:", error);
+          alert("運転開始に失敗しました。もう一度お試しください。");
         }
-      }
+      }); 
+    });
 
-      // 新規セッションが正常に作成された場合
-      if (!sessionData.session_id) {
-        alert("セッションの作成に失敗しました");
-        return;
-      }
-
-      localStorage.setItem("activeSessionId", sessionData.session_id);
-      localStorage.setItem("sessionStartTime", Date.now().toString());
-      console.log("✅ session started:", sessionData.session_id);
-
-      // 2️⃣ ルートIDを紐づける
-      console.log("📌 Setting route_id:", routeId, "to session:", sessionData.session_id);
-      const r = await fetch(`/sessions/api/set_route_to_session/${sessionData.session_id}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ route_id: routeId })
-      });
-      
-      console.log("📌 set_route response status:", r.status);
-      
-      if (!r.ok) {
-        const errorData = await r.json();
-        console.error("❌ set_route failed:", errorData);
-        alert(`ルート設定に失敗しました: ${errorData.message || 'Unknown error'}`);
-        return;
-      }
-      
-      const routeResult = await r.json();
-      console.log("✅ set_route result:", routeResult);
-
-      // 3️⃣ 記録画面へ
-      console.log("🚗 Navigating to /recording/active");
-      window.location.assign("/recording/active");
-      
-    } catch (error) {
-      console.error("運転開始エラー:", error);
-      alert("運転開始に失敗しました。もう一度お試しください。");
-    }
-  }); 
-});
-
-</script>
+  </script>
   <script>
     window.FLASK_USER_ID = "{{ current_user.id }}";
     localStorage.setItem("CURRENT_USER_ID", "{{ current_user.id }}");

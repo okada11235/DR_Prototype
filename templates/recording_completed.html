@@ -370,6 +370,9 @@
                             <div class="pin-label">📍 ${d.pin_label || "(ラベルなし)"} ${badge}</div>
                             <div style="margin-left:1.2em;color:#00796b;font-size:0.95em;">
                                 🎯 ${d.focus_label || "意識ポイント未設定"}
+                                <span style="margin-left:10px;color:#2090c2;font-weight:bold;">
+                                    ${d.score !== undefined ? `🟢 ${d.score}点` : ""}
+                                </span>
                             </div>
                             <div class="pin-comment">
                                 💬 ${(d.short_comment || "コメントなし").replace(/\n/g, "<br>")}

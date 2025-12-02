@@ -57,6 +57,7 @@ tailwind.config = {
     transform: translate(-50%, -50%);
     overflow: hidden;
     z-index: 5;
+    background: orange;
   }
 
   .gBallImg {
@@ -97,16 +98,27 @@ tailwind.config = {
     border-radius: 4px;
     transform: translate(-50%, -50%); /* 中央基準にする */
   }
+
+  #gTrailCanvas {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 2;   /* ボウル < 軌跡 < ボール */
+    pointer-events: none;
+  }
 </style>
 </head>
-<body class="bg-bg-light text-gray-800 font-sans flex flex-col items-center justify-center min-h-screen p-4">
+<body class="bg-bg-light text-gray-800 font-sans flex flex-col items-center justify-center min-h-screen p-4" data-page="recording_active">
 
   <!-- 記録中タイトル（スタート後に表示） -->
-  <h1 id="recordingTitle"
-      class="text-3xl font-bold text-primary-green mt-6 mb-4"
+  <div id="recordingHeader"
+      class="flex items-center gap-4 text-primary-green text-3xl font-bold mt-6 mb-4"
       style="display:none;">
-    記録中
-  </h1>
+    <span>記録中</span>
+    <span id="timerInline" class="text-gray-700 text-2xl font-bold">00:00:00</span>
+  </div>
 
   <!-- 吹き出し（ルート設定モードの時にだけ表示） -->
   <div id="routeModeBubble" style="display:none;" class="relative bg-white rounded-2xl shadow-lg px-6 py-4 mb-4 max-w-xs mx-auto">
@@ -124,13 +136,24 @@ tailwind.config = {
 
   <!-- G-Bowl エリア（スタート後に表示） -->
   <div id="gBowlArea" class="mt-2 opacity-0 transition-opacity duration-300">
+      <!-- Gボールの軌道 -->
+      <canvas id="gTrailCanvas"></canvas>
       <!-- Gボール（ロボ画像） -->
       <div id="gBall">
-        <img src="{{ url_for('static', filename='img/robot_active.png') }}" class="gBallImg">
+        <img src="{{ url_for('static', filename='img/robot_orange.png') }}" class="gBallImg">
       </div>
 
       <!-- G目盛リング（JSで生成する）-->
       <div id="gRings"></div>
+  </div>
+
+  <!-- ==== G値リアルタイム表示 ==== -->
+  <div id="gValueDisplay"
+      class="mt-4 text-center text-xl font-bold text-gray-800"
+      style="display:none;">
+    <div>横G (gx): <span id="g-x">0.00</span></div>
+    <div>上下G (gy): <span id="g-y">0.00</span></div>
+    <div>前後G (gz): <span id="g-z">0.00</span></div>
   </div>
 
   <!-- スタートボタン（最初のタッチ用） -->
@@ -168,10 +191,8 @@ tailwind.config = {
     </div>
   </div>
 
-  <!-- 経過時間表示（スタート後に表示） -->
-  <div id="timerDisplay" style="display:none;" class="fixed bottom-8 left-0 right-0 text-center text-2xl font-bold text-gray-700">
-    <span id="timer">00:00:00</span>
-  </div>
+  <!-- 念のため残すタイマー -->
+  <span id="timer" style="display:none;"></span>
 
   <!-- スタートボタンの動作 -->
   <script>
@@ -220,8 +241,8 @@ tailwind.config = {
       const ctrl = document.getElementById("controlButtons");
       if (ctrl) ctrl.style.display = "flex";
 
-      const title = document.getElementById("recordingTitle");
-      if (title) title.style.display = "";
+      const header = document.getElementById("recordingHeader");
+      if (header) header.style.display = "";
 
       const timer = document.getElementById("timerDisplay");
       if (timer) timer.style.display = "";
@@ -230,6 +251,7 @@ tailwind.config = {
       const bowl = document.getElementById("gBowlArea");
       const routeBubble = document.getElementById("routeModeBubble"); // ルート用の吹き出し
       const routeRobot  = document.getElementById("routeModeRobot");  // ルート用ロボ
+      const gVal = document.getElementById("gValueDisplay");
 
       if (isRouteMode) {
         console.log("🚗 Route mode: show robot + bubble on start");
@@ -246,8 +268,8 @@ tailwind.config = {
         // 🔵 通常運転では Gボウル表示
         if (bowl) bowl.classList.remove("opacity-0");
 
-        // 🔵 通常運転の吹き出し
-        if (bubbleStart) bubbleStart.style.display = "";
+        // 🔵 通常運転のG値
+        if (gVal) gVal.style.display = "";
       }
     });
   });
@@ -351,6 +373,105 @@ tailwind.config = {
     }
 
     
+  </script>
+    
+  <script>
+  // ボールの軌道
+  (function(){
+      const canvas = document.getElementById("gTrailCanvas");
+      const ball = document.getElementById("gBall");
+
+      let ctx = null;
+      let width = 0;
+      let height = 0;
+
+      function resizeCanvas() {
+          if (!canvas) return;
+          const rect = canvas.parentElement.getBoundingClientRect();
+          canvas.width = rect.width;
+          canvas.height = rect.height;
+          width = rect.width;
+          height = rect.height;
+
+          ctx = canvas.getContext("2d");
+          ctx.lineWidth = 4;
+          ctx.lineCap = "round";
+      }
+
+      window.addEventListener("load", resizeCanvas);
+      window.addEventListener("resize", resizeCanvas);
+
+      let lastX = null;
+      let lastY = null;
+
+      // === 軌跡ボール ===
+      let trailBalls = [];
+
+      function drawTrail() {
+          const cfg = window._gBowlConfig;
+          if (!cfg) {
+              requestAnimationFrame(drawTrail);
+              return;
+          }
+
+          const gx = window.smoothBallGX ?? 0;
+          const gz = window.smoothBallGZ ?? 0;
+
+          const { CENTER, SCALE, MAX_R } = cfg;
+
+          let px = gx * SCALE;
+          let py = gz * SCALE;
+
+          // 🟡 追加：まず距離を算出
+          const dist = Math.sqrt(px * px + py * py);
+
+          // 🛑 範囲外なら軌道を描かない
+          if (dist > MAX_R) {
+              // ロボのボールはクランプされて描画される → でも軌道は出さない
+              requestAnimationFrame(drawTrail);
+              return;
+          }
+
+          const x = CENTER + px;
+          const y = CENTER + py;
+
+          // --- 軌跡ボールを追加 ---
+          trailBalls.push({
+              x: x,
+              y: y,
+              alpha: 0.40,
+              scale: 1.0
+          });
+
+          // --- フェードアウト & 縮小 ---
+          trailBalls = trailBalls
+              .map(b => ({
+                  ...b,
+                  alpha: b.alpha - 0.015,
+                  scale: b.scale - 0.015
+              }))
+              .filter(b => b.alpha > 0 && b.scale > 0);
+
+          // --- Canvas クリア ---
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+          // --- 描画 ---
+          const BASE_SIZE = 72;
+
+          for (const b of trailBalls) {
+              const size = BASE_SIZE * b.scale;
+
+              ctx.beginPath();
+              ctx.fillStyle = `rgba(255,153,51, ${b.alpha})`;
+              ctx.arc(b.x, b.y, size / 2, 0, Math.PI * 2);
+              ctx.fill();
+          }
+
+          requestAnimationFrame(drawTrail);
+      }
+
+      requestAnimationFrame(drawTrail);
+  })();
   </script>
 
   <!-- Firebase -->
@@ -790,8 +911,8 @@ tailwind.config = {
 
         const { CENTER, MAX_R, SCALE } = cfg;
 
-        const gx = window.latestGX ?? 0;
-        const gz = window.latestGZ ?? 0;
+        const gx = window.smoothBallGX ?? 0;
+        const gz = window.smoothBallGZ ?? 0;
 
         let px = gx * SCALE;
         let py = gz * SCALE;

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>データ送信中...</title>
+
+<!-- Tailwind -->
+<script src="https://cdn.tailwindcss.com"></script>
+
+<style>
+body {
+    background-color: #cdeae0; /* ホームと同じ背景色 */
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.fade {
+  opacity: 0;
+  animation: fadeIn 0.6s forwards;
+}
+
+@keyframes fadeIn {
+  to { opacity: 1; }
+}
+</style>
+
+</head>
+
+<body class="flex flex-col items-center justify-center min-h-screen">
+
+  <!-- ロボット画像 -->
+  <div class="mb-6">
+    <img id="loadingRobot" src="/static/img/robot_new.png" 
+         class="w-28 h-28 animate-pulse"
+         alt="loading robot">
+  </div>
+
+  <!-- メインテキスト -->
+  <div class="text-center text-xl font-bold text-gray-700 mb-2 fade" id="statusText">
+    データを送信しています…
+  </div>
+
+  <!-- サブテキスト -->
+  <div class="text-center text-sm text-gray-500 fade" id="subText">
+    少々お待ちください
+  </div>
+
+
+<script>
+const sessionId = "{{ session_id }}";
+
+async function runEndTasks() {
+    if (!sessionId) {
+        console.error("No session_id");
+        return;
+    }
+
+    console.log("📡 データ送信開始", sessionId);
+
+    // ロボットを回す
+    const robot = document.getElementById("loadingRobot");
+    robot.style.animation = "spin 1.2s linear infinite";
+
+    // ① セッション終了
+    updateText("走行データを保存しています…", "サーバーに送信中");
+    await fetch("/sessions/end", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId })
+    });
+
+    // ② AI生成
+    updateText("AIフィードバックを生成しています…", "走行内容を分析中");
+    await fetch(`/api/focus_feedback/${sessionId}`, { method: "POST" });
+
+    // 完了
+    updateText("完了しました！", "結果画面へ移動します");
+
+    setTimeout(() => {
+        window.location.href = `/recording/completed?session_id=${sessionId}`;
+    }, 600);
+}
+
+function updateText(mainText, subText) {
+    document.getElementById("statusText").textContent = mainText;
+    document.getElementById("subText").textContent = subText;
+}
+
+runEndTasks();
+</script>
+
+</body>
+</html>

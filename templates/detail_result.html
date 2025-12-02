@@ -114,7 +114,7 @@
 
     .legend{display:flex;flex-wrap:wrap;gap:6px;padding:8px 10px;background:#ffffffcc;border-radius:8px;margin-top:8px;font-size:.85rem;backdrop-filter:blur(4px);justify-content:flex-start}
     .legend-item{display:flex;align-items:center;margin-right:10px;margin-bottom:4px}
-    .legend-color{width:14px;height:14px;border-radius:50%;margin-right:6px;border:1px solid #333}
+    .legend-color{width:20px;height:20px;border-radius:50%;margin-right:6px;border:1px solid #333}
     .warn{background:#fff3cd;color:#856404;border-radius:8px;padding:10px;text-align:center}
     .custom-nav-bar{background:#378da0;border-top:2px solid #5a7d8d;box-shadow:inset 0 0 5px rgba(0,0,0,.2);height:45px}
     .custom-nav-link{color:#fff;font-weight:bold;font-size:1rem;padding:0 1rem;line-height:41px;height:100%;display:block}
@@ -205,13 +205,27 @@
       </div>
   </div>
 
-<!-- === 重点ポイントフィードバック === -->
-<div class="section" id="feedback-section">
-  <h2><img src="{{ url_for('static', filename='img/robot_side.png') }}" alt="ドライボ" class="robot"> フィードバック</h2>
-  <div id="focus-feedback-list">
-    <p>AIフィードバックを読み込んでいます...</p>
+  <!-- === 総合スコア表示 === -->
+  <div class="section" style="margin-top: 10px; margin-bottom: 10px;">
+    <h2>📊 総合スコア</h2>
+    <div style="font-size: 1.2em; font-weight: bold; color: #2a7;">
+      {{ session.overall_score if session.overall_score is not none else "N/A" }} 点
+    </div>
+
+    {% if session.score_comment %}
+      <div style="margin-top: 6px; color: #444; font-size: 0.95em;">
+        {{ session.score_comment }}
+      </div>
+    {% endif %}
   </div>
-</div>
+
+  <!-- === 重点ポイントフィードバック === -->
+  <div class="section" id="feedback-section">
+    <h2><img src="{{ url_for('static', filename='img/robot_side.png') }}" alt="ドライボ" class="robot"> フィードバック</h2>
+    <div id="focus-feedback-list">
+      <p>AIフィードバックを読み込んでいます...</p>
+    </div>
+  </div>
 
   <!-- ✅ Firebase SDKの読み込みは必ずここで script タグで行う！ -->
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
@@ -262,6 +276,9 @@
               <div class="pin-label">📍 ${d.pin_label || "(ラベルなし)"} ${badge}</div>
               <div style="margin-left:1.2em;color:#00796b;font-size:0.95em;">
                 🎯 ${d.focus_label || "意識ポイント未設定"}
+                <span style="margin-left:10px;color:#2090c2;font-weight:bold;">
+                  ${d.score !== undefined ? `🟢 ${d.score}点` : ""}
+                </span>
               </div>
               <div class="pin-comment">
                 💬 ${(d.short_comment || "コメントなし").replace(/\n/g, "<br>")}
@@ -336,31 +353,9 @@
     .rating-none { background: #e0e0e0; color: #555; }
   </style>
 
-    <!-- ====== 音声ログ ====== -->
-    <div class="audio-section mt-4">
-      <h2>音声ログ</h2>
-      {% if audio_records and audio_records|length > 0 %}
-        <div class="audio-list">
-          {% for audio in audio_records %}
-            <div class="audio-item mb-3">
-              <audio controls preload="none" style="width:100%;">
-                <source src="{{ audio.url }}" type="audio/webm">
-                このブラウザでは音声再生がサポートされていません。
-              </audio>
-              <small class="text-muted">
-                {{ audio.created_at.strftime('%Y/%m/%d %H:%M:%S') if audio.created_at else '' }}
-              </small>
-            </div>
-          {% endfor %}
-        </div>
-      {% else %}
-        <div class="warn mt-2">録音データがありません</div>
-      {% endif %}
-    </div>
-
     <!-- ====== グラフ ====== -->
-    <h2>G加速度＆速度グラフ</h2>
     <div class="chart-wrap">
+      <h2>G加速度＆速度グラフ</h2>
       <canvas id="gForceChart-{{ session.id }}" style="width:100%;height:380px"></canvas>
       <div class="chart-toolbar">
         <div class="toolbar-row">
@@ -395,7 +390,8 @@
 
     <!-- ====== 地図 ====== -->
     <div class="map-section">
-      <h3>走行ルートとイベント</h3>
+      <h2>走行ルートとイベント</h2>
+      <h3>マーカーをクリックしてその地点のGの変動を見たりイベントピン・重点ポイントを設置したりしよう！<img src="{{ url_for('static', filename='img/robot_turnleft.png') }}" alt="ドライボ" class="robot"></h3>
       <div id="map"></div>
       <div class="legend" id="legend"></div>
     </div>
@@ -430,6 +426,87 @@
     </div>
     </nav>
 
+    <!-- ===== イベントマーカー選択モーダル ===== -->
+    <div class="modal fade" id="markerOptionModal" tabindex="-1">
+      <div class="modal-dialog">
+        <div class="modal-content">
+
+          <div class="modal-header">
+            <h5 class="modal-title">この地点で何をしますか？</h5>
+            <button class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+
+          <div class="modal-body">
+            <button class="btn btn-primary w-100 mb-2" id="manual-pin-btn">
+              📍 イベントピンを設置
+            </button>
+            <button class="btn btn-success w-100 mb-2" id="priority-pin-btn">
+              ⭐ 重点ポイントを追加
+            </button>
+            <button class="btn btn-secondary w-100" id="zoom-graph-btn">
+              📈 グラフを拡大
+            </button>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- ピン追加・編集モーダル -->
+    <div class="modal fade" id="pinModal" tabindex="-1">
+      <div class="modal-dialog">
+        <div class="modal-content">
+
+          <div class="modal-header">
+            <h5 class="modal-title">📍 イベントピン設定</h5>
+            <button class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+
+          <div class="modal-body" style="font-size:14px;">
+            
+            <!-- メモ -->
+            <div class="mb-3">
+              <label class="form-label">メモ</label>
+              <input type="text" id="pin-label" class="form-control">
+            </div>
+
+            <!-- 読み上げ -->
+            <div class="mb-3">
+              <label class="form-label">読み上げ</label>
+              <input type="checkbox" id="pin-speak">
+            </div>
+
+            <!-- レベル -->
+            <div class="mb-3">
+              <label class="form-label">レベル</label>
+              <select id="pin-level" class="form-select">
+                <option value="1">1 (オレンジ)</option>
+                <option value="2">2 (紫)</option>
+                <option value="3">3 (赤)</option>
+              </select>
+            </div>
+
+            <!-- 時間帯 -->
+            <div class="mb-3">
+              <label class="form-label">時間帯</label>
+              <div class="d-flex">
+                <input type="time" id="pin-start-time" class="form-control" style="width:120px;">
+                <span class="mx-2">〜</span>
+                <input type="time" id="pin-end-time" class="form-control" style="width:120px;">
+              </div>
+            </div>
+
+          </div>
+
+          <div class="modal-footer">
+            <button class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+            <button id="pin-save-btn" class="btn btn-primary">保存</button>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
 <!-- ===== ライブラリ ===== -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1"></script>
@@ -440,6 +517,39 @@
 /** ========= データ ========= */
 const gpsLogs = {{ gps_logs|tojson }};
 const gLogs   = {{ avg_g_logs|tojson }};
+
+<!-- 🟥【追加①：既存ピンリストを読み込むコード】 -->
+let existingPins = [];
+
+// Firestore から既存ピン一覧をロード
+async function loadExistingPins() {
+  try {
+    const manualRes = await fetch("/api/get_pins");
+    const manualData = await manualRes.json();
+
+    const priorityRes = await fetch("/api/get_priority_pins");
+    const priorityData = await priorityRes.json();
+
+    existingPins = [
+      ...(manualData.pins || []),
+      ...(priorityData.pins || [])
+    ];
+
+    console.log("📍既存ピン読み込み（manual + priority）", existingPins);
+
+  } catch (e) {
+    console.error("❌ ピン読み込みエラー", e);
+  }
+}
+
+// Google Maps の距離計算
+function distanceM(lat1, lng1, lat2, lng2) {
+  return google.maps.geometry.spherical.computeDistanceBetween(
+    new google.maps.LatLng(lat1, lng1),
+    new google.maps.LatLng(lat2, lng2)
+  );
+}
+
 // (0,0) の無効座標を描画から除外
 const displayGpsLogs = (gpsLogs || []).filter(l => !(Number(l.latitude) === 0 && Number(l.longitude) === 0));
 
@@ -448,12 +558,25 @@ const colorMap = {
   sudden_brake:'#ff3b30',  // 赤
   sudden_accel:'#189900',  // 緑
   sharp_turn  :'#ff9500',  // オレンジ
-  unstable_drive:'#ffcc00',// 黄
-  smooth_turn :'#007aff',  // 青
-  smooth_accel:'#5ac8fa',  // 水色
-  smooth_brake:'#a0efa5',  // 明るい緑
-  stable_drive:'#a88ee5',  // 紫
+  //unstable_drive:'#ffcc00',// 黄
+  excellent_turn :'#007aff',  // 青
+  smooth_turn :'#007aff',
+  normal_turn :'#007aff',
+  excellent_accel:'#5ac8fa',  // 水色
+  smooth_accel:'#5ac8fa',
+  normal_accel:'#5ac8fa',
+  excellent_brake:'#a0efa5',  // 明るい緑
+  smooth_brake:'#a0efa5',
+  normal_brake:'#a0efa5',
+  //stable_drive:'#a88ee5',  // 紫
 };
+
+const borderLevelMap = {
+  normal:   "#000000",
+  smooth:   "#f7f700",
+  excellent:"#f70000",
+};
+
 const eventAxisMap = { sudden_brake:'gz', sudden_accel:'gz', sharp_turn:'gx', speed_violation:'speed' };
 
 /** ========= Chart.js 初期化 ========= */
@@ -489,30 +612,35 @@ function findLogByTimestamp(logs, ts, maxDiffMs=500){
   }
   return (min<=maxDiffMs)? closest : null;
 }
-function makeEventPoints(allTs, gpsLogs, axisKey){
+function makeEventPoints(allTs, gpsLogs, axisKey) {
   return {
-    radius: allTs.map(ts=>{
-      const log=findLogByTimestamp(gpsLogs,ts,500);
-      if(!log || !log.event || log.event==='normal') return 0;
-      if(axisKey==='speed') return 6;
-      if(eventAxisMap[log.event]===axisKey) return 6;
+    radius: allTs.map(ts => {
+      const log = findLogByTimestamp(gpsLogs, ts, 500);
+      if (!log || !log.event || log.event === 'normal') return 0;
+
+      if (axisKey === 'speed') return 8;
+      if (eventAxisMap[log.event] === axisKey) return 8;
       return 0;
     }),
-    background: allTs.map(ts=>{
-      const log=findLogByTimestamp(gpsLogs,ts,500);
-      if(!log || !log.event || log.event==='normal') return 'transparent';
-      if(axisKey==='speed') return colorMap[log.event]||'gray';
-      if(eventAxisMap[log.event]===axisKey) return colorMap[log.event]||'gray';
-      return 'transparent';
+
+    background: allTs.map(ts => {
+      const log = findLogByTimestamp(gpsLogs, ts, 500);
+      if (!log || !log.event || log.event === 'normal') return 'transparent';
+
+      const color = colorMap[log.event] || 'gray';
+      return color;
     }),
-    border: allTs.map(ts=>{
-      const log=findLogByTimestamp(gpsLogs,ts,500);
-      if(!log || !log.event || log.event==='normal') return 'transparent';
-      if(axisKey==='speed' || eventAxisMap[log.event]===axisKey) return '#000';
-      return 'transparent';
+
+    border: allTs.map(ts => {
+      const log = findLogByTimestamp(gpsLogs, ts, 500);
+      if (!log || !log.event || log.event === 'normal') return 'transparent';
+
+      const level = getEventLevel(log.event);
+      return borderLevelMap[level];   // ← ★枠線色を反映
     })
-  }
+  };
 }
+
 
 /** ========= グラフ描画 ========= */
 function renderGForceChart(canvasId, gpsLogs, gLogs){
@@ -559,7 +687,8 @@ function renderGForceChart(canvasId, gpsLogs, gLogs){
           pointStyle: ctx => (spPts.radius[ctx.dataIndex] > 0 ? 'circle' : false),
           pointRadius: ctx => spPts.radius[ctx.dataIndex],
           pointBackgroundColor: ctx => spPts.background[ctx.dataIndex],
-          pointBorderColor: ctx => spPts.border[ctx.dataIndex] }
+          pointBorderColor: ctx => spPts.border[ctx.dataIndex],
+          pointBorderWidth: 3, }
       ]
     },
     options:{
@@ -713,6 +842,225 @@ function resetChartZoom(canvasId) {
   chart.update('none'); // アニメーションなしで即時更新
 }
 
+function getEventLevel(eventName) {
+  if (eventName.startsWith("excellent")) return "excellent";
+  if (eventName.startsWith("smooth")) return "smooth";
+  return "normal";
+}
+
+// 🟥【追加②：ピン設置/編集/グラフ拡大 ハンドラー】
+// 既存ピン編集
+async function openPinEditModal(pin) {
+  const newLabel = prompt("ピンのメモを編集:", pin.label || "");
+  if (newLabel === null) return;
+
+  const res = await fetch("/api/update_pin", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      id: pin.id,
+      label: newLabel,
+      speak_enabled: pin.speak_enabled ?? true
+    })
+  });
+
+  const result = await res.json();
+  if (result.status === "success") {
+    alert("ピンを更新しました");
+    await loadExistingPins();
+  }
+}
+
+const CURRENT_ROUTE_ID = "{{ route_id }}";
+
+async function openPriorityPinModal(pin) {
+
+  const focusList = [
+    { key: "brake_soft",        label: "穏やかな減速" },
+    { key: "accel_smooth",      label: "滑らかな発進" },
+    { key: "turn_stability",    label: "カーブの安定性" },
+    { key: "smooth_overall",    label: "直進の安定性" },
+    { key: "stop_smooth",       label: "停止直前の滑らかさ" },
+    { key: "speed_consistency", label: "一定速度の維持" }
+  ];
+
+  // --- ラベル入力 ---
+  const newLabel = prompt(
+    "重点ポイントのラベルを入力してください：",
+    pin.label || ""
+  );
+  if (newLabel === null) return; // キャンセル
+
+  // --- 番号選択メニューを構築 ---
+  let menu = "意識するポイントを選んでください：\n";
+  focusList.forEach((f, i) => {
+    menu += `${i + 1}. ${f.label}\n`;
+  });
+
+  const num = prompt(menu, "1");
+  if (num === null) return;
+
+  const index = Number(num) - 1;
+  if (index < 0 || index >= focusList.length) {
+    alert("番号が正しくありません");
+    return;
+  }
+
+  const selected = focusList[index];
+
+  // --- 新規 or 更新 の分岐 ---
+  if (!pin.id) {
+    // ======================
+    //   🆕 新規追加
+    // ======================
+    const payload = {
+      lat: pin.lat,
+      lng: pin.lng,
+      label: newLabel,
+      focus_type: selected.key,
+      focus_label: selected.label,
+      route_id: CURRENT_ROUTE_ID,   // ← ★重要！
+      created_at: new Date(),
+    };
+
+    const res = await fetch("/api/add_priority_pin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json();
+    if (data.status === "success") {
+      alert("重点ポイントを追加しました！");
+      loadExistingPins(); 
+    } else {
+      alert("追加に失敗しました：" + data.error);
+    }
+
+  } else {
+    // ======================
+    //   ✏ 編集
+    // ======================
+    firebase.firestore().collection("priority_pins").doc(pin.id).update({
+      label: newLabel,
+      focus_type: selected.key,
+      focus_label: selected.label
+    }).then(() => {
+      alert("重点ポイントを更新しました！");
+      loadExistingPins();
+    }).catch(err => {
+      console.error(err);
+      alert("更新に失敗しました");
+    });
+  }
+}
+
+// 新規ピン設置
+async function createPinAt(lat, lng) {
+  const label = prompt("ピンのラベル（任意）:");
+  if (label === null) return;
+
+  const res = await fetch("/api/save_pin", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ lat, lng, label })
+  });
+
+  const result = await res.json();
+  if (result.status === "success") {
+    alert("ピンを追加しました");
+    await loadExistingPins();
+  }
+}
+
+let editingPriorityPin = null;
+let editingManualPin = null;
+
+let editingPin = null;
+let editingPos = null;
+
+function openPinModal(pin, lat, lng) {
+  editingPin = pin || null;
+  editingPos = { lat, lng };
+
+  document.getElementById("pin-label").value = pin?.label ?? "";
+  document.getElementById("pin-speak").checked = pin?.speak_enabled ?? true;
+  document.getElementById("pin-level").value = pin?.priority_level ?? 1;
+
+  document.getElementById("pin-start-time").value = pin?.start_time ?? "";
+  document.getElementById("pin-end-time").value = pin?.end_time ?? "";
+
+  new bootstrap.Modal(document.getElementById("pinModal")).show();
+}
+
+document.getElementById("pin-save-btn").onclick = async () => {
+
+  const payload = {
+    lat: editingPos.lat,
+    lng: editingPos.lng,
+    label: document.getElementById("pin-label").value,
+    speak_enabled: document.getElementById("pin-speak").checked,
+    priority_level: Number(document.getElementById("pin-level").value),
+    speak_time_windows: [
+      {
+        start: document.getElementById("pin-start-time").value,
+        end: document.getElementById("pin-end-time").value,
+      }
+    ]
+  };
+
+  let url = "/api/add_manual_pin";
+
+  if (editingPin?.id) {
+    url = "/api/update_pin";
+    payload.id = editingPin.id;
+  }
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await res.json();
+  if (data.status === "success") {
+    location.reload();
+  } else {
+    alert("保存失敗: " + data.error);
+  }
+};
+
+// イベントマーカークリック時の振り分け
+async function handleEventMarkerClick(log, marker) {
+  const lat = log.latitude;
+  const lng = log.longitude;
+
+  // 🔍 10m以内に既存ピンがあるか
+  const existed = existingPins.find(
+    p => distanceM(lat, lng, p.lat, p.lng) < 10
+  );
+
+  if (existed) {
+    if (existed.route_id) {
+      // ★ priority pin
+      document.getElementById("priority-pin-btn").innerText = "⭐ 重点ポイントを編集";
+      document.getElementById("manual-pin-btn").innerText = "📍 新しいイベントピンを設置";
+      editingPriorityPin = existed;
+      editingManualPin = null;
+    } else {
+      // ★ manual pin
+      document.getElementById("manual-pin-btn").innerText = "📍 イベントピンを編集";
+      document.getElementById("priority-pin-btn").innerText = "⭐ 重点ポイントを追加";
+      editingManualPin = existed;
+      editingPriorityPin = null;
+    }
+  } else {
+    // ピンなし
+    editingManualPin = null;
+    editingPriorityPin = null;
+  }
+}
+
 /** ========= 地図 ========= */
 let mapInstance=null;
 function initMap(){
@@ -726,50 +1074,122 @@ function initMap(){
   const poly=new google.maps.Polyline({ path, geodesic:true, strokeColor:'#007bff', strokeOpacity:1.0, strokeWeight:4 });
   poly.setMap(mapInstance);
 
+  loadExistingPins(); // 🟥これを追加！
+
   // 日本語ラベル対応マップ
   const labelMap = {
-    sudden_brake: '急ブレーキ',
+    sudden_brake: '急減速',
     sudden_accel: '急発進',
-    sharp_turn: '急カーブ',
-    unstable_drive: '不安定な運転',
-    smooth_turn: '良カーブ',
-    smooth_accel: '良加速',
-    smooth_brake: '良減速',
-    stable_drive: '安定した運転'
+    sharp_turn: '急旋回',
+    //unstable_drive: '不安定な運転',
+    excellent_turn: 'とてもいい旋回',
+    smooth_turn: 'いい旋回',
+    normal_turn: '普通の旋回',
+    excellent_accel: 'とてもいい加速',
+    smooth_accel: 'いい加速',
+    normal_accel: '普通の加速',
+    excellent_brake: 'とてもいい減速',
+    smooth_brake: 'いい減速',
+    normal_brake: '普通の減速',
+    //stable_drive: '安定した運転'
   };
   // 凡例
   const legend=document.getElementById('legend');
-  legend.innerHTML = Object.entries(colorMap).map(([k,c])=>(
-    `<div class="legend-item">
-      <span class="legend-color" style="background:${c}"></span>
-      <span>${labelMap[k] || k}</span>
-    </div>`
-  )).join('');
+  legend.innerHTML = Object.entries(colorMap).map(([k, c]) => {
+    const level = getEventLevel(k);              // ← レベル判定
+    const border = borderLevelMap[level];        // ← 枠の色を取得
+
+    return `
+      <div class="legend-item">
+        <span class="legend-color"
+              style="background:${c}; border: 3px solid ${border}"></span>
+        <span>${labelMap[k] || k}</span>
+      </div>
+    `;
+  }).join('');
 
   // イベントマーカー
   displayGpsLogs.forEach(log=>{
     if(log.event && log.event!=='normal'){
       const color=colorMap[log.event]||'gray';
+      const level = getEventLevel(log.event);
       const marker=new google.maps.Marker({
         position:{lat:log.latitude,lng:log.longitude},
         map: mapInstance,
         icon:{
           path: google.maps.SymbolPath.CIRCLE,
-          scale: 6,
+          scale: 8,
           fillColor: color, fillOpacity: .9,
-          strokeWeight: 1.5, strokeColor:'#000'
+          strokeColor: borderLevelMap[level],
+          strokeWeight: 3, 
         },
         title: String(log.event).replace(/_/g,' ')
       });
-      marker.addListener('click', ()=> {
-        mapInstance.setZoom(17);
-        mapInstance.panTo({lat:log.latitude,lng:log.longitude});
-        // グラフ同期（ハイライト＆フォーカス）
-        highlightOnChart('gForceChart-{{ session.id }}', log);
+      marker.addListener("click", () => {
+
+        selectedLog = log;
+        selectedLat = log.latitude;
+        selectedLng = log.longitude;
+
+        // 🔍 10m以内に既存ピンがあるか判定
+        const existed = existingPins.find(p =>
+          distanceM(selectedLat, selectedLng, p.lat, p.lng) < 10
+        );
+
+        if (existed) {
+          // ====== 既存ピンあり → 種類を判定 ======
+          const isPriority = !!existed.route_id;   // ← ★priority の判定！
+
+          document.getElementById("manual-pin-btn").innerText =
+            isPriority ? "📍 イベントピンを設置（別のピン）" : "📍 イベントピンを編集";
+
+          document.getElementById("priority-pin-btn").innerText =
+            isPriority ? "⭐ 重点ポイントを編集" : "⭐ 重点ポイントを追加";
+
+          editingPin = existed;
+
+        } else {
+          // ====== ピンなし → 新規追加 ======
+          document.getElementById("manual-pin-btn").innerText = "📍 イベントピンを設置";
+          document.getElementById("priority-pin-btn").innerText = "⭐ 重点ポイントを追加";
+          editingPin = null;
+        }
+
+        // モーダル表示
+        const modal = new bootstrap.Modal(
+          document.getElementById("markerOptionModal")
+        );
+        modal.show();
       });
     }
   });
 }
+
+document.getElementById("priority-pin-btn").onclick = () => {
+  if (editingPriorityPin) {
+    openPriorityPinModal(editingPriorityPin);
+  } else {
+    openPriorityPinModal({
+      lat: selectedLat, 
+      lng: selectedLng,
+      focus_type: "turn_stability",          // ★ 初期値
+      focus_label: "カーブの安定性"
+    });
+  }
+};
+
+document.getElementById("manual-pin-btn").onclick = () => {
+  if (editingManualPin) {
+    openPinModal(editingManualPin, selectedLat, selectedLng);
+  } else {
+    openPinModal(null, selectedLat, selectedLng);
+  }
+};
+
+document.getElementById("zoom-graph-btn").onclick = () => {
+  highlightOnChart('gForceChart-{{ session.id }}', selectedLog);
+};
+
 
 /** ========= 起動 ========= */
 document.addEventListener('DOMContentLoaded', ()=>{
@@ -780,5 +1200,6 @@ document.addEventListener('DOMContentLoaded', ()=>{
 
 <!-- Google Maps（コールバックで initMap を呼ぶ） -->
 <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDU9txYivjPCIe66l6bPYsPifQKcQxjnrA&callback=initMap&loading=async"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

@@ -61,25 +61,40 @@ export const FIRESTORE_COLLECTIONS = {
 export const audioFiles = {
     // ---------------- 新構成（8分類） ----------------
     // 🚘 褒め系
+    excellent_turn: [
+        "/static/audio/excellent_turn.wav",
+    ],
     smooth_turn: [
-        "/static/audio/smooth_turn_1.wav",
+        "/static/audio/smooth_turn.wav",
+    ],
+    normal_turn: [
+        "/static/audio/normal_turn.wav",
+    ],
+    excellent_accel: [
+        "/static/audio/excellent_accel.wav",
     ],
     smooth_accel: [
-        "/static/audio/smooth_accel_1.wav",
+        "/static/audio/smooth_accel.wav",
+    ],
+    normal_accel: [
+        "/static/audio/normal_accel.wav",
+    ],
+    excellent_brake: [
+        "/static/audio/excellent_brake.wav",
     ],
     smooth_brake: [
-        "/static/audio/good_brake_1.wav",
+        "/static/audio/smooth_brake.wav",
+    ],
+    normal_brake: [
+        "/static/audio/normal_brake.wav",
     ],
     stable_drive: [
-        "/static/audio/stable_drive_1.wav",
-        "/static/audio/stable_drive_2.wav"
+        "/static/audio/stable_drive_2.wav",
     ],
 
     // ⚠️ 注意系
     sharp_turn: [
         "/static/audio/sharp_turn_1.wav",
-        "/static/audio/sharp_turn_2.wav",
-        "/static/audio/sharp_turn_3.wav"
     ],
     sudden_accel: [
         "/static/audio/sudden_acceleration_1.wav",
