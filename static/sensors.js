@@ -682,49 +682,98 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now, recentLo
   }
 
   // ===============================
-  // 🚗 加速判定（普通の発進も確実に拾う版）
+  // 🚗 加速判定
   // ===============================
-  // ---- 継続時間判定 ----
-  if (drivingState.accelStart > 0) {
+  // ================================================
+  // 🚀 新ロジック：速度変化をトリガーにした加速判定
+  // ================================================
+  {
+      // ΔSpeed が 0.5 km/h/s 以上 → 発進とみなす
+      const SPEED_TRIGGER = 0.5;
 
-      const duration = now - drivingState.accelStart;
+      if (deltaSpeed > SPEED_TRIGGER && speed >= 3) {
 
-      if (duration >= accelDurationMs) {
+          // クールダウン中なら無視
+          if (now - lastAccelTime < ACCEL_COOLDOWN_MS) {
+              // nothing
+          } else {
 
-          const gzAbs = Math.abs(gz);
-          let accelType = null;
+              // 直近700msの gz を取得
+              const windowMs = 700;
+              const recent = window.avgGLogBuffer.filter(
+                  d => now - d.timestamp <= windowMs
+              );
 
-          // --------------------------------------
-          // ★ 4段階分類（あなたのCSVに最適）
-          // --------------------------------------
-          if (gzAbs < 0.03) {
-              accelType = "excellent_accel";   // とてもいい加速
+              if (recent.length > 3) {
+
+                  const avgG = recent.reduce((a, b) => a + Math.abs(b.g_z), 0) / recent.length;
+                  let accelType = null;
+
+                  if (avgG < 0.03) {
+                      accelType = "excellent_accel";
+                  } else if (avgG < 0.07) {
+                      accelType = "smooth_accel";
+                  } else if (avgG < 0.15) {
+                      accelType = "normal_accel";
+                  } else {
+                      accelType = "sudden_accel";
+                  }
+
+                  // 連続発生を防ぐ
+                  lastAccelTime = now;
+                  drivingState.accelStart = 0;
+
+                  lastEventTime = now;
+                  drivingState.lastDetectedType = accelType;
+
+                  console.log(`⚡ 速度トリガー加速判定 → ${accelType} | avgG=${avgG.toFixed(3)} Δv=${deltaSpeed.toFixed(2)}`);
+
+                  return accelType;
+              }
           }
-          else if (gzAbs < 0.07) {
-              accelType = "smooth_accel";      // 良い加速
-          }
-          else if (gzAbs < 0.15) {
-              accelType = "normal_accel";      // 普通の加速
-          }
-          else {
-              accelType = "sudden_accel";      // 急加速（悪い）
-          }
-
-          // ★クールダウン開始
-          lastAccelTime = now;
-
-          // リセット
-          drivingState.accelStart = 0;
-          lastEventTime = now;
-          drivingState.lastDetectedType = accelType;
-
-          console.log(
-            `🎯 加速判定(${accelType}) | gz=${gz.toFixed(2)}`
-          );
-
-          return accelType;
       }
   }
+  // // ---- 継続時間判定 ----
+  // if (drivingState.accelStart > 0) {
+
+  //     const duration = now - drivingState.accelStart;
+
+  //     if (duration >= accelDurationMs) {
+
+  //         const gzAbs = Math.abs(gz);
+  //         let accelType = null;
+
+  //         // --------------------------------------
+  //         // ★ 4段階分類（あなたのCSVに最適）
+  //         // --------------------------------------
+  //         if (gzAbs < 0.03) {
+  //             accelType = "excellent_accel";   // とてもいい加速
+  //         }
+  //         else if (gzAbs < 0.07) {
+  //             accelType = "smooth_accel";      // 良い加速
+  //         }
+  //         else if (gzAbs < 0.15) {
+  //             accelType = "normal_accel";      // 普通の加速
+  //         }
+  //         else {
+  //             accelType = "sudden_accel";      // 急加速（悪い）
+  //         }
+
+  //         // ★クールダウン開始
+  //         lastAccelTime = now;
+
+  //         // リセット
+  //         drivingState.accelStart = 0;
+  //         lastEventTime = now;
+  //         drivingState.lastDetectedType = accelType;
+
+  //         console.log(
+  //           `🎯 加速判定(${accelType}) | gz=${gz.toFixed(2)}`
+  //         );
+
+  //         return accelType;
+  //     }
+  // }
 
 /*
   // 継続時間からの減速判定
