@@ -708,6 +708,7 @@
 
           // 3️⃣ 記録画面へ
           console.log("🚗 Navigating to /recording/active");
+          window.recordingStartTime = Date.now();
           window.location.assign("/recording/active");
           
         } catch (error) {

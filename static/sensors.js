@@ -574,6 +574,14 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now, recentLo
     absSide < 0.18 &&
     Math.abs(rotZ) < 3;*/
 
+  // -----------------------------
+  // ★ ブレーキ判定のスタート猶予（3秒間）
+  // -----------------------------
+  const recordingStartTime = window.recordingStartTime || 0;
+  if (now - recordingStartTime < 5000) {
+      return null;  // → 記録開始直後のブレーキ誤判定を完全に防ぐ
+  }
+
   // 1. 条件判定とステート更新
   if (isTurning && absFwd < 0.25) {
 
