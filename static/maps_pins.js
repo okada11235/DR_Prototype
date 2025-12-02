@@ -411,7 +411,7 @@ async function updatePinLabel(pinId) {
         <div style="display:flex; align-items:center; margin-bottom:8px;">
             <label for="priority_${finalPinId}" style="width:70px;">レベル:</label>
             <select id="priority_${finalPinId}" style="flex:1; padding:3px; border:1px solid #ccc; border-radius:3px;" ${isOwner ? '' : 'disabled'}>
-                <option value="1" ${priorityLevel===1?'selected':''}>1 (オレンジ)</option>
+                <option value="1" ${priorityLevel===1?'selected':''}>1 (橙)</option>
                 <option value="2" ${priorityLevel===2?'selected':''}>2 (紫)</option>
                 <option value="3" ${priorityLevel===3?'selected':''}>3 (赤)</option>
             </select>
