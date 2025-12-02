@@ -1051,6 +1051,18 @@ def feedback_page():
                     except Exception:
                         pass
 
+        # 動画ファイル（複数対応）
+        video_files = request.files.getlist("feedback_videos")
+        video_base64_list = []
+        if video_files:
+            for video_file in video_files:
+                if video_file and video_file.filename:
+                    try:
+                        video_bytes = video_file.read()
+                        video_base64_list.append(base64.b64encode(video_bytes).decode('utf-8'))
+                    except Exception:
+                        pass
+
         # Firestoreへ保存
         try:
             feedback_doc = {
@@ -1078,6 +1090,7 @@ def feedback_page():
                 'other_comments': other_comments,
                 'satisfaction': satisfaction,
                 'image_base64_list': image_base64_list,  # 複数画像対応
+                'video_base64_list': video_base64_list,  # 複数動画対応
                 'created_at': datetime.now(JST)
             }
             db.collection('user_feedback').add(feedback_doc)

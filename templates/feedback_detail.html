@@ -230,6 +230,23 @@
     </div>
     {% endif %}
 
+    <!-- 添付動画 -->
+    {% if feedback.get('video_base64_list') %}
+    <div class="detail-card">
+      <h5 class="section-title">添付動画</h5>
+      <div class="row">
+        {% for video_base64 in feedback.get('video_base64_list') %}
+        <div class="col-md-6 mb-3">
+          <video controls class="image-preview" style="max-width:100%;">
+            <source src="data:video/mp4;base64,{{ video_base64 }}" type="video/mp4">
+            お使いのブラウザは動画の再生に対応していません。
+          </video>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
     <!-- 運転記録データ -->
     {% if sessions %}
     <div class="detail-card">
