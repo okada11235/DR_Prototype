@@ -420,7 +420,7 @@ tailwind.config = {
           const { CENTER, SCALE, MAX_R } = cfg;
 
           let px = gx * SCALE;
-          let py = gz * SCALE;
+          let py = -gz * SCALE;
 
           // 🟡 追加：まず距離を算出
           const dist = Math.sqrt(px * px + py * py);

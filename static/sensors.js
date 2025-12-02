@@ -230,41 +230,56 @@ function applyOrientationCorrection(gx, gy, gz) {
 
   // 2) 端末姿勢に合わせて「左右G=X」「前後G=Z」を揃える
   switch (orientationMode) {
-    case 'landscape_left':   // 端末左側が上 (X軸が重力方向)
-      finalGx = -gy; // 横G
-      finalGy = gx;  // 上下G
-      finalGz = -gz; // 前後G
+
+    // ===========================
+    // 縦ホルダー（通常）・背面が前
+    // ===========================
+    case 'portrait_up':
+      finalGx = gx;   // 左右
+      finalGy = gy;   // 上下（重力軸）
+      finalGz = gz;   // 前後（進行方向）
       break;
-    case 'landscape_right':  // 端末右側が上 (X軸が重力方向)
-      finalGx = gy;  // 横G
-      finalGy = -gx; // 上下G
-      finalGz = -gz; // 前後G
+
+    // 縦だが上下逆さま（画面が前・背面が後）に挿した場合
+    case 'portrait_down':
+      finalGx = -gx; 
+      finalGy = -gy; 
+      finalGz =  gz;  // 前後は向きそのまま
       break;
-    case 'portrait_up':      // 端末上が上 (Y軸が重力方向)
-      finalGx = gx;  // 横G
-      finalGy = -gy; // 上下G
-      finalGz = -gz; // 前後G
+
+    // ===========================
+    // 横向き（車載想定外だが対応する）
+    // ===========================
+    case 'landscape_left':
+      // 左側が上 → 端末は -90°回転 → 逆回転(+90°)で補正
+      finalGx = -gy;   // 左右
+      finalGy =  gx;   // 上下
+      finalGz =  gz;   // 前後は不変
       break;
-    case 'portrait_down':    // 端末下が上 (Y軸が重力方向)
-      finalGx = -gx; // 横G
-      finalGy = gy;  // 上下G
-      finalGz = -gz; // 前後G
+
+    case 'landscape_right':
+      // 右側が上 → 端末は +90°回転 → 逆回転(-90°)
+      finalGx =  gy;
+      finalGy = -gx;
+      finalGz =  gz;
       break;
-    case 'flat':             // 画面が上 (Z軸が重力方向)
+
+    // ===========================
+    // flat（机に置く）
+    // ===========================
+    case 'flat':
     default:
-      // FIX: flat/default のロジックを修正
-      // finalGx = gx;
-      // finalGy = gz;
-      // finalGz = -gy; 
-      
-      // flat/default は原則として軸の入れ替えは不要
-      // ただし、上下G(Y)と前後G(Z)が入れ替わっている可能性を考慮
-      // Androidの標準軸定義に基づき、Z軸を前後G (finalGz)に割り当てる
-      finalGx = gx;
-      finalGy = gz;
-      finalGz = gy;
+      // 机に置くと重力は Z 軸に乗る
+      // しかし「車の上下」は Y 軸と決めているので、
+      // Y と Z を入れ替えて車座標に合わせる
+      finalGx = gx;   // 左右はそのまま
+      finalGy = gz;   // 重力軸(Z)を上下Gyとして扱う
+      finalGz = gy;   // 前後はYにする（水平でも前後Gが取れる）
       break;
   }
+  // 🔧 微小な前後Gドリフトを除去（-0.04〜+0.04Gはゼロ扱い）
+  if (Math.abs(finalGz) < 0.04) finalGz = 0;
+
   // finalGx: 左右G (旋回G), finalGz: 前後G (加減速G)
   return { gx: finalGx, gy: finalGy, gz: finalGz };
 }
