@@ -120,7 +120,7 @@ export function watchPosition() {
     // 現在速度を sensors.js にも共有
     window.currentSpeed = speed;
 
-    // GPSログをバッファに保存
+    // GPSログをバッファに保存（通常のGPS取得は常にnormal）
     if (window.sessionId) {
       const gpsData = {
         timestamp: now,
@@ -130,10 +130,9 @@ export function watchPosition() {
         g_x: window.latestGX || 0,
         g_y: window.latestGY || 0,
         g_z: window.latestGZ || 0,
-        event: window.currentDrivingEvent || 'normal'
+        event: 'normal'  // 通常のGPS取得は常にnormal（イベントはsensors.jsから直接追加される）
       };
       window.gpsLogBuffer.push(gpsData);
-      console.log(`GPS data added to buffer:`, gpsData);
     }
 
   }, (error) => {

@@ -562,9 +562,9 @@ const colorMap = {
   excellent_turn :'#007aff',  // 青
   smooth_turn :'#007aff',
   normal_turn :'#007aff',
-  excellent_accel:'#5ac8fa',  // 水色
-  smooth_accel:'#5ac8fa',
-  normal_accel:'#5ac8fa',
+  excellent_accel:'#8e44ad',  // 濃い紫
+  smooth_accel:'#9b59b6',     // 紫
+  normal_accel:'#b07cc6',     // 薄い紫
   excellent_brake:'#a0efa5',  // 明るい緑
   smooth_brake:'#a0efa5',
   normal_brake:'#a0efa5',
@@ -1109,8 +1109,15 @@ function initMap(){
   }).join('');
 
   // イベントマーカー
+  console.log('=== イベントマーカー描画開始 ===');
+  console.log('displayGpsLogs件数:', displayGpsLogs.length);
+  
+  let eventCount = 0;
   displayGpsLogs.forEach(log=>{
     if(log.event && log.event!=='normal'){
+      eventCount++;
+      console.log(`イベント検出 #${eventCount}:`, log.event, 'at', log.latitude, log.longitude);
+      
       const color=colorMap[log.event]||'gray';
       const level = getEventLevel(log.event);
       const marker=new google.maps.Marker({
@@ -1163,6 +1170,8 @@ function initMap(){
       });
     }
   });
+  
+  console.log(`=== イベントマーカー描画完了: ${eventCount}個のマーカーを描画 ===`);
 }
 
 document.getElementById("priority-pin-btn").onclick = () => {

@@ -46,6 +46,9 @@ let orientationMode = 'unknown';            // 姿勢（portrait/landscape/flat 
 
 let lastEventTime = 0;                      // 判定のクールダウン管理
 let lastAudioTime = 0;
+let lastTurnTime = 0;                       // 旋回専用クールダウン
+let lastBrakeTime = 0;                      // ブレーキ専用クールダウン
+let lastAccelTime = 0;                      // 加速専用クールダウン
 
 // 200ms移動平均 + σ=3 外れ値除去用バッファ
 const gWindow = [];                         // {t, x, y, z}
@@ -68,8 +71,7 @@ let drivingState = {
     lastDetectedType: null
 };
 
-let lastAccelTime = 0;          // ← グローバルにする！！
-const ACCEL_COOLDOWN_MS = 1500; // 1.5秒
+const ACCEL_COOLDOWN_MS = 3000; // 3秒（音声フィードバックと統一）
 
 // Firestore バッファ（session.js が10秒ごとに送信）
 if (!window.gLogBuffer) window.gLogBuffer = [];
@@ -576,9 +578,9 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now, recentLo
           speed >= 1;
   }
   const isTurning =
-    speed >= 5 &&             // ← 6 → 8 km/h に上げる
-    absSide >= 0.06 &&        // ← 0.045 → 0.06 に強化 (誤判定激減)
-    Math.abs(deltaSpeed) < 3; // ← ブレーキ/加速中は旋回に入れない
+    speed >= 3 &&             // 最低速度3km/h
+    absSide >= 0.10;          // 横G閾値を0.10に設定（誤判定防止）
+
 /*const isStable =
     speed >= 20 &&
     absFwd < 0.12 &&
@@ -609,14 +611,7 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now, recentLo
       if (drivingState.straightStart === 0) drivingState.straightStart = now;
       currentCondition = 'straight';
 
-  }*/ else {
-
-      // ---- どの条件にも該当しない場合はリセット ----
-      drivingState.turnStart = 0;
-      drivingState.accelStart = 0;
-      drivingState.brakeStart = 0;
-      //drivingState.straightStart = 0;
-  }
+  }*/
   
   // 2. 継続時間チェックとイベント発火
   let type = null;
@@ -644,43 +639,107 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now, recentLo
   }*/
 
   //------------------------------------------------------
-  // 旋回継続時間チェック（0.20〜0.25秒）
+  // 旋回継続時間チェック（250ms以上で判定 + 横G維持確認）
   // rotZ は sharp のみで使う方式
   //------------------------------------------------------
   if (drivingState.turnStart > 0) {
 
       const duration = now - drivingState.turnStart;
 
-      if (duration >= 120) {  // 少し短くして反応を良くする
+      if (duration >= 350) {  // 350ms継続で判定（直進時の揺れを最大限除外）
 
           let type = null;
 
-          // ★ sharp 判定：横Gが強く、かつ rotZ もそれなりに大きい場合のみ
-          if (absSide >= 0.32 && absRot >= 0.5) {
-              type = "sharp_turn";  // rare case
+          // ★ 判定時点での横Gで4段階分類（バランス調整済み）
+          if (absSide >= 0.30) {
+              type = "sharp_turn";        // 0.30G以上: 急旋回
           }
-          else if (absSide >= 0.22) {
-              type = "normal_turn";
+          else if (absSide >= 0.20) {
+              type = "normal_turn";       // 0.20〜0.29G: 通常旋回
           }
-          else if (absSide >= 0.16) {
-              type = "smooth_turn";
+          else if (absSide >= 0.13) {
+              type = "smooth_turn";       // 0.13〜0.19G: 滑らか旋回
           }
           else if (absSide >= 0.10) {
-              type = "excellent_turn";
+              type = "excellent_turn";    // 0.10〜0.12G: 非常に滑らか
           }
 
-          drivingState.turnStart = 0; // リセット
+          // 判定実行後は必ずリセット
+          drivingState.turnStart = 0;
 
           if (type) {
-              lastEventTime = now;
-              drivingState.lastDetectedType = type;
+              // 旋回専用クールダウンチェック（2秒）
+              if (now - lastTurnTime >= 2000) {
+                  lastEventTime = now;
+                  lastTurnTime = now;
+                  drivingState.lastDetectedType = type;
 
-              console.log(`🎯 ${type} | gx=${gx.toFixed(2)}, rotZ=${rotZ.toFixed(2)}`);
-              return type;
+                  console.log(`🎯 ${type} | gx=${gx.toFixed(2)}, rotZ=${rotZ.toFixed(2)}`);
+                  
+                  // 音声再生処理（音声が再生される時だけバッファに追加）
+                  if (now - lastAudioTime > AUDIO_COOLDOWN_MS) {
+                      
+                      // ✅ 音声再生される場合のみバッファに追加
+                      if (window.lastKnownPosition) {
+                          const logData = {
+                              timestamp: now,
+                              latitude: window.lastKnownPosition.latitude,
+                              longitude: window.lastKnownPosition.longitude,
+                              speed: window.lastKnownPosition.speed || 0,
+                              g_x: window.latestGX || 0,
+                              g_y: window.latestGY || 0,
+                              g_z: window.latestGZ || 0,
+                              event: type
+                          };
+                          window.gLogBuffer.push(logData);
+                          window.avgGLogBuffer.push(logData);
+                          window.gpsLogBuffer.push(logData);
+                          console.log(`🎯 ${type} | 音声再生＆3バッファに追加`);
+                      }
+                      // TTS停止
+                      try {
+                          if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                              if (speechSynthesis.speaking) {
+                                  speechSynthesis.cancel();
+                              }
+                          }
+                          if (window.isPinSpeaking) window.isPinSpeaking = false;
+                      } catch (e) { console.warn('⚠️ TTS cancel failed', e); }
+                      
+                      // iOS segment または Android 音声再生
+                      if (window.isIOS && window.playEventAudioSegment) {
+                          const segments = {
+                              "excellent_turn":[5.431, 2.72],
+                              "smooth_turn":[23.234, 3.275],
+                              "normal_turn":[10.724, 2.485],
+                              "sharp_turn":[15.283, 2.869]
+                          };
+                          const seg = segments[type];
+                          if (seg) {
+                              console.log("🎵 iOS 旋回音声:", type, seg);
+                              window.playEventAudioSegment(seg[0], seg[1]);
+                          }
+                      } else {
+                          playRandomAudio(type);
+                      }
+                      lastAudioTime = now;
+                  }
+                  
+                  return type;
+              }
           }
       }
   }
+  
+  // 旋回条件を満たさない場合のみリセット（横G < 0.09 または 速度 < 2km/h で完全リセット）
+  if (absSide < 0.09 || speed < 2) {
+      drivingState.turnStart = 0;
+  }
 
+  // 加速・減速のリセット処理
+  if (!isAcceleratingNew) drivingState.accelStart = 0;
+  if (!(isBraking && deltaSpeed < -3 && absSide < 0.2 && speed >= 10)) drivingState.brakeStart = 0;
+  
   // ===============================
   // 🚗 加速判定
   // ===============================
@@ -688,10 +747,10 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now, recentLo
   // 🚀 新ロジック：速度変化をトリガーにした加速判定
   // ================================================
   {
-      // ΔSpeed が 0.5 km/h/s 以上 → 発進とみなす
-      const SPEED_TRIGGER = 0.5;
+      // ΔSpeed が 1.0 km/h/s 以上 → 明確な加速とみなす
+      const SPEED_TRIGGER = 1.0;
 
-      if (deltaSpeed > SPEED_TRIGGER && speed >= 3) {
+      if (deltaSpeed > SPEED_TRIGGER && speed >= 5) {
 
           // クールダウン中なら無視
           if (now - lastAccelTime < ACCEL_COOLDOWN_MS) {
@@ -727,6 +786,56 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now, recentLo
                   drivingState.lastDetectedType = accelType;
 
                   console.log(`⚡ 速度トリガー加速判定 → ${accelType} | avgG=${avgG.toFixed(3)} Δv=${deltaSpeed.toFixed(2)}`);
+                  
+                  // ✅ 音声再生チェック（音声が鳴る時だけバッファに追加）
+                  if (now - lastAudioTime > AUDIO_COOLDOWN_MS) {
+                      // TTS停止
+                      try {
+                          if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                              if (speechSynthesis.speaking) {
+                                  speechSynthesis.cancel();
+                              }
+                          }
+                          if (window.isPinSpeaking) window.isPinSpeaking = false;
+                      } catch (e) { console.warn('⚠️ TTS cancel failed', e); }
+                      
+                      // 音声再生
+                      if (window.isIOS && window.playEventAudioSegment) {
+                          const segments = {
+                              "excellent_accel":[0, 2.837],
+                              "smooth_accel":[18.152, 2.635],
+                              "normal_accel":[8.152, 2.571],
+                              "sudden_accel":[28.578, 2.464]
+                          };
+                          const seg = segments[accelType];
+                          if (seg) {
+                              console.log("🎵 iOS 加速音声:", accelType, seg);
+                              window.playEventAudioSegment(seg[0], seg[1]);
+                          }
+                      } else {
+                          playRandomAudio(accelType);
+                      }
+                      
+                      // 音声再生後にバッファに追加
+                      if (window.lastKnownPosition) {
+                          const logData = {
+                              timestamp: now,
+                              latitude: window.lastKnownPosition.latitude,
+                              longitude: window.lastKnownPosition.longitude,
+                              speed: window.lastKnownPosition.speed || 0,
+                              g_x: window.latestGX || 0,
+                              g_y: window.latestGY || 0,
+                              g_z: window.latestGZ || 0,
+                              event: accelType
+                          };
+                          window.gLogBuffer.push(logData);
+                          window.avgGLogBuffer.push(logData);
+                          window.gpsLogBuffer.push(logData);
+                          console.log(`⚡ ${accelType} | 音声再生＆3バッファに追加`);
+                      }
+                      
+                      lastAudioTime = now;
+                  }
 
                   return accelType;
               }
@@ -884,7 +993,11 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now, recentLo
           // ===============================
           // 🔥 ライブモード：iOS/Android の音声再生
           // ===============================
-          if (now - lastEventTime > COOLDOWN_MS) {
+          // ブレーキ専用クールダウンチェック（2秒）
+          if (now - lastBrakeTime > 2000) {
+
+              lastEventTime = now;
+              lastBrakeTime = now;
 
               console.log(
                   `🚗 ブレーキ判定 → ${brakeType} (avgG=${avgG.toFixed(2)}, decelRate=${decelRate.toFixed(2)})`
@@ -946,29 +1059,25 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now, recentLo
               }
 
               // ===============================
-              // 📌 Firestore ログ保存（従来処理）
+              // 📌 音声再生後にバッファに追加（音声が鳴った時だけマーカー記録）
               // ===============================
-              const gxs = window.latestGX ?? 0;
-              const gys = window.latestGY ?? 0;
-              const gzs = window.latestGZ ?? 0;
-
-              const gps = window.lastKnownPosition;
-
-              const logData = {
-                  timestamp: now,
-                  latitude: gps?.latitude ?? 0,
-                  longitude: gps?.longitude ?? 0,
-                  g_x: gxs,
-                  g_y: gys,
-                  g_z: gzs,
-                  speed,
-                  event: brakeType,
-              };
-
-              window.gLogBuffer.push(logData);
-              window.avgGLogBuffer.push(logData);
-              window.gpsLogBuffer.push(logData);
-
+              if (window.lastKnownPosition) {
+                  const logData = {
+                      timestamp: now,
+                      latitude: window.lastKnownPosition.latitude,
+                      longitude: window.lastKnownPosition.longitude,
+                      speed: window.lastKnownPosition.speed || 0,
+                      g_x: window.latestGX || 0,
+                      g_y: window.latestGY || 0,
+                      g_z: window.latestGZ || 0,
+                      event: brakeType
+                  };
+                  window.gLogBuffer.push(logData);
+                  window.avgGLogBuffer.push(logData);
+                  window.gpsLogBuffer.push(logData);
+                  console.log(`🚗 ${brakeType} | 音声再生＆3バッファに追加`);
+              }
+              
               lastEventTime = now;
           }
 

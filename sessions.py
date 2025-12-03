@@ -624,17 +624,28 @@ def detail_result_page(session_id):
 
     # GPSログ
     gps_logs = []
+    event_types_found = {}
     for gdoc in session_ref.collection('gps_logs').order_by('timestamp').stream():
         gd = gdoc.to_dict()
+        event_value = gd.get("event", "normal")
+        
+        # イベント種類をカウント（デバッグ用）
+        event_types_found[event_value] = event_types_found.get(event_value, 0) + 1
+        
         gps_logs.append({
             "latitude": float(gd.get("latitude", 0.0)),
             "longitude": float(gd.get("longitude", 0.0)),
             "speed": float(gd.get("speed", 0.0)),
-            "event": gd.get("event", "normal"),
+            "event": event_value,
             # Firestore Timestamp と 端末msを両方運ぶ（描画側は timestamp_ms を優先）
             "timestamp": int(gd.get("timestamp").timestamp()*1000) if gd.get("timestamp") else None,
             "timestamp_ms": gd.get("timestamp_ms"),
         })
+    
+    # デバッグ：イベント種類の集計結果を出力
+    print(f"📊 GPSログのイベント種類: {event_types_found}")
+    non_normal_count = sum(count for event, count in event_types_found.items() if event != 'normal')
+    print(f"📍 normal以外のイベント数: {non_normal_count}/{len(gps_logs)}")
 
     # 平滑化Gログ（avg_g_logs）
     avg_g_logs = []
