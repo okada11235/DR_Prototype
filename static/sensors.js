@@ -300,26 +300,36 @@ function startStopReCalibration() {
     // ① 2秒間サンプリング
     setTimeout(() => {
 
-        // ② 平均化
         if (calibrationSamples.length >= 15) {
             const avg = meanVector(calibrationSamples);
-            gravityOffset = { ...avg };
+
+            // ---- 姿勢補正を適用 ----
+            const corrected = applyOrientationCorrection(avg.x, avg.y, avg.z);
+
+            // ---- 補正後の座標で重力オフセットを保存 ----
+            gravityOffset = {
+                x: corrected.gx,
+                y: corrected.gy,
+                z: 0   // ★ Z軸は0G基準に固定する（最もズレやすいため）
+            };
+
             orientationMode = detectOrientation(avg).mode;
+
             console.log("✨ 再キャリブ成功:", gravityOffset, orientationMode);
         } else {
             console.warn("⚠️ 再キャリブ失敗 → 標準値");
-            gravityOffset = { x: 0, y: 0, z: -1 };
-            orientationMode = 'flat';
+            gravityOffset = { x: 0, y: 0, z: 0 };
+            orientationMode = "flat";
         }
 
-        // ③ フラグ更新
         isCalibrating = false;
+
+        // ---- ③ キャリブ完了として扱う ----
         isCalibrated = true;
         stopCalibrated = false;
 
     }, 2000);
 }
-
 
 // =======================
 // 平滑化（200ms移動平均＋σ=3）
@@ -410,7 +420,6 @@ export function handleDeviceMotion(event) {
       if (stoppedMs >= 2000 && !isCalibrating && !stopCalibrated) {
           console.log("🔧 停車2秒 → 再キャリブ許可");
           stopCalibrated = true;
-          isCalibrated = false;
       }
 
   } else {
