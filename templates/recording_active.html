@@ -420,7 +420,7 @@ tailwind.config = {
           const { CENTER, SCALE, MAX_R } = cfg;
 
           let px = gx * SCALE;
-          let py = -gz * SCALE;
+          let py = gz * SCALE;
 
           // 🟡 追加：まず距離を算出
           const dist = Math.sqrt(px * px + py * py);
@@ -915,7 +915,7 @@ tailwind.config = {
         const gz = window.smoothBallGZ ?? 0;
 
         let px = gx * SCALE;
-        let py = -gz * SCALE;
+        let py = gz * SCALE;
 
         // 0.5G を超えたら外周でクランプ
         const dist = Math.sqrt(px * px + py * py);
