@@ -577,6 +577,23 @@ def results_page():
         if data.get('end_time'):
             data['end_time'] = data['end_time'].astimezone(JST)
 
+        # 🔸 route_idからルート名を取得（nameフィールド）
+        route_id = data.get('route_id')
+        if route_id:
+            try:
+                route_doc = firestore.client().collection('priority_routes').document(route_id).get()
+                if route_doc.exists:
+                    route_data = route_doc.to_dict()
+                    # ルート名は'name'フィールドに保存されている
+                    data['route_name'] = route_data.get('name')
+                else:
+                    data['route_name'] = None
+            except Exception as e:
+                print(f"❌ Error fetching route name for route_id {route_id}: {e}")
+                data['route_name'] = None
+        else:
+            data['route_name'] = None
+
         sessions.append(type('SessionObj', (object,), data))
 
     # 🔸 平均スコアなどを計算 or ダミー生成
