@@ -225,8 +225,6 @@ function applyOrientationCorrection(gx, gy, gz) {
   // ----------------------------------------------------
   if (isIOS) {
     // iOSはAndroidと全ての軸の符号が逆と仮定し、反転させてAndroid基準に統一する
-    gx = -gx;
-    gy = -gy;
     gz = -gz;
   }
   // ----------------------------------------------------
@@ -240,16 +238,16 @@ function applyOrientationCorrection(gx, gy, gz) {
     // 縦ホルダー（通常）・背面が前
     // ===========================
     case 'portrait_up':
-      finalGx = gx;   // 左右
-      finalGy = gy;   // 上下（重力軸）
-      finalGz = gz;   // 前後（進行方向）
+      finalGx = -gx;   // 左右
+      finalGy = -gy;   // 上下（重力軸）
+      finalGz = -gz;   // 前後（進行方向）
       break;
 
     // 縦だが上下逆さま（画面が前・背面が後）に挿した場合
     case 'portrait_down':
-      finalGx = -gx; 
-      finalGy = -gy; 
-      finalGz =  gz;  // 前後は向きそのまま
+      finalGx =  gx; 
+      finalGy =  gy; 
+      finalGz = -gz;  // 前後は向きそのまま
       break;
 
     // ===========================
@@ -259,27 +257,33 @@ function applyOrientationCorrection(gx, gy, gz) {
       // 左側が上 → 端末は -90°回転 → 逆回転(+90°)で補正
       finalGx = -gy;   // 左右
       finalGy =  gx;   // 上下
-      finalGz =  gz;   // 前後は不変
+      finalGz = -gz;   // 前後は不変
       break;
 
     case 'landscape_right':
       // 右側が上 → 端末は +90°回転 → 逆回転(-90°)
-      finalGx =  gy;
-      finalGy = -gx;
-      finalGz =  gz;
+      finalGx = -gy;
+      finalGy =  gx;
+      finalGz = -gz;
       break;
 
     // ===========================
     // flat（机に置く）
     // ===========================
     case 'flat':
+      if (isIOS) {
+        // iOSはAndroidと全ての軸の符号が逆と仮定し、反転させてAndroid基準に統一する
+        gy = -gy;
+        gx = -gx;
+        gz = -gz;
+      }
     default:
       // 机に置くと重力は Z 軸に乗る
       // しかし「車の上下」は Y 軸と決めているので、
       // Y と Z を入れ替えて車座標に合わせる
-      finalGx = gx;   // 左右はそのまま
-      finalGy = gz;   // 重力軸(Z)を上下Gyとして扱う
-      finalGz = gy;   // 前後はYにする（水平でも前後Gが取れる）
+      finalGx = -gx;   // 左右はそのまま
+      finalGy =  gz;   // 重力軸(Z)を上下Gyとして扱う
+      finalGz =  gy;   // 前後はYにする（水平でも前後Gが取れる）
       break;
   }
 
