@@ -939,26 +939,8 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now, recentLo
       if (recentData.length > 2) {
 
           // -----------------------------
-          // 速度とG値の統計を算出
+          // 前後G値の統計を算出
           // -----------------------------
-          const speeds = recentData.map(d => ({
-              t: d.timestamp || d.timestamp_ms,
-              speed: d.speed || 0
-          }));
-
-          const firstSpeed = speeds[0]?.speed || 0;
-          const lastSpeed = speeds[speeds.length - 1]?.speed || 0;
-          const startTime = speeds[0]?.t || now - windowMs;
-          const endTime = speeds[speeds.length - 1]?.t || now;
-
-          const deltaSpeedTotal = firstSpeed - lastSpeed;
-          const durationSec = (endTime - startTime) / 1000;
-
-          let decelRate = 0;
-          if (durationSec > 0.5) {
-              decelRate = deltaSpeedTotal / durationSec;
-          }
-
           const avgG = recentData.reduce(
               (sum, d) => sum + (d.g_z || 0),
               0
@@ -971,24 +953,24 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now, recentLo
           const absAvgG = Math.abs(avgG);
 
           // -----------------------------
-          // ★ 新ブレーキ4段階ロジック
+          // ★ ブレーキ4段階ロジック（前後Gのみで判定）
           // -----------------------------
           let brakeType = null;
 
-          if (maxAbsG >= 0.30 || decelRate > 7) {
-              brakeType = "sudden_brake";         // 悪い
+          if (maxAbsG >= 0.30) {
+              brakeType = "sudden_brake";         // 急ブレーキ
           }
-          else if (absAvgG < 0.13 && decelRate < 2.5) {
-              brakeType = "excellent_brake";      // とてもいい
+          else if (absAvgG < 0.13 && maxAbsG < 0.20) {
+              brakeType = "excellent_brake";      // 非常に滑らか
           }
-          else if (absAvgG < 0.18 && decelRate < 4.8) {
-              brakeType = "smooth_brake";         // いい
+          else if (absAvgG < 0.18 && maxAbsG < 0.25) {
+              brakeType = "smooth_brake";         // スムーズ
           }
-          else if (absAvgG < 0.25 && decelRate < 7.0) {
-              brakeType = "normal_brake";         // 普通
+          else if (absAvgG < 0.25 && maxAbsG < 0.30) {
+              brakeType = "normal_brake";         // 通常
           }
           else {
-              brakeType = "sudden_brake";         // fallback
+              brakeType = "sudden_brake";         // fallback（上記に該当しない場合）
           }
 
           // ===============================
@@ -1009,7 +991,7 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now, recentLo
               lastBrakeTime = now;
 
               console.log(
-                  `🚗 ブレーキ判定 → ${brakeType} (avgG=${avgG.toFixed(2)}, decelRate=${decelRate.toFixed(2)})`
+                  `🚗 ブレーキ判定 → ${brakeType} (avgG=${absAvgG.toFixed(3)}, maxG=${maxAbsG.toFixed(3)})`
               );
 
               // --- TTSキャンセル（ピン読み上げ衝突防止） ---
