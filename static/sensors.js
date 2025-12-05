@@ -855,48 +855,6 @@ function detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, now, recentLo
           }
       }
   }
-  // // ---- 継続時間判定 ----
-  // if (drivingState.accelStart > 0) {
-
-  //     const duration = now - drivingState.accelStart;
-
-  //     if (duration >= accelDurationMs) {
-
-  //         const gzAbs = Math.abs(gz);
-  //         let accelType = null;
-
-  //         // --------------------------------------
-  //         // ★ 4段階分類（あなたのCSVに最適）
-  //         // --------------------------------------
-  //         if (gzAbs < 0.03) {
-  //             accelType = "excellent_accel";   // とてもいい加速
-  //         }
-  //         else if (gzAbs < 0.07) {
-  //             accelType = "smooth_accel";      // 良い加速
-  //         }
-  //         else if (gzAbs < 0.15) {
-  //             accelType = "normal_accel";      // 普通の加速
-  //         }
-  //         else {
-  //             accelType = "sudden_accel";      // 急加速（悪い）
-  //         }
-
-  //         // ★クールダウン開始
-  //         lastAccelTime = now;
-
-  //         // リセット
-  //         drivingState.accelStart = 0;
-  //         lastEventTime = now;
-  //         drivingState.lastDetectedType = accelType;
-
-  //         console.log(
-  //           `🎯 加速判定(${accelType}) | gz=${gz.toFixed(2)}`
-  //         );
-
-  //         return accelType;
-  //     }
-  // }
-
 /*
   // 継続時間からの減速判定
   if (currentCondition !== 'brake') drivingState.brakeStart = 0;
