@@ -1,0 +1,656 @@
+@startuml ビュー・ルーティング機能（理想版）
+
+!define ENTITY_COLOR #E8F5E9
+!define SERVICE_COLOR #E3F2FD
+!define EXTERNAL_COLOR #FFF3E0
+!define ABSTRACT_COLOR #FFE0B2
+!define INTERFACE_COLOR #F3E5F5
+
+title ビュー・ルーティング機能(実装準拠版) - DriveBuddy
+
+' 抽象ビュー基底クラス
+abstract class ViewBase <<Abstract>> ABSTRACT_COLOR {
+  #_template_cache: Dict[str, str]
+  #_context_cache: Dict[str, any]
+  --
+  #{abstract} render(context: Dict[str, any]) -> str: str
+  #{abstract} validate_request() -> bool: bool
+  #{abstract} prepare_context() -> Dict[str, any]: dict
+  +clear_cache() -> None: void
+  #_get_default_context() -> Dict[str, any]: dict
+}
+
+' レスポンス戦略インターフェース
+interface ResponseStrategy <<Interface>> INTERFACE_COLOR {
+  +{abstract} format_response(data: Dict[str, any]) -> Response: Response
+  +{abstract} get_content_type() -> str: str
+  +{abstract} get_status_code() -> int: int
+  +{abstract} set_headers(headers: Dict[str, str]) -> None: void
+  +{abstract} handle_error(error: Exception) -> Response: Response
+}
+
+' ビューコントローラー基底クラス
+abstract class ViewControllerBase <<Abstract>> ABSTRACT_COLOR {
+  #_template_name: str
+  #_response_strategy: ResponseStrategy
+  #_cache_enabled: bool = False
+  #_cache_timeout: int = 300
+  --
+  #{abstract} get(request: Request) -> Response: Response
+  #{abstract} post(request: Request) -> Response: Response
+  +set_response_strategy(strategy: ResponseStrategy) -> None: void
+  +get_template_name() -> str: str
+  #_validate_session_id(session_id: str) -> bool: bool
+  #_get_current_user() -> User: User
+  #_handle_error(error: Exception) -> Response: Response
+}
+
+' Blueprintクラス
+class ViewsBlueprint <<Blueprint>> SERVICE_COLOR {
+  +name: str = "views"
+  -_session_controller: SessionViewController
+  -_pin_controller: PinViewController
+  -_cache: Dict[str, any]
+  +CACHE_TTL_SECONDS: int = 300
+  --
+  【基本画面】
+  +index() -> str: redirect to home
+  +home() -> str: render_template
+  +explain() -> str: render_template
+  +map_editor() -> str: render_template
+  --
+  【記録画面】
+  +recording_start() -> str: render_template
+  +recording_active() -> str: render_template
+  +recording_completed() -> str: render_template
+  +sessions_page() -> str: render_template
+  +session_gforce(session_id: str) -> str: render_template
+  +delete_session(session_id: str) -> JsonResponse: JSON
+  --
+  【再生機能】
+  +replay_active(session_id: str) -> str: render_template
+  +recording_completed_re(session_id: str) -> str: render_template
+  +detail_result_play(session_id: str) -> str: render_template
+  --
+  【API - 再生データ】
+  +api_replay_data(session_id: str) -> JsonResponse: JSON
+  --
+  【ピン管理API - 基本操作】
+  +save_pin() -> JsonResponse: JSON
+  +get_pins() -> JsonResponse: JSON
+  +get_pins_all() -> JsonResponse: JSON
+  +get_all_pins() -> JsonResponse: JSON
+  +delete_pin() -> JsonResponse: JSON
+  +update_pin() -> JsonResponse: JSON
+  --
+  【ピン管理API - 走行中追加】
+  +add_drive_pin() -> JsonResponse: JSON
+  +add_voice_pin() -> JsonResponse: JSON
+  +add_manual_pin() -> JsonResponse: JSON
+  --
+  【ピン管理API - 音声ピン】
+  +get_voice_pins() -> JsonResponse: JSON
+  +confirm_voice_pin() -> JsonResponse: JSON
+  --
+  【ピン管理API - 重点ポイント】
+  +get_priority_pins() -> JsonResponse: JSON
+  +add_priority_pin() -> JsonResponse: JSON
+  +update_priority_pin() -> JsonResponse: JSON
+  +delete_priority_pin() -> JsonResponse: JSON
+  --
+  【フィードバック画面】
+  +feedback_detail_result(session_id: str, pin_id: str) -> str: render_template
+  +feedback_detail_completed(session_id: str, pin_id: str) -> str: render_template
+  +api_focus_feedback(session_id: str) -> JsonResponse: JSON
+  --
+  【ユーザーフィードバック】
+  +feedback_page() -> str: render_template
+  +feedback_log() -> str: render_template
+  +feedback_detail(feedback_id: str) -> str: render_template
+  --
+  【ユーザー設定API】
+  +get_user_speak_settings() -> JsonResponse: JSON
+  +update_user_speak_settings() -> JsonResponse: JSON
+  --
+  【ヘルパー関数】
+  +get_gps_logs_for_session(session_id: str) -> List[Dict[str, any]]: list
+  +get_g_logs_for_session(session_id: str) -> List[Dict[str, any]]: list
+  +get_avg_g_logs_for_session(session_id: str) -> List[Dict[str, any]]: list
+}
+
+' HTMLレスポンス戦略
+class HTMLResponseStrategy <<Strategy>> SERVICE_COLOR {
+  -_default_status: int = 200
+  -_headers: Dict[str, str]
+  +DEFAULT_TEMPLATE_FOLDER: str = "templates/"
+  --
+  +format_response(data: Dict[str, any]) -> Response: Response
+  +get_content_type() -> str: str
+  +get_status_code() -> int: int
+  +set_headers(headers: Dict[str, str]) -> None: void
+  +handle_error(error: Exception) -> Response: Response
+  -_render_template(template: str, context: Dict[str, any]) -> str: str
+  -_render_error_page(error: Exception, status_code: int) -> str: str
+}
+
+' JSONレスポンス戦略
+class JSONResponseStrategy <<Strategy>> SERVICE_COLOR {
+  -_default_status: int = 200
+  -_headers: Dict[str, str]
+  -_pretty_print: bool = False
+  +STATUS_OK: int = 200
+  +STATUS_BAD_REQUEST: int = 400
+  +STATUS_NOT_FOUND: int = 404
+  +STATUS_SERVER_ERROR: int = 500
+  --
+  +format_response(data: Dict[str, any]) -> Response: Response
+  +get_content_type() -> str: str
+  +get_status_code() -> int: int
+  +set_headers(headers: Dict[str, str]) -> None: void
+  +handle_error(error: Exception) -> Response: Response
+  +set_pretty_print(enabled: bool) -> None: void
+  -_ensure_json_serializable(data: Dict[str, any]) -> Dict[str, any]: dict
+  -_format_error_json(error: Exception, status_code: int) -> Dict[str, any]: dict
+}
+
+' セッションビューコントローラー
+class SessionViewController <<Controller>> SERVICE_COLOR {
+  -_db_client: Firestore
+  -_session_cache: Dict[str, Dict[str, any]]
+  +CACHE_EXPIRY_SECONDS: int = 300
+  --
+  +get(request: Request) -> Response: Response
+  +post(request: Request) -> Response: Response
+  +render(context: Dict[str, any]) -> str: str
+  +validate_request() -> bool: bool
+  +prepare_context() -> Dict[str, any]: dict
+  -_fetch_session_data(session_id: str) -> Dict[str, any]: dict
+  -_validate_session_id(session_id: str) -> bool: bool
+  -_check_cache(session_id: str) -> Optional[Dict[str, any]]: dict
+  -_update_cache(session_id: str, data: Dict[str, any]) -> None: void
+  -_clear_expired_cache() -> None: void
+}
+
+' ピン管理ビューコントローラー
+class PinViewController <<Controller>> SERVICE_COLOR {
+  -_db_client: Firestore
+  -_pin_cache: Dict[str, List[Dict[str, any]]]
+  +MAX_PINS_PER_ROUTE: int = 1000
+  +MIN_LAT: float = -90.0
+  +MAX_LAT: float = 90.0
+  +MIN_LNG: float = -180.0
+  +MAX_LNG: float = 180.0
+  --
+  +get(request: Request) -> Response: Response
+  +post(request: Request) -> Response: Response
+  +render(context: Dict[str, any]) -> str: str
+  +validate_request() -> bool: bool
+  +prepare_context() -> Dict[str, any]: dict
+  -_fetch_pins_data(route_id: str) -> List[Dict[str, any]]: list
+  -_validate_coordinates(lat: float, lng: float) -> bool: bool
+  -_validate_pin_data(pin_data: Dict[str, any]) -> Tuple[bool, str]: tuple
+  -_sort_pins_by_priority(pins: List[Dict[str, any]]) -> List[Dict[str, any]]: list
+}
+
+' Firestore
+class Firestore <<External>> EXTERNAL_COLOR {
+  +MAX_BATCH_SIZE: int = 500
+  +MAX_TRANSACTION_RETRIES: int = 5
+  --
+  +collection(name: str) -> CollectionReference: CollectionReference
+  +document(path: str) -> DocumentReference: DocumentReference
+  +get() -> DocumentSnapshot: DocumentSnapshot
+  +set(data: Dict[str, any]) -> None: void
+  +update(data: Dict[str, any]) -> None: void
+  +delete() -> None: void
+  +where(filter: str, op: str, value: any) -> Query: Query
+  +order_by(field: str, direction: str = "ASCENDING") -> Query: Query
+  +stream() -> Iterator[DocumentSnapshot]: Iterator
+  +batch() -> WriteBatch: WriteBatch
+  +transaction() -> Transaction: Transaction
+  +get_all(references: List[DocumentReference]) -> List[DocumentSnapshot]: list
+}
+
+' Flask
+class Flask <<External>> EXTERNAL_COLOR {
+  +STATUS_200_OK: int = 200
+  +STATUS_400_BAD_REQUEST: int = 400
+  +STATUS_401_UNAUTHORIZED: int = 401
+  +STATUS_404_NOT_FOUND: int = 404
+  +STATUS_500_INTERNAL_ERROR: int = 500
+  --
+  +render_template(template_name: str, **context: any) -> str: str
+  +jsonify(data: Dict[str, any]) -> Response: Response
+  +request.args: Dict[str, str]: dict
+  +request.json: Dict[str, any]: dict
+  +request.method: str: str
+  +request.form: Dict[str, str]: dict
+  +redirect(url: str, code: int = 302) -> Response: Response
+  +url_for(endpoint: str, **values: any) -> str: str
+  +abort(code: int, description: Optional[str] = None) -> NoReturn: void
+}
+
+' Flask-Login
+class FlaskLogin <<External>> EXTERNAL_COLOR {
+  --
+  +@login_required: decorator
+  +current_user: User: User
+  +login_user(user: User, remember: bool = False, duration: Optional[timedelta] = None) -> bool: bool
+  +logout_user() -> bool: bool
+  +@fresh_login_required: decorator
+  +login_fresh() -> bool: bool
+  +confirm_login() -> None: void
+}
+
+' AIEvaluation
+class AIEvaluation <<Module>> SERVICE_COLOR {
+  +MIN_DATA_POINTS_FOR_ANALYSIS: int = 10
+  +CACHE_TTL_SECONDS: int = 3600
+  --
+  +analyze_focus_points_for_session(session_id: str, user_id: str) -> List[Dict[str, any]]: list
+  +get_cached_analysis(session_id: str) -> Optional[List[Dict[str, any]]]: list
+  +invalidate_cache(session_id: str) -> None: void
+  +validate_session_data(session_id: str) -> Tuple[bool, str]: tuple
+}
+
+' Score
+class Score <<Module>> SERVICE_COLOR {
+  +MIN_JERK_DATA_POINTS: int = 2
+  +BASE_SCORE: float = 100.0
+  +MIN_SCORE: float = 0.0
+  +MAX_SCORE: float = 100.0
+  --
+  +calculate_jerk_and_stability(session_id: str) -> Dict[str, float]: dict
+  +calculate_overall_driving_score(jerk_stats: Dict[str, float]) -> float: float
+  +validate_jerk_stats(jerk_stats: Dict[str, float]) -> bool: bool
+  +get_score_breakdown(session_id: str) -> Dict[str, any]: dict
+}
+
+' 関係性
+SessionViewController --|> ViewControllerBase : 継承
+PinViewController --|> ViewControllerBase : 継承
+HTMLResponseStrategy ..|> ResponseStrategy : 実装
+JSONResponseStrategy ..|> ResponseStrategy : 実装
+ViewsBlueprint ..> SessionViewController : 使用
+ViewsBlueprint ..> PinViewController : 使用
+ViewControllerBase o-- ResponseStrategy : 戦略保持
+ViewsBlueprint ..> Flask : 使用
+ViewsBlueprint ..> FlaskLogin : 認証
+ViewsBlueprint ..> Firestore : データ取得/保存
+ViewsBlueprint ..> AIEvaluation : 呼び出し
+ViewsBlueprint ..> Score : 呼び出し
+SessionViewController ..> Firestore : データ取得
+PinViewController ..> Firestore : データ取得
+
+' ノート
+note right of ViewsBlueprint
+  【Blueprint登録】
+  
+  from flask import Blueprint
+  
+  views_bp = Blueprint('views', __name__)
+  
+  app.register_blueprint(views_bp)
+  
+  【認証保護】
+  
+  @login_required デコレータ使用
+  - home以外のすべてのルート
+  - current_userで現在のユーザー取得
+  
+  【テンプレート構造】
+  
+  templates/
+    - home.html (ホーム画面)
+    - recording_start.html (開始画面)
+    - recording_active.html (記録中画面)
+    - recording_completed.html (完了画面)
+    - recording_datasend.html (送信中画面)
+    - result.html (結果一覧)
+    - detail_result.html (詳細結果)
+    - sessions.html (セッション一覧)
+    - user_feedback.html (フィードバック入力)
+    - explain.html (説明画面)
+    - map_editor.html (マップエディタ)
+    - replay_active.html (再生画面)
+    - detail_result_play.html (詳細再生)
+    - feedback_log.html (フィードバック履歴)
+    - feedback_detail.html (フィードバック詳細)
+    - feedback_detail_result.html (評価結果)
+    - feedback_detail_completed.html (完了画面)
+end note
+
+note bottom of ViewsBlueprint
+  【再生機能（replay）】
+  
+  replay_active(session_id):
+    - 既存セッションの再生画面
+    - recording_active.htmlを再利用
+    - isReplay=Trueでモード切替
+  
+  api_replay_data(session_id):
+    返却データ:
+    {
+      "session": {...},
+      "gps_logs": [...],
+      "g_logs": [...],
+      "avg_g_logs": [...],
+      "audio_records": [...],
+      "focus_feedbacks": [...]
+    }
+  
+  detail_result_play(session_id):
+    - 詳細結果の再生モード
+    - detail_result.htmlを再利用
+    - isPlayMode=Trueで表示切替
+  
+  【実装のポイント】
+  - 新規記録と再生で同じテンプレート使用
+  - JavaScriptでモード判定
+  - データ取得APIは共通化
+end note
+
+note top of ViewsBlueprint
+  【ピン管理の3種類】
+  
+  1. Drive Pin（運転記録ピン）
+     - セッション中の特定地点
+     - g_logsと紐付け
+     - リアルタイム追加
+     - add_drive_pin()
+  
+  2. Voice Pin（音声記録ピン）
+     - 音声フィードバック地点
+     - audio_recordsと紐付け
+     - 確認後にPriority Pin化
+     - add_voice_pin()
+     - confirm_voice_pin()
+  
+  3. Manual Pin（手動ピン）
+     - ユーザー手動追加
+     - マップエディタから
+     - focus_typeとlabel設定
+     - add_manual_pin()
+  
+  【Priority Pin統合】
+  - 全ピンタイプの統合管理
+  - priority_pinsコレクション
+  - ルートとの関連付け
+  - AI評価の対象
+end note
+
+note left of Firestore
+  【データ取得パターン】
+  
+  # セッション取得
+  session_ref = db.collection("sessions")
+                  .document(session_id)
+  session = session_ref.get()
+  
+  # サブコレクション取得
+  gps_logs = session_ref
+    .collection("gps_logs")
+    .order_by("timestamp")
+    .stream()
+  
+  # ユーザーのセッション一覧
+  sessions = db.collection("sessions")
+               .where('user_id', '==', user_id)
+               .order_by('start_time', 
+                        direction='DESCENDING')
+               .stream()
+  
+  # ピン取得
+  pins = db.collection("priority_pins")
+           .where('user_id', '==', user_id)
+           .stream()
+  
+  # ルート取得
+  routes = db.collection("routes")
+             .where('user_id', '==', user_id)
+             .stream()
+  
+  【保存パターン】
+  
+  # ピン保存
+  pin_ref = db.collection("priority_pins")
+              .document()
+  pin_ref.set({
+      'user_id': user_id,
+      'route_id': route_id,
+      'lat': lat,
+      'lng': lng,
+      'label': label,
+      'focus_type': focus_type,
+      'created_at': firestore.SERVER_TIMESTAMP
+  })
+  
+  # ルート保存
+  route_ref = db.collection("routes")
+                .document()
+  route_ref.set({
+      'user_id': user_id,
+      'name': name,
+      'path': path,
+      'created_at': firestore.SERVER_TIMESTAMP
+  })
+end note
+
+note left of Flask
+  【リクエスト処理】
+  
+  # GETパラメータ
+  session_id = request.args.get('session_id')
+  
+  # JSONボディ
+  data = request.json
+  lat = data.get('lat')
+  lng = data.get('lng')
+  
+  # メソッド判定
+  if request.method == 'POST':
+      # POST処理
+  elif request.method == 'GET':
+      # GET処理
+  
+  【レスポンス】
+  
+  # HTML
+  return render_template(
+      'result.html',
+      session_id=session_id,
+      data=data
+  )
+  
+  # JSON
+  return jsonify({
+      'status': 'success',
+      'data': data
+  })
+  
+  # エラー
+  return jsonify({
+      'status': 'error',
+      'message': str(e)
+  }), 400
+  
+  【リダイレクト】
+  
+  return redirect(url_for('views.home'))
+end note
+
+note bottom of FlaskLogin
+  【認証フロー】
+  
+  @login_required
+  def home():
+      user_id = current_user.uid
+      # ログイン済みユーザーのみアクセス可
+  
+  【ユーザー情報】
+  
+  current_user.uid         # Firebase UID
+  current_user.email       # メールアドレス
+  current_user.is_authenticated  # 認証状態
+  
+  【ログイン/ログアウト】
+  
+  # auth.pyで処理
+  login_user(user, remember=True)
+  logout_user()
+end note
+
+note right of AIEvaluation
+  【AI評価呼び出し】
+  
+  @views_bp.route('/api/analyze_focus_points/<session_id>')
+  @login_required
+  def api_analyze_focus_points(session_id):
+      from ai_evaluation import analyze_focus_points_for_session
+      
+      user_id = current_user.uid
+      
+      try:
+          results = analyze_focus_points_for_session(
+              session_id, 
+              user_id
+          )
+          return jsonify({
+              'status': 'success',
+              'feedbacks': results
+          })
+      except Exception as e:
+          return jsonify({
+              'status': 'error',
+              'message': str(e)
+          }), 500
+  
+  【実行タイミング】
+  - セッション終了後
+  - ユーザーが明示的に要求
+  - 結果画面から実行ボタン
+end note
+
+note right of Score
+  【スコア計算呼び出し】
+  
+  # sessions.pyのend()で自動実行
+  from score import (
+      calculate_jerk_and_stability,
+      calculate_overall_driving_score
+  )
+  
+  jerk_stats = calculate_jerk_and_stability(
+      session_id
+  )
+  
+  overall_score = calculate_overall_driving_score(
+      jerk_stats
+  )
+  
+  session_ref.update({
+      'jerk_stats': jerk_stats,
+      'overall_score': overall_score
+  })
+  
+  【表示】
+  - result.html でスコア表示
+  - detail_result.html で詳細表示
+end note
+
+note top of Firestore
+  【ヘルパー関数実装例】
+  
+  def get_gps_logs_for_session(session_id):
+      logs_ref = db.collection("sessions")
+                   .document(session_id)
+                   .collection("gps_logs")
+      
+      query = logs_ref.order_by("timestamp")
+      logs = []
+      
+      for log in query.stream():
+          data = log.to_dict()
+          data['id'] = log.id
+          logs.append(data)
+      
+      return logs
+  
+  【Timestamp変換】
+  
+  from datetime import datetime
+  
+  if isinstance(data['timestamp'], datetime):
+      data['timestamp'] = data['timestamp'].isoformat()
+  
+  JSON化のために文字列変換が必要
+end note
+
+note bottom of Flask
+  【エラーハンドリング】
+  
+  try:
+      # 処理
+      result = do_something()
+      return jsonify({
+          'status': 'success',
+          'data': result
+      })
+  except ValueError as e:
+      # バリデーションエラー
+      return jsonify({
+          'status': 'error',
+          'message': str(e)
+      }), 400
+  except Exception as e:
+      # サーバーエラー
+      print(f"Error: {e}")
+      return jsonify({
+          'status': 'error',
+          'message': 'Internal server error'
+      }), 500
+  
+  【ログ出力】
+  
+  print(f"=== API CALL: {endpoint} ===")
+  print(f"User: {user_id}")
+  print(f"Session: {session_id}")
+end note
+
+note top of FlaskLogin
+  【ユーザー設定API】
+  
+  @views_bp.route('/api/user/settings', methods=['GET'])
+  @login_required
+  def api_get_user_settings():
+      user_id = current_user.uid
+      user_ref = db.collection("users")
+                   .document(user_id)
+      user_doc = user_ref.get()
+      
+      if user_doc.exists:
+          settings = user_doc.to_dict()
+          return jsonify({
+              'status': 'success',
+              'settings': settings
+          })
+      else:
+          return jsonify({
+              'status': 'error',
+              'message': 'User not found'
+          }), 404
+  
+  @views_bp.route('/api/user/settings', methods=['POST'])
+  @login_required
+  def api_update_user_settings():
+      user_id = current_user.uid
+      data = request.json
+      
+      user_ref = db.collection("users")
+                   .document(user_id)
+      user_ref.update(data)
+      
+      return jsonify({'status': 'success'})
+end note
+
+@enduml

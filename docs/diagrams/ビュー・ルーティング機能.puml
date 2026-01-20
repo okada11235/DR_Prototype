@@ -1,0 +1,196 @@
+@startuml ビュー・ルーティング機能
+
+!define ENTITY_COLOR #E8F5E9
+!define SERVICE_COLOR #E3F2FD
+!define EXTERNAL_COLOR #FFF3E0
+
+' タイトル
+title ビュー・ルーティング機能 - DriveBuddy
+
+' Blueprintクラス
+class ViewsBlueprint <<Blueprint>> SERVICE_COLOR {
+  --
+  【基本画面】
+  +index(): Response
+  +home(): Response
+  +explain(): Response
+  +map_editor(): Response
+  --
+  【記録画面】
+  +recording_start(): Response
+  +recording_active(): Response
+  +recording_completed(): Response
+  +recording_datasend(): Response
+  --
+  【リプレイ機能】
+  +replay_active(session_id: str): Response
+  +recording_completed_re(session_id: str): Response
+  +detail_result_play(session_id: str): Response
+  +api_replay_data(session_id: str): JsonResponse
+  --
+  【結果・セッション画面】
+  +sessions_page(): Response
+  +session_gforce(session_id: str): Response
+  +delete_session(session_id: str): JsonResponse
+  --
+  【フィードバック画面】
+  +feedback_detail_result(session_id: str, pin_id: str): Response
+  +feedback_detail_completed(session_id: str, pin_id: str): Response
+  +api_focus_feedback(session_id: str): JsonResponse
+  --
+  【ユーザーフィードバック】
+  +feedback_page(): Response
+  +feedback_log(): Response
+  +feedback_detail(feedback_id: str): Response
+  --
+  【ユーザー設定API】
+  +get_user_speak_settings(): JsonResponse
+  +update_user_speak_settings(): JsonResponse
+  --
+  【ピン管理API - 基本操作】
+  +save_pin(): JsonResponse
+  +get_pins(): JsonResponse
+  +get_pins_all(): JsonResponse
+  +get_all_pins(): JsonResponse
+  +delete_pin(): JsonResponse
+  +update_pin(): JsonResponse
+  --
+  【ピン管理API - 走行中追加】
+  +add_drive_pin(): JsonResponse
+  +add_voice_pin(): JsonResponse
+  +add_manual_pin(): JsonResponse
+  --
+  【ピン管理API - 音声ピン】
+  +get_voice_pins(): JsonResponse
+  +confirm_voice_pin(): JsonResponse
+  --
+  【ピン管理API - 重点ポイント】
+  +get_priority_pins(): JsonResponse
+  +add_priority_pin(): JsonResponse
+  +update_priority_pin(): JsonResponse
+  +delete_priority_pin(): JsonResponse
+  --
+  【ヘルパー関数】
+  +get_gps_logs_for_session(session_id: str): list
+  +get_g_logs_for_session(session_id: str): list
+  +get_avg_g_logs_for_session(session_id: str): list
+}
+
+' HTMLテンプレート
+class HTMLTemplates <<Templates>> ENTITY_COLOR {
+  +home.html
+  +explain.html
+  +recording_start.html
+  +recording_active.html
+  +recording_active_re.html
+  +recording_completed.html
+  +recording_completed_re.html
+  +sessions.html
+  +detail_result.html
+  +detail_result_play.html
+  +user_feedback.html
+  +feedback_log.html
+  +feedback_detail.html
+  +feedback_detail_result.html
+  +feedback_detail_completed.html
+  +map_editor.html
+  +login.html
+  +register.html
+}
+
+' Flask
+class Flask <<Framework>> EXTERNAL_COLOR {
+  --
+  +render_template(template: str, **context): Response
+  +redirect(url: str): Response
+  +url_for(endpoint: str, **values): str
+}
+
+' Firestore
+class Firestore <<External>> EXTERNAL_COLOR {
+  --
+  +collection(name: str): CollectionReference
+  +document(path: str): DocumentReference
+  +get(): DocumentSnapshot
+}
+
+' Flask-Login
+class LoginRequired <<Decorator>> SERVICE_COLOR {
+  --
+  +login_required(func): Callable
+}
+
+' 関係性
+ViewsBlueprint ..> HTMLTemplates : レンダリング
+ViewsBlueprint ..> Flask : 使用
+ViewsBlueprint ..> Firestore : データ取得
+ViewsBlueprint ..> LoginRequired : 認証確認
+
+' ノート
+note right of ViewsBlueprint
+  主要ルート:
+  
+  【基本画面】
+  - GET / → リダイレクト → /home
+  - GET /home → home.html
+  - GET /explain → explain.html
+  - GET /map_editor → map_editor.html
+  
+  【記録画面】
+  - GET /recording/start → recording_start.html
+  - GET /recording/active → recording_active.html
+  - GET /recording/completed?session_id=xxx
+    → recording_completed.html
+  
+  【リプレイ機能】
+  - GET /replay_active/<session_id>?start=xxx&end=xxx
+    → recording_active_re.html
+  - GET /recording/completed_re/<session_id>?start=xxx&end=xxx
+    → recording_completed_re.html
+  - GET /api/replay_data/<session_id>?start=xxx&end=xxx
+    → JSON（avg_g_logs, gps_logs）
+  - GET /result/<session_id>/replay
+    → detail_result_play.html
+  
+  【結果画面】
+  - GET /sessions → sessions.html
+  - GET /session_gforce?session_id=xxx → session_gforce.html
+  - POST /delete_session/<session_id> → 削除
+  
+  【フィードバック画面】
+  - GET /feedback_detail_result/<session_id>/<pin_id>
+    → feedback_detail_result.html
+  - GET /feedback_detail_completed/<session_id>/<pin_id>
+    → feedback_detail_completed.html
+  - POST /api/focus_feedback/<session_id>
+    → AI評価生成
+  
+  【ユーザーフィードバック】
+  - GET/POST /feedback → user_feedback.html
+  - GET /feedback_log?start_date=xxx&end_date=xxx
+    → feedback_log.html（集計表示）
+  - GET /feedback_detail/<feedback_id>
+    → feedback_detail.html
+  
+  【ユーザー設定A
+  
+  【その他】
+  - GET /explain → explain.html
+  - GET /map_editor → map_editor.html
+end note
+
+note bottom of HTMLTemplates
+  Jinja2テンプレートエンジン使用
+  
+  共通レイアウト:
+  - Bootstrap 5.3.3
+  - Google Maps API
+  - Firebase SDK
+end note
+
+note bottom of LoginRequired
+  すべてのルートに@login_required
+  未認証時は/loginへリダイレクト
+end note
+
+@enduml

@@ -1,0 +1,225 @@
+@startuml ユーザー管理・認証機能
+
+!define ENTITY_COLOR #E8F5E9
+!define SERVICE_COLOR #E3F2FD
+!define EXTERNAL_COLOR #FFF3E0
+
+' タイトル
+title ユーザー管理・認証機能 - ドライブバディ
+
+' モデルクラス
+class User <<Model>> ENTITY_COLOR {
+  +id: str
+  +username: str
+  +is_authenticated: bool
+  +is_active: bool
+  +is_anonymous: bool
+  --
+  【コンストラクタ】
+  +__init__(uid: str, username: str)
+  --
+  【クラスメソッド】
+  +{static} get(user_id: str): User
+  --
+  【Flask-Loginメソッド】
+  +get_id(): str
+}
+
+' Blueprintクラス
+class AuthBlueprint <<Blueprint>> SERVICE_COLOR {
+  --
+  【ユーザー登録】
+  +register(): Response
+  --
+  【ログイン】
+  +login(): Response
+  --
+  【ログアウト】
+  +logout(): Response
+  --
+  【初期化】
+  +init_auth(bcrypt: Bcrypt): void
+}
+
+' Flask-Login管理
+class LoginManager <<Flask-Login>> SERVICE_COLOR {
+  +login_view: str
+  +login_message: str
+  +login_message_category: str
+  --
+  【初期化】
+  +init_app(app: Flask)
+  --
+  【コールバック設定】
+  +user_loader(callback: Callable)
+  +unauthorized_handler(callback: Callable)
+}
+
+' パスワードハッシュ化
+class Bcrypt <<Flask-Bcrypt>> SERVICE_COLOR {
+  --
+  【初期化】
+  +init_app(app: Flask)
+  --
+  【ハッシュ化】
+  +generate_password_hash(password: str): str
+  --
+  【検証】
+  +check_password_hash(pw_hash: str, password: str): bool
+}
+
+' Firebase Auth
+class FirebaseAuth <<External>> EXTERNAL_COLOR {
+  --
+  【ユーザー管理】
+  +create_user(email: str, password: str, display_name: str): UserRecord
+  +get_user(uid: str): UserRecord
+  +delete_user(uid: str): void
+  --
+  【認証】
+  +verify_id_token(token: str): dict
+}
+
+' Firestore
+class Firestore <<External>> EXTERNAL_COLOR {
+  --
+  【コレクション操作】
+  +collection(name: str): CollectionReference
+  +document(path: str): DocumentReference
+  --
+  【クエリ】
+  +where(field: str, op: str, value: any): Query
+  +limit(count: int): Query
+  --
+  【データ操作】
+  +get(): DocumentSnapshot
+  +set(data: dict): WriteResult
+  +update(data: dict): WriteResult
+}
+
+' ユーザーミックスイン
+interface UserMixin <<Flask-Login>> {
+  +is_authenticated: bool
+  +is_active: bool
+  +is_anonymous: bool
+  +get_id(): str
+}
+
+' 関係性
+User --|> UserMixin : 継承
+AuthBlueprint ..> User : 使用
+AuthBlueprint ..> Bcrypt : パスワード検証
+AuthBlueprint ..> FirebaseAuth : ユーザー作成
+AuthBlueprint ..> Firestore : データ保存
+LoginManager ..> User : ユーザーロード
+LoginManager --> AuthBlueprint : 認証管理
+
+' ノート
+note bottom of LoginManager
+  【設定】
+  - login_view: "auth.login"
+  - login_message: "このページにアクセスするにはログインが必要です。"
+  - login_message_category: "info"
+  
+  【セッション設定】
+  - PERMANENT_SESSION_LIFETIME: 24時間
+  - SESSION_COOKIE_SAMESITE: Lax
+  - SESSION_COOKIE_HTTPONLY: True
+  - REMEMBER_COOKIE_DURATION: 24時間
+  
+  【未認証時の動作】
+  - HTML: ログイン画面へリダイレクト
+  - JSON/AJAX: 401エラー返却
+end note
+
+note left of FirebaseAuth
+  【Firebase Authentication】
+  
+  Google提供の認証サービス
+  
+  【特徴】
+  - UID自動生成（28文字）
+  - メール認証オプション
+  - パスワードリセット機能
+  
+  【本アプリの使用方法】
+  メールアドレス:
+    {username}@example.com
+  （ダミードメイン使用）
+end note
+
+note left of Firestore
+  【Firestoreデータ構造】
+  
+  users/{uid}/
+    ├─ username: str
+    ├─ email: str
+    ├─ password_hash: str
+    └─ created_at: timestamp
+  
+  【インデックス】
+  - username（重複チェック用）
+end note
+note right of User
+  【ID管理】
+  Firebase Authentication UID
+  をユーザーIDとして使用
+  
+  【データ保存先】
+  - Firebase Auth: 認証情報
+  - Firestore: ユーザープロファイル
+    (users/{uid})
+  
+  【Flask-Login統合】
+  UserMixinを継承して
+  Flask-Loginの機能を提供
+  
+  【セッション管理】
+  - 有効期限: 24時間
+  - Cookie: SameSite=Lax
+end note
+
+note right of AuthBlueprint
+  【エンドポイント】
+  - GET/POST /auth/register
+  - GET/POST /auth/login
+  - GET /auth/logout
+  
+  【登録フロー】
+  1. ユーザー名重複チェック
+  2. Firebase Authでユーザー作成
+  3. パスワードをbcryptでハッシュ化
+  4. Firestoreにプロファイル保存
+  5. ログイン画面へリダイレクト
+  
+  【ログインフロー】
+  1. Firestoreからユーザー検索
+  2. bcryptでパスワード検証
+  3. Userオブジェクト生成
+  4. Flask-Loginでセッション作成
+  5. ホーム画面へリダイレクト
+  
+  【ログアウトフロー】
+  1. Flask-Loginのlogout_user()
+  2. セッション破棄
+  3. ログイン画面へリダイレクト
+end note
+
+note bottom of Bcrypt
+  【セキュリティ】
+  パスワードは平文保存せず
+  bcryptでハッシュ化
+  
+  【アルゴリズム】
+  - bcrypt（Blowfish暗号ベース）
+  - ソルトラウンド: 12（デフォルト）
+  - 計算コスト: 2^12回
+  
+  【保存形式】
+  $2b$12$[salt][hash]
+  
+  【レインボーテーブル対策】
+  各パスワードに異なるソルト付与
+end note
+
+@enduml

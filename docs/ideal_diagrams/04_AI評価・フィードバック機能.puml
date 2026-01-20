@@ -1,0 +1,481 @@
+@startuml AI評価・フィードバック機能（理想版）
+
+!define ENTITY_COLOR #E8F5E9
+!define SERVICE_COLOR #E3F2FD
+!define EXTERNAL_COLOR #FFF3E0
+!define ABSTRACT_COLOR #FFE0B2
+!define INTERFACE_COLOR #F3E5F5
+
+title AI評価・フィードバック機能(実装準拠版) - DriveBuddy
+
+' 抽象評価基底クラス
+abstract class EvaluatorBase <<Abstract>> ABSTRACT_COLOR {
+  #{abstract} evaluate(data: dict): dict
+  #{abstract} calculate_score(stats: dict): float
+  #{abstract} validate_data(data: dict): bool
+}
+
+' AI生成戦略インターフェース
+interface AIGenerationStrategy <<Interface>> INTERFACE_COLOR {
+  +{abstract} generate_comment(stats: dict, context: dict): str
+  +{abstract} summarize(text: str): str
+  +{abstract} get_model_name(): str
+}
+
+' 統計計算インターフェース
+interface StatisticsCalculator <<Interface>> INTERFACE_COLOR {
+  +{abstract} calculate(data: list): dict
+  +{abstract} validate_sample_size(data: list): bool
+  +{abstract} get_confidence_level(): float
+}
+
+' メインモジュール
+class AIEvaluation <<Module>> SERVICE_COLOR {
+  +NOT_PASSED_STATS: Dict[str, float]
+  +NOT_PASSED_COMMENT: str
+  +PASSING_DISTANCE_METERS: float = 30.0
+  +MIN_DATA_POINTS: int = 10
+  -_model_cache: Dict[str, GenerativeModel]
+  -_statistics_cache: Dict[str, dict]
+  --
+  【Gemini初期化】
+  +get_gemini_model(model_name: str = "gemini-2.0-flash") -> Optional[GenerativeModel]: GenerativeModel
+  --
+  【時間窓取得】
+  +get_time_window_for_focus(focus_type: str) -> Tuple[int, int]: tuple
+  --
+  【評価・採点】
+  +get_focus_rating(stats: Dict[str, float], focus_type: str) -> Tuple[str, int]: tuple
+  --
+  【統計計算】
+  +calculate_detailed_stats(gx_vals: np.ndarray, gz_vals: np.ndarray, speeds: np.ndarray) -> Dict[str, float]: dict
+  --
+  【履歴取得】
+  +get_historical_stats(user_id: str, session_id: str, pin_id: str, limit: int = 5) -> List[dict]: list
+  --
+  【比較分析】
+  +compare_focus_stats(prev_stats: List[dict], current_stats: Dict[str, float]) -> Tuple[dict, str]: tuple
+  --
+  【AIコメント生成】
+  +generate_ai_focus_feedback(focus_type: str, stats: dict, diff_text: str, rating: str, score: int) -> str: str
+  --
+  【要約生成】
+  +summarize_feedback(ai_comment: str, diff_text: str, max_length: int = 150) -> str: str
+  --
+  【セッション評価】
+  +analyze_focus_points_for_session(session_id: str, user_id: str) -> List[dict]: list
+  --
+  -_clear_cache(cache_type: str = "all") -> None: void
+  -_validate_stats(stats: dict) -> bool: bool
+}
+
+' フォーカス評価器
+class FocusEvaluator <<Evaluator>> SERVICE_COLOR {
+  -_focus_type: FocusType
+  -_statistics_calculator: StatisticsCalculator
+  -_score_cache: Dict[str, float]
+  +MIN_SCORE: int = 40
+  +MAX_SCORE: int = 100
+  +EXCELLENT_THRESHOLD: int = 95
+  +GOOD_THRESHOLD: int = 80
+  +AVERAGE_THRESHOLD: int = 60
+  --
+  +evaluate(data: Dict[str, any]) -> Dict[str, any]: dict
+  +calculate_score(stats: Dict[str, float]) -> float: float
+  +validate_data(data: Dict[str, any]) -> bool: bool
+  +get_rating_from_score(score: float) -> str: str
+  -_apply_focus_criteria(stats: Dict[str, float]) -> float: float
+  -_clamp_score(score: float, min_val: float, max_val: float) -> float: float
+  -_clear_cache() -> None: void
+}
+
+' Gemini AI戦略
+class GeminiAIStrategy <<Strategy>> SERVICE_COLOR {
+  -_model: Optional[GenerativeModel] = None
+  -_model_name: str = "gemini-2.0-flash"
+  -_api_key: Optional[str] = None
+  -_prompt_template: str
+  +MAX_RETRIES: int = 3
+  +TIMEOUT_SECONDS: int = 30
+  +MAX_TOKENS: int = 500
+  --
+  +generate_comment(stats: Dict[str, float], context: Dict[str, any]) -> str: str
+  +summarize(text: str, max_length: int = 150) -> str: str
+  +get_model_name() -> str: str
+  +set_api_key(api_key: str) -> None: void
+  +is_initialized() -> bool: bool
+  -_build_prompt(stats: Dict[str, float], context: Dict[str, any]) -> str: str
+  -_retry_with_backoff(func: Callable, max_retries: int) -> any: any
+  -_validate_api_key() -> bool: bool
+}
+
+' 運転統計計算器
+class DrivingStatisticsCalculator <<Calculator>> SERVICE_COLOR {
+  -_confidence_threshold: int = 10
+  -_cache: Dict[str, dict]
+  +PRECISION: int = 4
+  +ACCELERATION_THRESHOLD: float = 0.25
+  +SHARP_TURN_THRESHOLD: float = 0.25
+  --
+  +calculate(data: List[dict]) -> Dict[str, float]: dict
+  +validate_sample_size(data: List[dict]) -> bool: bool
+  +get_confidence_level() -> float: float
+  +clear_cache() -> None: void
+  -_calculate_events(gx: np.ndarray, gz: np.ndarray) -> Dict[str, int]: dict
+  -_calculate_trends(data: List[float]) -> Dict[str, float]: dict
+  -_round_result(value: float, precision: int) -> float: float
+  -_handle_calculation_error(error: Exception) -> Dict[str, float]: dict
+}
+
+' 評価タイプ列挙
+enum FocusType <<Enumeration>> {
+  brake_soft
+  stop_smooth
+  accel_smooth
+  turn_stability
+  smooth_overall
+  speed_consistency
+}
+
+' 統計データ
+class StatisticsData <<Data Class>> ENTITY_COLOR {
+  +avg_speed: float
+  +mean_gx: float
+  +mean_gz: float
+  +std_gx: float
+  +std_gz: float
+  +max_gx: float
+  +max_gz: float
+  +min_gx: float
+  +min_gz: float
+  +median_gx: float
+  +median_gz: float
+  +std_speed: float
+  +max_speed: float
+  +min_speed: float
+  +median_speed: float
+  +speed_range: float
+  +acceleration_count: int
+  +deceleration_count: int
+  +sharp_turn_count: int
+  +data_points: int
+  +gx_stability_trend: float
+  +gz_stability_trend: float
+}
+
+' 評価結果
+class FocusFeedback <<Firestore Document>> ENTITY_COLOR {
+  +created_at: timestamp
+  +pin_label: str
+  +focus_type: str
+  +focus_label: str
+  +stats: StatisticsData
+  +diff: dict
+  +rating: str
+  +score: int
+  +ai_comment: str
+  +short_comment: str
+  +passed: bool
+}
+
+' Gemini API
+class GeminiAPI <<External>> EXTERNAL_COLOR {
+  --
+  +configure(api_key: str)
+  +GenerativeModel(model_name: str): GenerativeModel
+}
+
+class GenerativeModel <<External>> EXTERNAL_COLOR {
+  +model_name: str
+  --
+  +generate_content(prompt: str): Response
+}
+
+' Firestore
+class Firestore <<External>> EXTERNAL_COLOR {
+  --
+  +collection(name: str): CollectionReference
+  +document(path: str): DocumentReference
+  +get(): DocumentSnapshot
+  +set(data: dict, merge: bool)
+  +where(filter: FieldFilter): Query
+  +order_by(field, direction): Query
+  +limit(count): Query
+  +stream(): Iterator
+}
+
+' NumPy
+class NumPy <<External>> EXTERNAL_COLOR {
+  --
+  +array(data: list): ndarray
+  +mean(arr): float
+  +std(arr): float
+  +median(arr): float
+  +max(arr): float
+  +min(arr): float
+  +abs(arr): ndarray
+}
+
+' PriorityPin
+class PriorityPin <<Firestore Document>> ENTITY_COLOR {
+  +user_id: str
+  +route_id: str
+  +lat: float
+  +lng: float
+  +label: str
+  +focus_type: str
+  +focus_label: str
+}
+
+' 関係性
+FocusEvaluator --|> EvaluatorBase : 継承
+GeminiAIStrategy ..|> AIGenerationStrategy : 実装
+DrivingStatisticsCalculator ..|> StatisticsCalculator : 実装
+AIEvaluation ..> FocusEvaluator : 使用
+AIEvaluation ..> GeminiAIStrategy : 使用
+AIEvaluation ..> DrivingStatisticsCalculator : 使用
+FocusEvaluator o-- FocusType : フォーカス保持
+FocusEvaluator ..> StatisticsCalculator : 統計委譲
+AIEvaluation ..> StatisticsData : 統計計算
+AIEvaluation ..> FocusFeedback : 生成
+GeminiAIStrategy ..> GeminiAPI : API初期化
+GeminiAIStrategy ..> GenerativeModel : コメント生成
+AIEvaluation ..> Firestore : データ取得/保存
+DrivingStatisticsCalculator ..> NumPy : 統計計算
+AIEvaluation ..> PriorityPin : 参照
+FocusFeedback *-- StatisticsData : 含む
+GeminiAPI ..> GenerativeModel : 提供
+
+' ノート
+note right of AIEvaluation
+  【analyze_focus_points_for_session実装】
+  
+  1. priority_pins取得
+     .where('user_id', '==', user_id)
+  
+  2. avg_g_logs取得（全データ）
+  
+  3. 各ピンについて:
+     a. 通過判定（30m以内）
+     b. 未通過 → NOT_PASSED_STATS
+     c. 通過 → 時間窓取得
+        get_time_window_for_focus()
+     d. 該当データ抽出
+     e. 統計計算
+        calculate_detailed_stats()
+     f. 評価・採点
+        get_focus_rating()
+     g. 履歴取得
+        get_historical_stats()
+     h. 比較分析
+        compare_focus_stats()
+     i. AIコメント生成
+        generate_ai_focus_feedback()
+     j. 要約生成
+        summarize_feedback()
+     k. Firestoreに保存
+  
+  4. 結果リスト返却
+  
+  【エラー処理】
+  try-exceptで各ピン個別にエラー処理
+  失敗したピンはスキップして続行
+end note
+
+note right of FocusType
+  【フォーカスタイプと時間窓】
+  
+  brake_soft / stop_smooth:
+    前8秒、後3秒（減速重視）
+  
+  accel_smooth:
+    前3秒、後8秒（加速重視）
+  
+  turn_stability:
+    前4秒、後4秒（旋回中心）
+  
+  smooth_overall / speed_consistency:
+    前8秒、後8秒（広範囲）
+  
+  【日本語名】
+  brake_soft → 穏やかな減速
+  stop_smooth → 停止直前の滑らかさ
+  accel_smooth → 滑らかな発進
+  turn_stability → カーブの安定性
+  smooth_overall → 直進の安定性
+  speed_consistency → 一定速度の維持
+end note
+
+note bottom of StatisticsData
+  【calculate_detailed_stats実装】
+  
+  入力: gx_vals, gz_vals, speeds（NumPy配列）
+  
+  計算項目:
+  - 平均値: np.mean()
+  - 標準偏差: np.std()
+  - 最大/最小: np.max(), np.min()
+  - 中央値: np.median()
+  - 範囲: max - min
+  
+  イベントカウント:
+  - 急加速: gz > 0.25の回数
+  - 急減速: gz < -0.25の回数
+  - 急ハンドル: abs(gx) > 0.25の回数
+  
+  安定性トレンド:
+  データ分割して標準偏差の変化を計算
+  
+  【データ点数】
+  統計の信頼性評価に使用
+  10点未満は信頼性低
+end note
+
+note bottom of FocusFeedback
+  【get_focus_rating実装】
+  
+  スコア計算式（focus_typeごと）:
+  
+  brake_soft / stop_smooth:
+    score = 100 - (abs(gz)-0.10)*400
+                - (std_gz-0.04)*500
+    clamp(40, 100)
+  
+  accel_smooth:
+    score = 100 - (gz-0.10)*400
+                - (std_gz-0.04)*500
+    clamp(40, 100)
+  
+  turn_stability:
+    score = 100 - (gx-0.10)*400
+                - (std_gx-0.05)*500
+    clamp(40, 100)
+  
+  smooth_overall:
+    score = 100 - (std_gx-0.04)*600
+                - (std_gz-0.04)*600
+    clamp(40, 100)
+  
+  speed_consistency:
+    score = 100 - (std_speed-2.0)*15
+    clamp(40, 100)
+  
+  【評価基準】
+  95点以上 → とてもいい ⭐⭐⭐⭐
+  80点以上 → いい ⭐⭐⭐
+  60点以上 → ふつう ⭐⭐
+  60点未満 → わるい ⭐
+  0点 → なし（未通過）
+end note
+
+note left of GenerativeModel
+  【generate_ai_focus_feedback実装】
+  
+  モデル: gemini-2.0-flash
+  
+  プロンプト構成:
+  - 運転種類（減速/加速/旋回等）
+  - 現在の統計データ
+  - 過去データとの比較
+  - 評価点数とrating
+  
+  出力形式:
+  - 4-5行の詳細コメント
+  - 具体的な数値を含む
+  - 改善点の提案
+  - 過去との比較
+  
+  【API設定】
+  api_key = os.getenv("GEMINI_API_KEY")
+  genai.configure(api_key=api_key)
+  model = genai.GenerativeModel("gemini-2.0-flash")
+  
+  【エラー処理】
+  API キー未設定時は None返却
+  生成失敗時は例外スロー
+end note
+
+note left of Firestore
+  【データ取得パターン】
+  
+  # priority_pins取得
+  pins = db.collection("priority_pins")
+           .where('user_id', '==', user_id)
+           .stream()
+  
+  # avg_g_logs取得
+  logs = db.collection("sessions")
+           .document(session_id)
+           .collection("avg_g_logs")
+           .order_by("timestamp")
+           .stream()
+  
+  # 履歴取得
+  history = db.collection("sessions")
+              .where('user_id', '==', user_id)
+              .order_by('end_time', direction='DESCENDING')
+              .limit(5)
+              .stream()
+  
+  【フィードバック保存】
+  ref = db.collection("sessions")
+          .document(session_id)
+          .collection("focus_feedbacks")
+          .document(pin_id)
+  ref.set(feedback_data)
+end note
+
+note bottom of NumPy
+  【使用例】
+  
+  import numpy as np
+  
+  # 配列化
+  gx_vals = np.array([g.get("g_x", 0.0) 
+                      for g in logs])
+  
+  # 統計計算
+  mean_gx = float(np.mean(gx_vals))
+  std_gx = float(np.std(gx_vals))
+  
+  # 絶対値
+  abs_gx = np.abs(gx_vals)
+  
+  # 条件カウント
+  sharp_turns = int(np.sum(abs_gx > 0.25))
+  
+  【型変換】
+  NumPy型 → Python型
+  np.float64 → float()
+  np.int64 → int()
+  Firestore保存時に必要
+end note
+
+note right of PriorityPin
+  【取得方法】
+  
+  pins_ref = db.collection("priority_pins")
+  query = pins_ref.where('user_id', '==', user_id)
+  
+  if route_id:
+      query = query.where('route_id', '==', route_id)
+  
+  pins = list(query.stream())
+  
+  【通過判定】
+  from math import radians, sin, cos, sqrt, atan2
+  
+  def haversine(lat1, lon1, lat2, lon2):
+      R = 6371.0  # km
+      # ... 計算 ...
+      return distance_km
+  
+  for log in avg_g_logs:
+      dist = haversine(pin.lat, pin.lng,
+                      log.lat, log.lng)
+      if dist * 1000 <= 30:  # 30m以内
+          passed = True
+          closest_log = log
+end note
+
+@enduml

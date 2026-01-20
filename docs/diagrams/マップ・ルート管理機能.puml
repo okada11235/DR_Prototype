@@ -1,0 +1,180 @@
+@startuml マップ・ルート管理機能
+
+!define ENTITY_COLOR #E8F5E9
+!define SERVICE_COLOR #E3F2FD
+!define EXTERNAL_COLOR #FFF3E0
+
+' タイトル
+title マップ・ルート管理機能 - DriveBuddy
+
+' Blueprintクラス
+class ViewsBlueprint <<Blueprint>> SERVICE_COLOR {
+  --
+  +map_editor(): Response
+  --
+  【通常ピン管理】
+  +save_pin(): JsonResponse
+  +get_pins(): JsonResponse
+  +get_pins_all(): JsonResponse
+  +get_all_pins(): JsonResponse
+  +delete_pin(pin_id: str): JsonResponse
+  +update_pin(pin_id: str): JsonResponse
+  --
+  【走行中ピン設置】
+  +add_drive_pin(): JsonResponse
+  +add_voice_pin(): JsonResponse
+  +add_manual_pin(): JsonResponse
+  +get_voice_pins(session_id: str): JsonResponse
+  +confirm_voice_pin(): JsonResponse
+  --
+  【重点ポイント管理】
+  +get_priority_pins(): JsonResponse
+  +add_priority_pin(): JsonResponse
+  +update_priority_pin(): JsonResponse
+  +delete_priority_pin(): JsonResponse
+}
+
+' 通常ピン
+class Pin <<Firestore Document>> ENTITY_COLOR {
+  +user_id: str
+  +lat: float
+  +lng: float
+  +label: str
+  +speak_enabled: bool
+  +priority_level: int
+  +speak_time_windows: list~dict~
+  +speak_radius_m: int
+  +source: str
+  +edited: bool
+  +created_at: timestamp
+}
+
+' 重点ポイントピン
+class PriorityPin <<Firestore Document>> ENTITY_COLOR {
+  +user_id: str
+  +route_id: str
+  +lat: float
+  +lng: float
+  +label: str
+  +focus_type: str
+  +focus_label: str
+  +created_at: timestamp
+}
+
+' セッション内音声ピン
+class VoicePin <<SubCollection>> ENTITY_COLOR {
+  +lat: float
+  +lng: float
+  +label: str
+  +confirmed: bool
+  +created_at: timestamp
+  +updated_at: timestamp
+}
+
+' 時間窓設定
+class SpeakTimeWindow <<Data Class>> ENTITY_COLOR {
+  +start: str
+  +end: str
+  +days: list~int~
+}
+
+' セッション（参照）
+class Session <<Firestore Document>> ENTITY_COLOR {
+  +route_id: str
+  ...
+}
+
+' フォーカスフィードバック（参照）
+class FocusFeedback <<Firestore Document>> ENTITY_COLOR {
+  +pin_label: str
+  +focus_type: str
+  ...
+}
+
+' Firestore
+class Firestore <<External>> EXTERNAL_COLOR {
+  --
+  +collection(name: str): CollectionReference
+  +document(path: str): DocumentReference
+  +where(field, op, value): Query
+  +stream(): Iterator
+}
+
+' 関係性
+ViewsBlueprint ..> Pin : 管理
+ViewsBlueprint ..> PriorityPin : 管理
+ViewsBlueprint ..> VoicePin : 管理
+ViewsBlueprint ..> Firestore : データ操作
+Pin "1" *-- "*" SpeakTimeWindow : 含む
+Session "1" *-- "*" VoicePin : 含む
+Session ..> PriorityPin : 参照
+FocusFeedback ..> PriorityPin : 参照
+
+' ノート
+note right of ViewsBlueprint
+  APIエンドポイント:
+  
+  【通常ピン管理】
+  - POST /api/save_pin
+  - GET /api/get_pins
+  - GET /api/get_pins_all
+  - GET /api/get_all_pins
+  - POST /api/update_pin
+  - POST /api/delete_pin
+  
+  【走行中ピン設置】
+  - POST /api/add_drive_pin
+  - POST /api/add_voice_pin
+  - POST /api/add_manual_pin
+  - GET /api/get_voice_pins?session_id=xxx
+  - POST /api/confirm_voice_pin
+  
+  【重点ポイント管理】
+  - GET /api/get_priority_pins
+  - POST /api/add_priority_pin
+  - POST /api/update_priority_pin
+  - POST /api/delete_priority_pin
+end note
+
+note right of Pin
+  通常ピン:
+  - source: "driving" | "voice" | "manual"
+  - priority_level: 1(低) | 2(中) | 3(高)
+  - speak_radius_m: 10-300m（デフォルト50m）
+  - edited: 編集済みフラグ
+  
+  音声読み上げ制御:
+  - speak_enabled: 読み上げON/OFF
+  - speak_time_windows: 時間帯・曜日指定
+end note
+
+note right of PriorityPin
+  重点ポイントのフォーカスタイプ:
+  - brake_soft: 穏やかな減速
+  - stop_smooth: 停止直前の滑らかさ
+  - accel_smooth: 滑らかな発進
+  - turn_stability: カーブの安定性
+  - smooth_overall: 直進の安定性
+  - speed_consistency: 一定速度の維持
+end note
+
+note right of VoicePin
+  セッション内の音声録音ピン:
+  - sessions/{session_id}/voice_pinsに保存
+  - confirmed: ユーザーがメモを確定したか
+  - 記録完了後にpinsコレクションへ移行可能
+end note
+
+note bottom of SpeakTimeWindow
+  時間窓設定例:
+  {
+    "start": "08:00",
+    "end": "09:00",
+    "days": [1, 2, 3, 4, 5]  // 月-金
+  }
+  
+  days: 0=日曜, 6=土曜
+  未指定時は全日対象
+end note
+
+@enduml

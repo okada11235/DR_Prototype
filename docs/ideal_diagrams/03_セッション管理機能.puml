@@ -1,0 +1,506 @@
+@startuml セッション管理機能（理想版）
+
+!define ENTITY_COLOR #E8F5E9
+!define SERVICE_COLOR #E3F2FD
+!define EXTERNAL_COLOR #FFF3E0
+!define ABSTRACT_COLOR #FFE0B2
+!define INTERFACE_COLOR #F3E5F5
+
+title セッション管理機能(実装準拠版) - DriveBuddy
+
+' 抽象セッション基底クラス
+abstract class SessionBase <<Abstract>> ABSTRACT_COLOR {
+  #_session_id: str
+  #_user_id: str
+  #_status: str
+  --
+  #{abstract} start() -> None: void
+  #{abstract} end() -> None: void
+  #{abstract} validate() -> bool: bool
+  +get_session_id() -> str: str
+  +get_user_id() -> str: str
+  +get_status() -> str: str
+}
+
+' ログ保存戦略インターフェース
+interface LogSaveStrategy <<Interface>> INTERFACE_COLOR {
+  +{abstract} save_logs(session_id: str, logs: List[dict]) -> None: void
+  +{abstract} validate_logs(logs: List[dict]) -> bool: bool
+  +{abstract} get_batch_size() -> int: int
+}
+
+' セッション状態インターフェース
+interface SessionState <<Interface>> INTERFACE_COLOR {
+  +{abstract} handle_start(session: Session) -> None: void
+  +{abstract} handle_end(session: Session) -> None: void
+  +{abstract} is_valid_transition(next_state: str) -> bool: bool
+  +{abstract} get_state_name() -> str: str
+}
+
+' Blueprintクラス
+class SessionsBlueprint <<Blueprint>> SERVICE_COLOR {
+  +name: str = "sessions"
+  +url_prefix: str = "/sessions"
+  -_session_manager: SessionManager
+  -_gps_strategy: GPSBulkSaveStrategy
+  -_g_strategy: GLogSaveStrategy
+  --
+  【セッション制御】
+  +start() -> JsonResponse: JsonResponse
+  +check_active() -> JsonResponse: JsonResponse
+  +end() -> JsonResponse: JsonResponse
+  --
+  【GPS データ保存】
+  +log_gps_bulk() -> JsonResponse: JsonResponse
+  --
+  【G データ保存】
+  +log_g_only() -> JsonResponse: JsonResponse
+  +log_avg_g_only() -> JsonResponse: JsonResponse
+  --
+  【ヘルパー関数】
+  -_haversine(lat1: float, lng1: float, lat2: float, lng2: float) -> float: float
+  -_calculate_distance_from_firestore(session_id: str) -> float: float
+}
+
+' GPS ログ保存戦略
+class GPSBulkSaveStrategy <<Strategy>> SERVICE_COLOR {
+  -_db: FirestoreClient
+  -_batch_size: int = 100
+  --
+  +save_logs(session_id: str, logs: List[dict]) -> None: void
+  +validate_logs(logs: List[dict]) -> bool: bool
+  +get_batch_size() -> int: int
+  -_create_batch_writes(session_id: str, logs: List[dict]) -> List[WriteBatch]: list
+  -_validate_gps_log_structure(log: dict) -> bool: bool
+}
+
+' G ログ保存戦略
+class GLogSaveStrategy <<Strategy>> SERVICE_COLOR {
+  -_db: FirestoreClient
+  -_batch_size: int = 100
+  -_evaluation_threshold: float = 0.25
+  --
+  +save_logs(session_id: str, logs: List[dict]) -> None: void
+  +validate_logs(logs: List[dict]) -> bool: bool
+  +get_batch_size() -> int: int
+  -_process_evaluation(log: dict) -> str: str
+  -_validate_g_log_structure(log: dict) -> bool: bool
+}
+
+' Active状態
+class ActiveState <<State>> SERVICE_COLOR {
+  -_state_name: str = "active"
+  --
+  +handle_start(session: Session) -> None: void
+  +handle_end(session: Session) -> None: void
+  +is_valid_transition(next_state: str) -> bool: bool
+  +get_state_name() -> str: str
+}
+
+' Completed状態
+class CompletedState <<State>> SERVICE_COLOR {
+  -_state_name: str = "completed"
+  --
+  +handle_start(session: Session) -> None: void
+  +handle_end(session: Session) -> None: void
+  +is_valid_transition(next_state: str) -> bool: bool
+  +get_state_name() -> str: str
+}
+
+' セッションマネージャー
+class SessionManager <<Manager>> SERVICE_COLOR {
+  -_db: FirestoreClient
+  -_current_state: SessionState
+  -_transaction_timeout: int = 30
+  --
+  +create_session(user_id: str, route_id: Optional[str] = None) -> Session: Session
+  +get_active_session(user_id: str) -> Optional[Session]: Session
+  +end_session(session_id: str) -> None: void
+  +transition_state(new_state: SessionState) -> None: void
+  -_check_existing_active_session(user_id: str, transaction: Transaction) -> Optional[Session]: Session
+  -_create_session_document(user_id: str, route_id: Optional[str]) -> dict: dict
+}
+
+' Firestoreドキュメント
+class Session <<Firestore Document>> ENTITY_COLOR {
+  +user_id: str
+  +start_time: timestamp
+  +end_time: timestamp
+  +status: str
+  +route_id: str
+  +distance: float
+  +sudden_accels: int
+  +sudden_brakes: int
+  +sharp_turns: int
+  +stability: float
+  +speed_violations: int
+  +focus_point: str
+  +overall_score: int
+  +score_comment: str
+  +jerk_stats: dict
+  +weights: dict
+  +scoring_mode: str
+  +calculated_at: timestamp
+  +created_at: timestamp
+}
+
+' GPSログサブコレクション
+class GPSLog <<SubCollection>> ENTITY_COLOR {
+  +timestamp: timestamp
+  +timestamp_ms: int
+  +latitude: float
+  +longitude: float
+  +speed: float
+  +g_x: float
+  +g_y: float
+  +g_z: float
+  +event: str
+}
+
+' Gログサブコレクション
+class GLog <<SubCollection>> ENTITY_COLOR {
+  +timestamp: timestamp
+  +timestamp_ms: int
+  +g_x: float
+  +g_y: float
+  +g_z: float
+}
+
+' 平均Gログサブコレクション
+class AvgGLog <<SubCollection>> ENTITY_COLOR {
+  +timestamp: timestamp
+  +timestamp_ms: int
+  +g_x: float
+  +g_y: float
+  +g_z: float
+  +speed: float
+  +distance_km: float
+  +event: str
+}
+
+' 音声録音サブコレクション
+class AudioRecord <<SubCollection>> ENTITY_COLOR {
+  +url: str
+  +transcript: str
+  +created_at: timestamp
+}
+
+' フォーカスフィードバックサブコレクション
+class FocusFeedback <<SubCollection>> ENTITY_COLOR {
+  +created_at: timestamp
+  +pin_label: str
+  +focus_type: str
+  +focus_label: str
+  +stats: dict
+  +diff: dict
+  +rating: str
+  +score: int
+  +ai_comment: str
+  +short_comment: str
+  +passed: bool
+}
+
+' Firestore
+class Firestore <<External>> EXTERNAL_COLOR {
+  --
+  +collection(name: str): CollectionReference
+  +document(path: str): DocumentReference
+  +transaction(): Transaction
+  +batch(): WriteBatch
+  +SERVER_TIMESTAMP: sentinel
+}
+
+' Transaction
+class Transaction <<Firestore>> EXTERNAL_COLOR {
+  --
+  +get(ref: DocumentReference): DocumentSnapshot
+  +set(ref: DocumentReference, data: dict)
+  +update(ref: DocumentReference, data: dict)
+}
+
+' WriteBatch
+class WriteBatch <<Firestore>> EXTERNAL_COLOR {
+  --
+  +set(ref: DocumentReference, data: dict)
+  +commit(): list
+  +delete(ref: DocumentReference)
+}
+
+' AI評価モジュール
+class AIEvaluation <<Module>> SERVICE_COLOR {
+  --
+  +analyze_focus_points_for_session(session_id, user_id): list
+}
+
+' スコア計算モジュール
+class ScoreCalculation <<Module>> SERVICE_COLOR {
+  --
+  +calculate_session_overall_score(session_id, user_id, sample_rate_hz): dict
+}
+
+' 関係性
+Session --|> SessionBase : 継承
+SessionsBlueprint ..> SessionManager : 使用
+SessionManager o-- SessionState : 状態保持
+SessionManager ..> Session : 管理
+ActiveState ..|> SessionState : 実装
+CompletedState ..|> SessionState : 実装
+GPSBulkSaveStrategy ..|> LogSaveStrategy : 実装
+GLogSaveStrategy ..|> LogSaveStrategy : 実装
+SessionsBlueprint ..> GPSBulkSaveStrategy : 使用
+SessionsBlueprint ..> GLogSaveStrategy : 使用
+SessionsBlueprint ..> Firestore : データ保存
+SessionManager ..> Transaction : トランザクション使用
+SessionsBlueprint ..> WriteBatch : バッチ書き込み
+SessionsBlueprint ..> AIEvaluation : 評価実行
+SessionsBlueprint ..> ScoreCalculation : スコア計算
+Session "1" *-- "*" GPSLog : 含む
+Session "1" *-- "*" GLog : 含む
+Session "1" *-- "*" AvgGLog : 含む
+Session "1" *-- "*" AudioRecord : 含む
+Session "1" *-- "*" FocusFeedback : 含む
+
+' ノート
+note right of SessionsBlueprint
+  【エンドポイント】
+  - POST /sessions/start
+  - GET /sessions/check_active
+  - POST /sessions/end
+  - POST /sessions/log_gps_bulk
+  - POST /sessions/log_g_only
+  - POST /sessions/log_avg_g_only
+  
+  【start実装】
+  1. current_user.id取得
+  2. トランザクション開始
+  3. activeセッション存在チェック
+  4. 存在する場合: 既存IDを返却
+  5. 存在しない場合: 新規作成
+     status='active'
+     start_time=SERVER_TIMESTAMP
+  6. session_id返却
+  
+  【check_active実装】
+  1. user_id取得
+  2. .where('user_id', '==', user_id)
+     .where('status', '==', 'active')
+  3. 存在確認
+  4. has_active, session_id, route_id返却
+  
+  【end実装】
+  1. session_id取得（POST body）
+  2. トランザクション開始
+  3. セッション取得・権限チェック
+  4. calculate_distance_from_firestore()
+  5. status='completed'
+  6. end_time=SERVER_TIMESTAMP
+  7. 各種統計値更新
+  8. AI評価実行（try-except）
+  9. スコア計算実行（try-except）
+  
+  【距離計算】
+  haversine公式で累積距離算出
+  無効座標（0,0付近）を除外
+end note
+
+note right of Session
+  【ステータス】
+  - active: 記録中
+  - completed: 完了
+  
+  【トランザクション保護】
+  start時に重複セッション防止
+  end時にステータス変更を保護
+  
+  【AI評価・スコア計算】
+  end時に自動実行
+  失敗してもセッション完了は続行
+  
+  【データ例】
+  {
+    "user_id": "abc123...",
+    "start_time": Timestamp(...),
+    "end_time": Timestamp(...),
+    "status": "completed",
+    "distance": 5.234,
+    "sudden_accels": 3,
+    "sudden_brakes": 2,
+    "sharp_turns": 5,
+    "overall_score": 85,
+    "score_comment": "安定性が高い運転..."
+  }
+end note
+
+note right of GPSLog
+  【保存タイミング】
+  約1秒ごと（フロントエンド制御）
+  
+  【バッチ保存】
+  /log_gps_bulk で配列を一括保存
+  batch.set() で効率的に書き込み
+  
+  【データ構造】
+  sessions/{session_id}/gps_logs/{auto_id}
+  
+  【timestamp vs timestamp_ms】
+  - timestamp: Firestoreタイムスタンプ
+  - timestamp_ms: クライアント側ミリ秒
+  両方保存して互換性確保
+  
+  【eventフィールド】
+  - normal: 通常
+  - harsh_brake: 急ブレーキ
+  - harsh_accel: 急加速
+  - harsh_turn: 急ハンドル
+end note
+
+note bottom of GLog
+  【保存タイミング】
+  約100msごと（高頻度）
+  
+  【用途】
+  詳細なG値変化の記録
+  リアルタイムアドバイス用
+  
+  【データ構造】
+  sessions/{session_id}/g_logs/{auto_id}
+  
+  【座標系】
+  g_x: 左右G（右が正）
+  g_y: 上下G（上が正）
+  g_z: 前後G（前が正）
+end note
+
+note bottom of AvgGLog
+  【保存タイミング】
+  約1秒ごと（10データの平均）
+  
+  【用途】
+  AI評価とスコア計算のメインデータ
+  
+  【データ構造】
+  sessions/{session_id}/avg_g_logs/{auto_id}
+  
+  【特徴】
+  - ノイズ除去済み
+  - 速度情報付き
+  - 累積距離付き
+  - イベント分類付き
+  
+  【AI評価での利用】
+  重点ポイント通過時の
+  前後8秒分を抽出して評価
+end note
+
+note bottom of AudioRecord
+  【保存タイミング】
+  音声録音完了時
+  
+  【データ構造】
+  sessions/{session_id}/audio_records/{auto_id}
+  
+  【フィールド】
+  - url: Firebase Storage URL
+  - transcript: 文字起こしテキスト
+  - created_at: 録音日時
+  
+  【プライバシー保護】
+  フロントエンドへの送信時は
+  transcriptを除外
+end note
+
+note bottom of FocusFeedback
+  【生成タイミング】
+  セッション終了時に自動生成
+  
+  【データ構造】
+  sessions/{session_id}/focus_feedbacks/{pin_id}
+  
+  【評価基準】
+  - 95点以上: とてもいい ⭐⭐⭐⭐
+  - 80点以上: いい ⭐⭐⭐
+  - 60点以上: ふつう ⭐⭐
+  - 60点未満: わるい ⭐
+  - 0点: なし（未通過）
+  
+  【AIコメント】
+  Gemini 2.0 Flash で生成
+  過去データとの比較も含む
+end note
+
+note left of Firestore
+  【トランザクション】
+  @firestore.transactional
+  def create_session_if_not_exists(transaction):
+      # 原子的なチェック&作成
+      existing = query.stream(transaction=transaction)
+      if existing:
+          return existing_id
+      transaction.set(new_ref, data)
+      return new_id
+  
+  transaction = db.transaction()
+  result = create_session_if_not_exists(transaction)
+  
+  【バッチ書き込み】
+  batch = db.batch()
+  for item in items:
+      ref = collection.document()
+      batch.set(ref, item)
+  batch.commit()
+  
+  【SERVER_TIMESTAMP】
+  Firestoreサーバー側で時刻設定
+  クライアント時刻のズレ防止
+end note
+
+note left of AIEvaluation
+  【実行タイミング】
+  sessions_bp.end()内で呼び出し
+  
+  try:
+      analyze_focus_points_for_session(
+          session_id, current_user.id
+      )
+  except Exception as e:
+      print("AI evaluation error:", e)
+  
+  【失敗時の処理】
+  エラーをログ出力のみ
+  セッション完了処理は続行
+  
+  【評価対象】
+  - 重点ポイント（priority_pins）
+  - 通過判定（30m以内）
+  - 前後8秒の運転データ分析
+end note
+
+note left of ScoreCalculation
+  【実行タイミング】
+  AI評価の後に実行
+  
+  try:
+      result = calculate_session_overall_score(
+          session_id, current_user.id, 10.0
+      )
+      session_ref.update({
+          'overall_score': result['score'],
+          'score_comment': result['comment'],
+          'jerk_stats': result['jerk_stats'],
+          'calculated_at': SERVER_TIMESTAMP
+      })
+  except Exception as e:
+      print("Score calculation error:", e)
+  
+  【スコア範囲】
+  0-100点
+  
+  【評価基準】
+  90点以上: 非常に滑らか
+  80点以上: 安定性が高い
+  70点以上: おおむね良好
+  50点以上: 改善余地あり
+  50点未満: 急操作が多い
+end note
+
+@enduml

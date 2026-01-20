@@ -1,0 +1,144 @@
+@startuml セッション管理機能
+
+!define ENTITY_COLOR #E8F5E9
+!define SERVICE_COLOR #E3F2FD
+!define EXTERNAL_COLOR #FFF3E0
+
+' タイトル
+title セッション管理機能 - ドライブバディ
+
+' Blueprintクラス
+class SessionsBlueprint <<Blueprint>> SERVICE_COLOR {
+  --
+  +start(): JsonResponse
+  +check_active(): JsonResponse
+  +end(): JsonResponse
+  +log_gps_bulk(): JsonResponse
+  +log_g_only(): JsonResponse
+  +log_avg_g_only(): JsonResponse
+  --
+  +haversine(lat1, lon1, lat2, lon2): float
+  +calculate_distance_from_firestore(session_id): float
+}
+
+' Firestoreドキュメント
+class Session <<Firestore Document>> ENTITY_COLOR {
+  +user_id: str
+  +start_time: timestamp
+  +end_time: timestamp
+  +status: str
+  +distance: float
+  +route_id: str
+  +sudden_accels: int
+  +sudden_brakes: int
+  +sharp_turns: int
+  +stability: float
+  +speed_violations: int
+  +focus_point: str
+  +overall_score: int
+  +score_comment: str
+  +created_at: timestamp
+}
+
+' サブコレクション
+class GPSLog <<SubCollection>> ENTITY_COLOR {
+  +timestamp: timestamp
+  +timestamp_ms: int
+  +latitude: float
+  +longitude: float
+  +speed: float
+  +g_x: float
+  +g_y: float
+  +g_z: float
+  +event: str
+}
+
+class GLog <<SubCollection>> ENTITY_COLOR {
+  +timestamp: timestamp
+  +timestamp_ms: int
+  +g_x: float
+  +g_y: float
+  +g_z: float
+}
+
+class AvgGLog <<SubCollection>> ENTITY_COLOR {
+  +timestamp: timestamp
+  +timestamp_ms: int
+  +g_x: float
+  +g_y: float
+  +g_z: float
+  +speed: float
+  +distance_km: float
+  +event: str
+}
+
+class FocusFeedback <<SubCollection>> ENTITY_COLOR {
+  +created_at: timestamp
+  +pin_label: str
+  +focus_type: str
+  +focus_label: str
+  +stats: dict
+  +diff: dict
+  +rating: str
+  +score: int
+  +ai_comment: str
+  +short_comment: str
+  +passed: bool
+}
+
+' Firestore
+class Firestore <<External>> EXTERNAL_COLOR {
+  --
+  +collection(name: str): CollectionReference
+  +document(path: str): DocumentReference
+  +transaction(): Transaction
+  +batch(): WriteBatch
+}
+
+' 関係性
+SessionsBlueprint ..> Session : 作成/更新
+SessionsBlueprint ..> Firestore : データ保存
+Session "1" *-- "*" GPSLog : 含む
+Session "1" *-- "*" GLog : 含む
+Session "1" *-- "*" AvgGLog : 含む
+Session "1" *-- "*" FocusFeedback : 含む
+
+' ノート
+note right of SessionsBlueprint
+  エンドポイント:
+  - POST /sessions/start
+  - GET /sessions/check_active
+  - POST /sessions/end
+  - POST /sessions/log_gps_bulk
+  - POST /sessions/log_g_only
+  - POST /sessions/log_avg_g_only
+end note
+
+note right of Session
+  status: "active" | "completed"
+  トランザクション処理で
+  重複セッション防止
+end note
+
+note bottom of GPSLog
+  約1秒ごとに保存
+  位置情報と速度データ
+end note
+
+note bottom of GLog
+  約100msごとに保存
+  高頻度加速度データ
+end note
+
+note bottom of AvgGLog
+  約1秒ごとに保存
+  10データの平均値
+  AI評価に使用
+end note
+
+note bottom of FocusFeedback
+  セッション終了時に生成
+  重点ポイントごとの評価
+end note
+
+@enduml

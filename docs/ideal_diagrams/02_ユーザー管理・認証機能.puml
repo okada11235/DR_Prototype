@@ -1,0 +1,409 @@
+@startuml ユーザー管理・認証機能（理想版）
+
+!define ENTITY_COLOR #E8F5E9
+!define SERVICE_COLOR #E3F2FD
+!define EXTERNAL_COLOR #FFF3E0
+!define ABSTRACT_COLOR #FFE0B2
+!define INTERFACE_COLOR #F3E5F5
+
+title ユーザー管理・認証機能(実装準拠版) - DriveBuddy
+
+' 抽象ユーザーベースクラス
+abstract class UserBase <<Abstract>> ABSTRACT_COLOR {
+  #_id: str
+  #_username: str
+  #_email: Optional[str]
+  #_created_at: datetime
+  --
+  #{abstract} authenticate(credentials: Dict[str, str]) -> bool: bool
+  +{abstract} get_id() -> str: str
+  +{abstract} is_authenticated() -> bool: bool
+  +get_username() -> str: str
+  +get_email() -> Optional[str]: str
+  #_validate_credentials(credentials: dict) -> bool: bool
+}
+
+' 認証戦略インターフェース
+interface AuthenticationStrategy <<Interface>> INTERFACE_COLOR {
+  +{abstract} authenticate(username: str, password: str) -> Optional[User]: User
+  +{abstract} create_user(username: str, password: str, email: Optional[str] = None) -> User: User
+  +{abstract} validate_credentials(credentials: Dict[str, str]) -> bool: bool
+  +{abstract} validate_password_strength(password: str) -> Tuple[bool, str]: tuple
+  +{abstract} is_user_locked(username: str) -> bool: bool
+}
+
+' モデルクラス
+class User <<Model>> ENTITY_COLOR {
+  +id: str
+  +username: str
+  +is_authenticated: bool
+  +is_active: bool
+  +is_anonymous: bool
+  --
+  【コンストラクタ】
+  +__init__(uid: str, username: str)
+  --
+  【クラスメソッド】
+  +{static} get(user_id: str): User
+  --
+  【Flask-Loginメソッド】
+  +get_id(): str
+}
+
+' Blueprintクラス
+class AuthBlueprint <<Blueprint>> SERVICE_COLOR {
+  +name: str = "auth"
+  +url_prefix: None
+  --
+  【ユーザー登録】
+  +register(): Response
+  --
+  【ログイン】
+  +login(): Response
+  --
+  【ログアウト】
+  +logout(): Response
+  --
+  【初期化】
+  +init_auth(bcrypt: Bcrypt): void
+}
+
+' Bcrypt認証戦略
+class BcryptAuthStrategy <<Strategy>> SERVICE_COLOR {
+  -_bcrypt: Bcrypt
+  -_db: FirestoreClient
+  -_failed_attempts: Dict[str, int]
+  +SALT_ROUNDS: int = 12
+  +MAX_FAILED_ATTEMPTS: int = 5
+  +LOCKOUT_DURATION_MINUTES: int = 30
+  +MIN_PASSWORD_LENGTH: int = 8
+  --
+  +authenticate(username: str, password: str) -> Optional[User]: User
+  +create_user(username: str, password: str, email: Optional[str] = None) -> User: User
+  +validate_credentials(credentials: Dict[str, str]) -> bool: bool
+  +validate_password_strength(password: str) -> Tuple[bool, str]: tuple
+  +is_user_locked(username: str) -> bool: bool
+  -_hash_password(password: str) -> str: str
+  -_verify_password(password: str, hash: str) -> bool: bool
+  -_increment_failed_attempts(username: str) -> None: void
+  -_reset_failed_attempts(username: str) -> None: void
+  -_check_password_complexity(password: str) -> bool: bool
+}
+
+' Firebase認証戦略
+class FirebaseAuthStrategy <<Strategy>> SERVICE_COLOR {
+  -firebase_auth: FirebaseAuth
+  -db: FirestoreClient
+  --
+  +authenticate(username: str, password: str): User
+  +create_user(username: str, password: str): User
+  +validate_credentials(credentials: dict): bool
+  -generate_uid(): str
+}
+
+' 認証コンテキスト
+class AuthenticationContext <<Context>> SERVICE_COLOR {
+  -strategy: AuthenticationStrategy
+  --
+  +set_strategy(strategy: AuthenticationStrategy): void
+  +execute_auth(username: str, password: str): User
+  +execute_registration(username: str, password: str): User
+}
+
+' Flask-Login管理
+class LoginManager <<Flask-Login>> SERVICE_COLOR {
+  +login_view: str
+  +login_message: str
+  +login_message_category: str
+  --
+  【初期化】
+  +init_app(app: Flask)
+  --
+  【コールバック設定】
+  +user_loader(callback: Callable)
+  +unauthorized_handler(callback: Callable)
+}
+
+' パスワードハッシュ化
+class Bcrypt <<Flask-Bcrypt>> SERVICE_COLOR {
+  +bcrypt_instance: Bcrypt
+  --
+  【初期化】
+  +init_app(app: Flask)
+  --
+  【ハッシュ化】
+  +generate_password_hash(password: str): bytes
+  --
+  【検証】
+  +check_password_hash(pw_hash: str, password: str): bool
+}
+
+' Firebase Auth
+class FirebaseAuth <<External>> EXTERNAL_COLOR {
+  --
+  【ユーザー管理】
+  +create_user(email: str, password: str, display_name: str): UserRecord
+  +get_user(uid: str): UserRecord
+  +delete_user(uid: str): void
+  --
+  【認証】
+  +verify_id_token(token: str): dict
+}
+
+' Firestore
+class Firestore <<External>> EXTERNAL_COLOR {
+  --
+  【コレクション操作】
+  +collection(name: str): CollectionReference
+  +document(path: str): DocumentReference
+  --
+  【クエリ】
+  +where(filter: FieldFilter): Query
+  +limit(count: int): Query
+  +stream(transaction: Transaction): Iterator
+  --
+  【データ操作】
+  +get(transaction: Transaction): DocumentSnapshot
+  +set(data: dict, merge: bool): WriteResult
+}
+
+' FieldFilter
+class FieldFilter <<Firestore>> EXTERNAL_COLOR {
+  --
+  +__init__(field: str, op: str, value: any)
+}
+
+' ユーザードキュメント
+class UserDocument <<Firestore Document>> ENTITY_COLOR {
+  +username: str
+  +email: str
+  +password_hash: str
+  +created_at: timestamp
+}
+
+' ユーザーミックスイン
+interface UserMixin <<Flask-Login>> {
+  +is_authenticated: bool
+  +is_active: bool
+  +is_anonymous: bool
+  +get_id(): str
+}
+
+' 関係性
+User --|> UserBase : 継承
+User ..|> UserMixin : 実装
+User ..> UserDocument : 参照
+AuthBlueprint ..> AuthenticationContext : 使用
+AuthenticationContext o-- AuthenticationStrategy : 戦略保持
+BcryptAuthStrategy ..|> AuthenticationStrategy : 実装
+FirebaseAuthStrategy ..|> AuthenticationStrategy : 実装
+BcryptAuthStrategy ..> Bcrypt : パスワード検証
+BcryptAuthStrategy ..> Firestore : データ保存
+FirebaseAuthStrategy ..> FirebaseAuth : ユーザー作成
+FirebaseAuthStrategy ..> Firestore : データ保存
+AuthBlueprint ..> User : 使用
+AuthBlueprint ..> FieldFilter : クエリ構築
+LoginManager ..> User : ユーザーロード
+LoginManager --> AuthBlueprint : 認証管理
+Firestore ..> UserDocument : 保存
+
+' ノート
+note right of User
+  【ID管理】
+  Firebase Authentication UID（28文字）
+  をユーザーIDとして使用
+  
+  【データ保存先】
+  - Firebase Auth: 認証情報
+    email, password, displayName
+  - Firestore: ユーザープロファイル
+    users/{uid}
+  
+  【Flask-Login統合】
+  UserMixinを継承して
+  Flask-Loginの機能を提供:
+  - is_authenticated: True（常時）
+  - is_active: True（常時）
+  - is_anonymous: False（常時）
+  - get_id(): self.id返却
+  
+  【セッション管理】
+  - 有効期限: 24時間
+  - Cookie: SameSite=Lax
+  - 永続化: session.permanent = True
+  - Remember: True
+end note
+
+note right of AuthBlueprint
+  【ルーティング】
+  - GET/POST /auth/register
+  - GET/POST /auth/login
+  - GET /auth/logout
+  
+  【登録フロー】
+  1. POSTリクエスト受信
+  2. username, password取得
+  3. Firestoreでusername重複チェック
+     .where(filter=FieldFilter('username', '==', username))
+  4. 重複あり → flash + リダイレクト
+  5. Firebase Auth.create_user()
+     email: {username}@example.com
+     password: 入力値
+     display_name: username
+  6. bcrypt.generate_password_hash()
+  7. Firestore users/{uid}.set()
+  8. flash('登録成功') → auth.login
+  
+  【ログインフロー】
+  1. POSTリクエスト受信
+  2. username, password取得
+  3. Firestoreでusername検索
+  4. password_hash取得
+  5. bcrypt.check_password_hash()
+  6. 成功: User(uid, username)生成
+  7. session.permanent = True
+  8. login_user(user, remember=True)
+  9. views.indexへリダイレクト
+  10. 失敗: flash + auth.login
+  
+  【ログアウトフロー】
+  1. logout_user()
+  2. セッションクリア
+  3. auth.loginへリダイレクト
+  
+  【エラーハンドリング】
+  try-exceptで全例外をキャッチ
+  flash()でユーザーへ通知
+end note
+
+note bottom of LoginManager
+  【設定値】
+  login_view = "auth.login"
+  login_message = "このページにアクセスするには
+                   ログインが必要です。"
+  login_message_category = "info"
+  
+  【user_loader実装】
+  @login_manager.user_loader
+  def load_user(user_id):
+      user_doc = db.collection('users')
+                   .document(user_id).get()
+      if user_doc.exists:
+          user_data = user_doc.to_dict()
+          return User(user_doc.id,
+                     user_data['username'])
+      return None
+  
+  【unauthorized_handler実装】
+  @login_manager.unauthorized_handler
+  def unauthorized():
+      if request.is_json or 
+         request.headers.get('X-Requested-With') 
+         == 'XMLHttpRequest':
+          return jsonify({'status': 'error',
+                         'message': '認証が必要です'}), 401
+      return redirect(url_for('auth.login'))
+  
+  【セッション設定】
+  PERMANENT_SESSION_LIFETIME: 86400秒（24時間）
+  SESSION_COOKIE_SAMESITE: 'Lax'
+  SESSION_COOKIE_HTTPONLY: True
+  SESSION_COOKIE_SECURE: False（開発）
+  REMEMBER_COOKIE_DURATION: 86400秒
+end note
+
+note bottom of Bcrypt
+  【初期化】
+  bcrypt_instance = Bcrypt(app)
+  init_auth(bcrypt_instance)でグローバル化
+  
+  【ハッシュ化】
+  generate_password_hash(password)
+  → bytes型のハッシュ値
+  → .decode('utf-8')で文字列化
+  → Firestoreに保存
+  
+  【検証】
+  check_password_hash(stored_hash, input_password)
+  → bool
+  
+  【セキュリティ】
+  - アルゴリズム: bcrypt
+  - ソルトラウンド: 12（デフォルト）
+  - 計算時間: 約50-100ms
+  - フォーマット: $2b$12$[salt][hash]
+  
+  【レインボーテーブル対策】
+  各パスワードに固有のランダムソルト
+  同じパスワードでも異なるハッシュ
+end note
+
+note left of FirebaseAuth
+  【Firebase Authentication】
+  
+  Google提供の認証サービス
+  Backend: firebase_admin.auth
+  
+  【create_user実装】
+  auth.create_user(
+      email=f"{username}@example.com",
+      password=password,
+      display_name=username
+  )
+  → UserRecord
+    .uid: 28文字のランダム文字列
+  
+  【本アプリでの使用】
+  - UID生成のみに使用
+  - 実際の認証はbcrypt
+  - メールアドレスはダミー
+    （{username}@example.com）
+  
+  【注意事項】
+  Firebase Authの認証機能は未使用
+  パスワードはbcryptで独自管理
+end note
+
+note left of Firestore
+  【データ構造】
+  users/{uid}/
+    ├─ username: str（一意）
+    ├─ email: str
+    ├─ password_hash: str
+    └─ created_at: SERVER_TIMESTAMP
+  
+  【クエリ例】
+  # 重複チェック
+  query = db.collection('users').where(
+      filter=FieldFilter('username', '==', username)
+  ).limit(1).stream()
+  
+  # ユーザー取得
+  user_doc = db.collection('users')
+                .document(uid).get()
+  
+  【インデックス】
+  username: 複合インデックス不要
+  （単一フィールドは自動）
+  
+  【SERVER_TIMESTAMP】
+  created_at = firestore.SERVER_TIMESTAMP
+  → サーバー側で自動的にUTC時刻設定
+end note
+
+note bottom of UserDocument
+  【実データ例】
+  {
+    "username": "testuser",
+    "email": "testuser@example.com",
+    "password_hash": "$2b$12$abcd...",
+    "created_at": Timestamp(2026, 1, 15, 3, 30, 0)
+  }
+  
+  【制約】
+  - username: 重複不可
+  - password_hash: bcrypt形式
+  - created_at: UTC時刻
+end note
+
+@enduml

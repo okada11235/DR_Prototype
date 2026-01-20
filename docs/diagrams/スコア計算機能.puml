@@ -1,0 +1,116 @@
+@startuml スコア計算機能
+
+!define ENTITY_COLOR #E8F5E9
+!define SERVICE_COLOR #E3F2FD
+!define EXTERNAL_COLOR #FFF3E0
+
+' タイトル
+title スコア計算機能 - ドライブバディ
+
+' メインモジュール
+class ScoreCalculation <<Module>> SERVICE_COLOR {
+  -{static} WEIGHT_A: float = 3.0
+  -{static} WEIGHT_B: float = 2.0
+  -{static} JERK_THRESHOLD: float = 0.5
+  --
+  +calculate_jerk_and_stability(avg_g_logs, sample_rate_hz): JerkStats
+  +calculate_overall_driving_score(jerk_stats, A, B): tuple
+  +calculate_session_overall_score(session_id, user_id, sample_rate_hz): dict
+}
+
+' ジャーク統計データ
+class JerkStats <<Data Class>> ENTITY_COLOR {
+  +jerk_z_count: int
+  +jerk_x_count: int
+  +total_jerk_events: int
+  +jerk_events_per_km: float
+  +speed_std: float
+  +total_distance_km: float
+  +data_points: int
+}
+
+' セッション（スコア保存先）
+class Session <<Firestore Document>> ENTITY_COLOR {
+  +overall_score: int
+  +score_comment: str
+  +calculated_at: timestamp
+  +jerk_stats: JerkStats
+  +weights: dict
+  +scoring_mode: str
+}
+
+' NumPy（数値計算）
+class NumPy <<External>> EXTERNAL_COLOR {
+  --
+  +array(data: list): ndarray
+  +diff(arr): ndarray
+  +sum(arr): float
+  +abs(arr): ndarray
+  +std(arr): float
+}
+
+' Firestore
+class Firestore <<External>> EXTERNAL_COLOR {
+  --
+  +collection(name: str): CollectionReference
+  +document(path: str): DocumentReference
+  +get(): DocumentSnapshot
+  +update(data: dict)
+}
+
+' Math（対数計算）
+class Math <<Python Standard>> EXTERNAL_COLOR {
+  --
+  +log1p(x: float): float
+}
+
+' 関係性
+ScoreCalculation ..> JerkStats : 生成
+ScoreCalculation ..> Session : スコア保存
+ScoreCalculation ..> NumPy : ジャーク計算
+ScoreCalculation ..> Firestore : データ取得/更新
+ScoreCalculation ..> Math : log1p変換
+Session *-- JerkStats : 含む
+
+' ノート
+note right of ScoreCalculation
+  スコア計算式:
+  
+  1. ジャーク = ΔG/Δt
+  2. イベント密度 = 総イベント/距離
+  3. Jn = log1p(イベント密度)
+  4. Sn = log1p(速度標準偏差)
+  5. 減点 = WEIGHT_A * Jn + WEIGHT_B * Sn
+  6. スコア = 100 - 減点
+  
+  範囲: 0-100点
+end note
+
+note right of JerkStats
+  ジャーク閾値: 0.5 G/s
+  
+  - jerk_z: 前後（急加速/急ブレーキ）
+  - jerk_x: 左右（急ハンドル）
+  
+  イベント密度で正規化
+end note
+
+note bottom of Session
+  評価コメント:
+  - 90点以上: 非常に滑らか
+  - 80点以上: 安定性が高い
+  - 70点以上: おおむね良好
+  - 50点以上: 改善余地あり
+  - 50点未満: 急操作が多い
+end note
+
+note bottom of NumPy
+  ジャーク計算:
+  jerk_z = diff(gz_vals) / dt
+  jerk_x = diff(gx_vals) / dt
+  
+  閾値超えカウント:
+  count = sum(abs(jerk) > 0.5)
+end note
+
+@enduml

@@ -1,0 +1,312 @@
+@startuml 設定・初期化機能（理想版）
+
+!define ENTITY_COLOR #E8F5E9
+!define SERVICE_COLOR #E3F2FD
+!define EXTERNAL_COLOR #FFF3E0
+!define ABSTRACT_COLOR #FFE0B2
+!define INTERFACE_COLOR #F3E5F5
+
+title 設定・初期化機能(実装準拠版) - DriveBuddy
+
+' 抽象基底クラス
+abstract class ConfigBase <<Abstract>> ABSTRACT_COLOR {
+  #_config_cache: Dict[str, any]
+  #_is_initialized: bool = False
+  --
+  #{abstract} load_environment_variables() -> Dict[str, str]: dict
+  #{abstract} validate_config() -> bool: bool
+  +get_config(key: str, default: Optional[any] = None) -> any: any
+  #_cache_config(key: str, value: any) -> None: void
+}
+
+' 初期化戦略インターフェース
+interface InitializerStrategy <<Interface>> INTERFACE_COLOR {
+  +{abstract} initialize(app: Flask) -> None: void
+  +{abstract} validate() -> bool: bool
+  +{abstract} get_status() -> Dict[str, any]: dict
+  +{abstract} rollback() -> None: void
+  +{abstract} is_initialized() -> bool: bool
+}
+
+' 設定モジュール
+class Config <<Module>> SERVICE_COLOR {
+  +SECRET_KEY: str
+  +SESSION_COOKIE_SECURE: bool
+  +SESSION_COOKIE_HTTPONLY: bool
+  +SESSION_COOKIE_SAMESITE: str
+  +PERMANENT_SESSION_LIFETIME: int
+  +REMEMBER_COOKIE_DURATION: int
+  --
+  【Flask初期化】
+  +create_app(): Flask
+  --
+  【Firebase初期化】
+  +init_firebase(): Client
+  --
+  【認証初期化】
+  +init_login_manager(app: Flask): LoginManager
+  +init_bcrypt(app: Flask): Bcrypt
+}
+
+' Firebase初期化戦略
+class FirebaseInitializer <<Initializer>> SERVICE_COLOR {
+  -_credential_path: str
+  -_db_client: Optional[FirestoreClient] = None
+  -_is_initialized: bool = False
+  +CREDENTIAL_ENV_VAR: str = "GOOGLE_APPLICATION_CREDENTIALS"
+  --
+  +initialize(app: Flask) -> None: void
+  +validate() -> bool: bool
+  +get_status() -> Dict[str, any]: dict
+  +rollback() -> None: void
+  +is_initialized() -> bool: bool
+  -_load_credentials() -> Credential: Credential
+  -_verify_connection() -> bool: bool
+}
+
+' 認証初期化戦略
+class AuthInitializer <<Initializer>> SERVICE_COLOR {
+  -_login_manager: Optional[LoginManager] = None
+  -_bcrypt: Optional[Bcrypt] = None
+  -_is_initialized: bool = False
+  +DEFAULT_LOGIN_VIEW: str = "auth.login"
+  +SESSION_LIFETIME_HOURS: int = 24
+  --
+  +initialize(app: Flask) -> None: void
+  +validate() -> bool: bool
+  +get_status() -> Dict[str, any]: dict
+  +rollback() -> None: void
+  +is_initialized() -> bool: bool
+  -_configure_session() -> None: void
+  -_validate_session_config(app: Flask) -> bool: bool
+}
+
+' セッション初期化戦略
+class SessionInitializer <<Initializer>> SERVICE_COLOR {
+  -session_config: dict
+  --
+  +initialize(app: Flask): void
+  +validate(): bool
+  +get_status(): dict
+  -configure_cookies(): void
+}
+
+' 初期化ファクトリー
+class InitializerFactory <<Factory>> SERVICE_COLOR {
+  -{static} _instance: Optional[InitializerFactory] = None
+  -{static} _initializers: Dict[str, Type[InitializerStrategy]]
+  -{static} _lock: threading.Lock
+  --
+  +{static} get_instance() -> InitializerFactory: InitializerFactory
+  +{static} create_initializer(type: str) -> InitializerStrategy: InitializerStrategy
+  +{static} register_initializer(type: str, initializer: Type[InitializerStrategy]) -> None: void
+  +{static} unregister_initializer(type: str) -> None: void
+  +{static} create_all() -> List[InitializerStrategy]: list
+  +{static} get_registered_types() -> List[str]: list
+  -{static} _validate_initializer_type(initializer: Type) -> bool: bool
+}
+
+' Flask アプリケーション
+class Flask <<Framework>> EXTERNAL_COLOR {
+  +config: dict
+  +secret_key: str
+  --
+  +register_blueprint(blueprint: Blueprint, url_prefix: str)
+  +run(debug: bool, host: str, port: int)
+}
+
+' Firebase Admin SDK
+class FirebaseAdmin <<External>> EXTERNAL_COLOR {
+  --
+  +initialize_app(credential: Credential): App
+  +get_app(): App
+}
+
+class FirestoreClient <<External>> EXTERNAL_COLOR {
+  --
+  +collection(name: str): CollectionReference
+  +document(path: str): DocumentReference
+  +transaction(): Transaction
+  +batch(): WriteBatch
+}
+
+' Firebase Credentials
+class ServiceAccountCredentials <<External>> EXTERNAL_COLOR {
+  --
+  +Certificate(path: str): Credential
+}
+
+' Login Manager
+class LoginManager <<Flask-Login>> SERVICE_COLOR {
+  +login_view: str
+  +login_message: str
+  +login_message_category: str
+  --
+  +init_app(app: Flask)
+  +user_loader(callback: Callable)
+  +unauthorized_handler(callback: Callable)
+}
+
+' Bcrypt
+class Bcrypt <<Flask-Bcrypt>> SERVICE_COLOR {
+  --
+  +init_app(app: Flask)
+  +generate_password_hash(password: str, rounds: int): str
+  +check_password_hash(pw_hash: str, password: str): bool
+}
+
+' 環境変数
+class EnvironmentVariables <<System>> EXTERNAL_COLOR {
+  +GOOGLE_APPLICATION_CREDENTIALS: str
+  +GEMINI_API_KEY: str
+  +SECRET_KEY: str
+}
+
+' タイムゾーン設定
+class TimeZone <<System>> EXTERNAL_COLOR {
+  +JST: ZoneInfo
+}
+
+' 関係性
+Config --|> ConfigBase : 継承
+Config ..> Flask : 作成
+Config ..> InitializerFactory : 使用
+InitializerFactory ..> InitializerStrategy : 生成
+FirebaseInitializer ..|> InitializerStrategy : 実装
+AuthInitializer ..|> InitializerStrategy : 実装
+SessionInitializer ..|> InitializerStrategy : 実装
+FirebaseInitializer ..> FirebaseAdmin : 初期化
+FirebaseInitializer ..> FirestoreClient : 取得
+FirebaseInitializer ..> ServiceAccountCredentials : 使用
+AuthInitializer ..> LoginManager : 初期化
+AuthInitializer ..> Bcrypt : 初期化
+SessionInitializer ..> Flask : セッション設定
+Config ..> EnvironmentVariables : 読込
+Config ..> TimeZone : 設定
+FirebaseAdmin ..> ServiceAccountCredentials : 認証
+FirebaseAdmin ..> FirestoreClient : 提供
+
+' ノート
+note right of Config
+  【初期化順序】
+  
+  1. 環境変数読込（.env）
+  2. create_app()
+     - Flask インスタンス作成
+     - SECRET_KEY設定
+     - セッション設定
+  3. init_firebase()
+     - 認証情報読込
+     - Firebase Admin初期化
+     - Firestoreクライアント取得
+  4. init_login_manager()
+     - LoginManager初期化
+     - user_loader設定
+     - unauthorized_handler設定
+  5. init_bcrypt()
+     - Bcrypt初期化
+  6. Blueprintアプリケーション登録
+     - auth_bp
+     - sessions_bp
+     - views_bp
+     - transcribe_bp（オプション）
+end note
+
+note right of Flask
+  【Flask設定】
+  
+  SECRET_KEY: 'your_super_secret_key...'
+  
+  【セッション設定】
+  SESSION_COOKIE_SECURE: False（開発）
+  SESSION_COOKIE_HTTPONLY: True
+  SESSION_COOKIE_SAMESITE: 'Lax'
+  PERMANENT_SESSION_LIFETIME: 86400秒（24時間）
+  REMEMBER_COOKIE_DURATION: 86400秒（24時間）
+  
+  【実行設定】
+  host: 0.0.0.0
+  port: 5000
+  debug: True（開発時）
+end note
+
+note right of FirebaseAdmin
+  【認証情報】
+  環境変数から取得:
+  GOOGLE_APPLICATION_CREDENTIALS
+  
+  【提供サービス】
+  - Firestore Database
+  - Firebase Authentication
+  
+  【初期化チェック】
+  firebase_admin._apps で
+  二重初期化を防止
+end note
+
+note bottom of LoginManager
+  【設定値】
+  login_view = "auth.login"
+  login_message = "このページにアクセスするには
+                   ログインが必要です。"
+  login_message_category = "info"
+  
+  【user_loader】
+  def load_user(user_id):
+      return User.get(user_id)
+  
+  【unauthorized_handler】
+  - HTML: auth.loginへリダイレクト
+  - JSON/AJAX: 401エラー返却
+end note
+
+note bottom of Bcrypt
+  【アルゴリズム】
+  bcrypt（Blowfish暗号ベース）
+  
+  【デフォルト設定】
+  ソルトラウンド: 12
+  計算コスト: 2^12 = 4096回
+  
+  【出力形式】
+  $2b$12$[22文字salt][31文字hash]
+  
+  【セキュリティ】
+  - 各パスワードに固有のソルト
+  - レインボーテーブル攻撃耐性
+  - ブルートフォース攻撃遅延
+end note
+
+note bottom of EnvironmentVariables
+  【必須環境変数】
+  
+  GOOGLE_APPLICATION_CREDENTIALS:
+    Firebase認証情報JSONファイルパス
+    例: "path/to/credentials.json"
+  
+  GEMINI_API_KEY:
+    Gemini API キー
+    AI評価機能で使用
+  
+  【オプション】
+  SECRET_KEY:
+    Flaskセッション暗号化キー
+    未設定時はハードコード値使用
+end note
+
+note bottom of TimeZone
+  【タイムゾーン設定】
+  
+  JST = zoneinfo.ZoneInfo("Asia/Tokyo")
+  
+  【使用箇所】
+  - セッション時刻記録
+  - ユーザーフィードバック記録
+  - 各種タイムスタンプ
+  
+  【注意】
+  Firestoreは自動的にUTCで保存
+  表示時にJSTへ変換が必要
+end note
+
+@enduml

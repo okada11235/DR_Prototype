@@ -1,0 +1,438 @@
+@startuml スコア計算機能（理想版）
+
+!define ENTITY_COLOR #E8F5E9
+!define SERVICE_COLOR #E3F2FD
+!define EXTERNAL_COLOR #FFF3E0
+!define ABSTRACT_COLOR #FFE0B2
+!define INTERFACE_COLOR #F3E5F5
+
+title スコア計算機能(実装準拠版) - DriveBuddy
+
+' 抽象スコア計算基底クラス
+abstract class ScoreCalculatorBase <<Abstract>> ABSTRACT_COLOR {
+  #_weight_parameters: Dict[str, float]
+  #_score_range: Tuple[float, float] = (0.0, 100.0)
+  --
+  #{abstract} calculate(data: Dict[str, any]) -> float: float
+  #{abstract} normalize_score(raw_score: float) -> float: float
+  #{abstract} get_weight_parameters() -> Dict[str, float]: dict
+  +set_weight_parameter(key: str, value: float) -> None: void
+  +get_score_range() -> Tuple[float, float]: tuple
+  #_clamp_score(score: float) -> float: float
+  #_validate_data(data: dict) -> bool: bool
+}
+
+' スコア計算戦略インターフェース
+interface ScoringStrategy <<Interface>> INTERFACE_COLOR {
+  +{abstract} calculate_raw_score(metrics: dict): float
+  +{abstract} apply_penalties(score: float, violations: dict): float
+  +{abstract} apply_bonuses(score: float, achievements: dict): float
+}
+
+' メインモジュール
+class ScoreModule <<Module>> SERVICE_COLOR {
+  --
+  【ジャーク計算】
+  +calculate_jerk_and_stability(session_id: str): dict
+  --
+  【総合スコア計算】
+  +calculate_overall_driving_score(jerk_stats: dict): float
+}
+
+' ジャーク計算器
+class JerkCalculator <<Calculator>> SERVICE_COLOR {
+  -_threshold_g_per_s: float = 0.5
+  +MIN_DATA_POINTS: int = 2
+  +MIN_TIME_DELTA_MS: float = 0.001
+  --
+  +calculate(data: Dict[str, any]) -> float: float
+  +normalize_score(raw_score: float) -> float: float
+  +get_weight_parameters() -> Dict[str, float]: dict
+  +set_threshold(threshold: float) -> None: void
+  -_calculate_jerk_from_acceleration(acc_data: np.ndarray, time_data: np.ndarray) -> np.ndarray: ndarray
+  -_calculate_stability_ratio(jerk_data: np.ndarray) -> float: float
+  -_validate_time_deltas(time_data: np.ndarray) -> bool: bool
+  -_filter_outliers(data: np.ndarray, std_multiplier: float = 3.0) -> np.ndarray: ndarray
+}
+
+' 総合スコア計算器
+class OverallScoreCalculator <<Calculator>> SERVICE_COLOR {
+  -_weight_jerk_mean: float = 3.0
+  -_weight_jerk_max: float = 2.0
+  -_weight_stability: float = 1.0
+  +BASE_SCORE: float = 100.0
+  +MIN_SCORE: float = 0.0
+  --
+  +calculate(data: Dict[str, any]) -> float: float
+  +normalize_score(raw_score: float) -> float: float
+  +get_weight_parameters() -> Dict[str, float]: dict
+  +set_weights(mean: float, max: float, stability: float) -> None: void
+  -_calculate_penalty(jerk_stats: Dict[str, float]) -> float: float
+  -_calculate_bonus(stability_score: float) -> float: float
+  -_apply_log_smoothing(value: float) -> float: float
+  -_validate_jerk_stats(stats: dict) -> bool: bool
+}
+
+' ジャーク・安定性スコア戦略
+class JerkStabilityScoringStrategy <<Strategy>> SERVICE_COLOR {
+  -jerk_calculator: JerkCalculator
+  --
+  +calculate_raw_score(metrics: dict): float
+  +apply_penalties(score: float, violations: dict): float
+  +apply_bonuses(score: float, achievements: dict): float
+}
+
+' ジャーク統計
+class JerkStats <<Data Class>> ENTITY_COLOR {
+  +jerk_x_mean: float
+  +jerk_x_max: float
+  +jerk_x_std: float
+  +jerk_z_mean: float
+  +jerk_z_max: float
+  +jerk_z_std: float
+  +stability_score: float
+  +data_count: int
+}
+
+' Gログデータ
+class GLog <<Firestore Document>> ENTITY_COLOR {
+  +timestamp: timestamp
+  +timestamp_ms: int
+  +g_x: float
+  +g_y: float
+  +g_z: float
+  +duration_ms: int
+  +evaluation: str
+}
+
+' セッション
+class Session <<Firestore Document>> ENTITY_COLOR {
+  +jerk_stats: JerkStats
+  +overall_score: float
+  +end_time: timestamp
+  --
+  subcollections:
+  - g_logs
+}
+
+' NumPy
+class NumPy <<External>> EXTERNAL_COLOR {
+  --
+  +array(data: list): ndarray
+  +mean(arr): float
+  +std(arr): float
+  +max(arr): float
+  +abs(arr): ndarray
+  +diff(arr): ndarray
+  +log1p(arr): ndarray
+  +where(condition, x, y): ndarray
+}
+
+' Firestore
+class Firestore <<External>> EXTERNAL_COLOR {
+  --
+  +collection(name: str): CollectionReference
+  +document(path: str): DocumentReference
+  +get(): DocumentSnapshot
+  +update(data: dict)
+  +order_by(field): Query
+  +stream(): Iterator
+}
+
+' 関係性
+JerkCalculator --|> ScoreCalculatorBase : 継承
+OverallScoreCalculator --|> ScoreCalculatorBase : 継承
+JerkStabilityScoringStrategy ..|> ScoringStrategy : 実装
+ScoreModule ..> JerkCalculator : 使用
+ScoreModule ..> OverallScoreCalculator : 使用
+JerkStabilityScoringStrategy o-- JerkCalculator : 計算器保持
+ScoreModule ..> JerkStats : 生成
+ScoreModule ..> Session : 更新
+ScoreModule ..> GLog : 参照
+JerkCalculator ..> NumPy : 計算
+OverallScoreCalculator ..> NumPy : 計算
+ScoreModule ..> Firestore : データ取得/保存
+Session *-- JerkStats : 含む
+Session *-- GLog : 複数
+
+' ノート
+note right of ScoreModule
+  【calculate_jerk_and_stability実装】
+  
+  1. g_logs取得
+     .order_by("timestamp_ms")
+     .stream()
+  
+  2. データ抽出
+     timestamps = [log.timestamp_ms]
+     gx_vals = [log.g_x]
+     gz_vals = [log.g_z]
+  
+  3. NumPy配列化
+     times = np.array(timestamps)
+     gx = np.array(gx_vals)
+     gz = np.array(gz_vals)
+  
+  4. 時間差分（ミリ秒 → 秒）
+     dt = np.diff(times) / 1000.0
+     dt = np.where(dt > 0, dt, 0.001)
+  
+  5. ジャーク計算（ΔG / Δt）
+     jerk_x = np.abs(np.diff(gx) / dt)
+     jerk_z = np.abs(np.diff(gz) / dt)
+  
+  6. 統計計算
+     jerk_x_mean = float(np.mean(jerk_x))
+     jerk_x_max = float(np.max(jerk_x))
+     jerk_x_std = float(np.std(jerk_x))
+     jerk_z_mean = float(np.mean(jerk_z))
+     jerk_z_max = float(np.max(jerk_z))
+     jerk_z_std = float(np.std(jerk_z))
+  
+  7. 安定性スコア計算（0-100）
+     threshold = 0.5  # G/s
+     stable_x = np.sum(jerk_x < threshold)
+     stable_z = np.sum(jerk_z < threshold)
+     stable_count = stable_x + stable_z
+     total = len(jerk_x) + len(jerk_z)
+     stability_score = 100 * stable_count / total
+  
+  8. Firestoreに保存
+     session_ref.update({
+       'jerk_stats': jerk_stats
+     })
+  
+  9. ジャーク統計を返却
+  
+  【エラー処理】
+  - g_logs空の場合 → すべて0.0
+  - データ点数不足（< 2）→ すべて0.0
+  - 例外発生時 → ログ出力してNone返却
+end note
+
+note right of JerkStats
+  【ジャーク（Jerk）とは】
+  
+  加速度の変化率（m/s³）
+  Jerk = ΔAcceleration / Δtime
+  
+  【なぜ重要か】
+  - 滑らかさの指標
+  - 急ハンドル/急ブレーキ検出
+  - 乗り心地評価
+  
+  【計算例】
+  時刻 t1: g_x = 0.1 G
+  時刻 t2: g_x = 0.3 G (0.5秒後)
+  
+  Jerk = (0.3 - 0.1) / 0.5
+       = 0.4 G/s
+  
+  【しきい値】
+  0.5 G/s 以下: 安定した運転
+  0.5 G/s 超過: 急な操作
+  
+  【X方向とZ方向】
+  jerk_x: 左右のハンドル操作
+  jerk_z: 前後の加速・減速
+end note
+
+note bottom of ScoreModule
+  【calculate_overall_driving_score実装】
+  
+  入力: jerk_stats (dict)
+  
+  パラメータ:
+  - A_jerk_mean = 3.0  # 平均ジャークの重み
+  - B_jerk_max = 2.0   # 最大ジャークの重み
+  - C_stability = 1.0  # 安定性の重み（固定）
+  
+  計算式:
+  base_jerk_x = np.log1p(jerk_x_mean)
+  base_jerk_z = np.log1p(jerk_z_mean)
+  max_jerk_x = np.log1p(jerk_x_max)
+  max_jerk_z = np.log1p(jerk_z_max)
+  
+  penalty = (
+      A_jerk_mean * (base_jerk_x + base_jerk_z) +
+      B_jerk_max * (max_jerk_x + max_jerk_z)
+  )
+  
+  stability_bonus = C_stability * stability_score
+  
+  overall_score = max(0, 
+      100 - penalty + stability_bonus
+  )
+  
+  【スコア範囲】
+  0 - 100点
+  
+  【更新タイミング】
+  セッション終了時に計算して保存
+  
+  【log1p(x) = log(1+x)の意味】
+  - 0付近での過剰なペナルティ回避
+  - 大きな値の影響を緩和
+  - 数値安定性向上
+end note
+
+note left of NumPy
+  【NumPy関数詳細】
+  
+  # 配列生成
+  arr = np.array([1.0, 2.0, 3.0])
+  
+  # 差分計算
+  diff = np.diff(arr)  # [1.0, 1.0]
+  
+  # 絶対値
+  abs_arr = np.abs(arr)
+  
+  # 統計
+  mean = np.mean(arr)
+  std = np.std(arr)
+  max_val = np.max(arr)
+  
+  # 対数
+  log_arr = np.log1p(arr)  # log(1+x)
+  
+  # 条件処理
+  result = np.where(arr > 0, arr, 0.0)
+  
+  # 合計
+  sum_val = np.sum(arr)
+  
+  【型変換】
+  NumPy → Python
+  float(np.float64(...))
+  int(np.int64(...))
+  
+  Firestore保存時に必須
+end note
+
+note left of Firestore
+  【データ取得パターン】
+  
+  # g_logs取得
+  logs_ref = db.collection("sessions")
+               .document(session_id)
+               .collection("g_logs")
+  
+  query = logs_ref.order_by("timestamp_ms")
+  logs = list(query.stream())
+  
+  # データ抽出
+  timestamps = []
+  gx_vals = []
+  gz_vals = []
+  
+  for log in logs:
+      data = log.to_dict()
+      timestamps.append(data.get("timestamp_ms", 0))
+      gx_vals.append(data.get("g_x", 0.0))
+      gz_vals.append(data.get("g_z", 0.0))
+  
+  【更新パターン】
+  
+  # ジャーク統計更新
+  session_ref = db.collection("sessions")
+                  .document(session_id)
+  
+  session_ref.update({
+      'jerk_stats': jerk_stats,
+      'overall_score': overall_score
+  })
+  
+  【エラーケース】
+  - セッション未存在
+  - g_logs空
+  - 不正なデータ型
+end note
+
+note bottom of GLog
+  【g_logsデータ構造】
+  
+  {
+    "timestamp": Timestamp(...),
+    "timestamp_ms": 1234567890123,
+    "g_x": 0.15,      # 左右加速度
+    "g_y": 0.95,      # 垂直加速度
+    "g_z": -0.25,     # 前後加速度
+    "duration_ms": 100,
+    "evaluation": "turn_right"
+  }
+  
+  【時系列順序保証】
+  order_by("timestamp_ms")で取得
+  
+  【ジャーク計算に使用】
+  - timestamp_ms: 時間差分
+  - g_x: 横方向ジャーク
+  - g_z: 縦方向ジャーク
+  
+  【evaluationは未使用】
+  現在のスコア計算には含まれない
+end note
+
+note bottom of Session
+  【セッション更新タイミング】
+  
+  1. セッション終了時（/end）:
+     a. calculate_jerk_and_stability()
+     b. calculate_overall_driving_score()
+     c. session_ref.update({
+          'jerk_stats': {...},
+          'overall_score': score
+        })
+  
+  2. 更新後のセッションデータ:
+     {
+       "user_id": "abc123",
+       "start_time": Timestamp(...),
+       "end_time": Timestamp(...),
+       "distance_km": 12.5,
+       "jerk_stats": {
+         "jerk_x_mean": 0.123,
+         "jerk_x_max": 0.876,
+         "jerk_x_std": 0.234,
+         "jerk_z_mean": 0.156,
+         "jerk_z_max": 0.945,
+         "jerk_z_std": 0.267,
+         "stability_score": 87.5,
+         "data_count": 1234
+       },
+       "overall_score": 82.3
+     }
+  
+  【フロントエンド表示】
+  結果画面で overall_score を表示
+  詳細画面で jerk_stats を分析表示
+end note
+
+note top of JerkStats
+  【スコア計算の重み付けパラメータ】
+  
+  A_jerk_mean = 3.0
+    平均ジャークの影響を強く評価
+    普段の運転の滑らかさ
+  
+  B_jerk_max = 2.0
+    最大ジャークの影響を中程度に評価
+    最悪の急操作のペナルティ
+  
+  C_stability = 1.0
+    安定性ボーナスを通常評価
+    全体的な一貫性
+  
+  【調整可能】
+  これらの値を変更することで
+  スコア計算の傾向を調整可能
+  
+  例: A=5.0, B=1.0
+    → 平均重視、最大値は軽視
+  
+  例: A=1.0, B=5.0
+    → 最悪操作重視、平均は軽視
+end note
+
+@enduml

@@ -1,0 +1,139 @@
+@startuml 設定・初期化機能
+
+!define ENTITY_COLOR #E8F5E9
+!define SERVICE_COLOR #E3F2FD
+!define EXTERNAL_COLOR #FFF3E0
+
+' タイトル
+title 設定・初期化機能 - DriveBuddy
+
+' 設定モジュール
+class Config <<Module>> SERVICE_COLOR {
+  +SECRET_KEY: str
+  +SESSION_COOKIE_SAMESITE: str
+  +PERMANENT_SESSION_LIFETIME: timedelta
+  --
+  +init_firebase(): None
+  +init_login_manager(app: Flask): LoginManager
+  +init_bcrypt(app: Flask): Bcrypt
+  +setup_login_handlers(login_manager: LoginManager): None
+}
+
+' Flask アプリケーション
+class Flask <<Framework>> EXTERNAL_COLOR {
+  +config: dict
+  +secret_key: str
+  --
+  +register_blueprint(blueprint: Blueprint)
+  +run(debug: bool, host: str, port: int)
+}
+
+' Firebase Admin SDK
+class FirebaseAdmin <<External>> EXTERNAL_COLOR {
+  --
+  +initialize_app(credential: Credential)
+  +get_app(): App
+  +firestore.client(): Client
+}
+
+' Firebase Credentials
+class ServiceAccountCredentials <<External>> EXTERNAL_COLOR {
+  --
+  +from_service_account_file(path: str): Credential
+}
+
+' Login Manager
+class LoginManager <<Flask-Login>> SERVICE_COLOR {
+  +login_view: str
+  --
+  +init_app(app: Flask)
+  +user_loader(callback: Callable)
+  +unauthorized_handler(callback: Callable)
+}
+
+' Bcrypt
+class Bcrypt <<Flask-Bcrypt>> SERVICE_COLOR {
+  --
+  +init_app(app: Flask)
+  +generate_password_hash(password: str): str
+  +check_password_hash(pw_hash: str, password: str): bool
+}
+
+' 環境変数
+class EnvironmentVariables <<System>> EXTERNAL_COLOR {
+  +GOOGLE_APPLICATION_CREDENTIALS: str
+  +GEMINI_API_KEY: str
+  +SECRET_KEY: str
+}
+
+' ユーザー設定
+class UserSpeakSettings <<Firestore Document>> ENTITY_COLOR {
+  +user_id: str
+  +voice_feedback_enabled: bool
+  +feedback_level: str
+  +created_at: timestamp
+  +updated_at: timestamp
+}
+
+' 関係性
+Config ..> Flask : 設定
+Config ..> FirebaseAdmin : 初期化
+Config ..> ServiceAccountCredentials : 使用
+Config ..> LoginManager : 初期化
+Config ..> Bcrypt : 初期化
+Config ..> EnvironmentVariables : 読込
+FirebaseAdmin ..> ServiceAccountCredentials : 認証
+
+' ノート
+note right of Config
+  初期化順序:
+  
+  1. 環境変数読込
+  2. Firebase Admin SDK初期化
+  3. Flask設定
+  4. LoginManager初期化
+  5. Bcrypt初期化
+  6. Blueprintアプリケーション
+end note
+
+note right of FirebaseAdmin
+  認証情報:
+  GOOGLE_APPLICATION_CREDENTIALS
+  環境変数で指定
+  
+  サービス:
+  - Firestore
+  - Firebase Auth
+end note
+
+note bottom of LoginManager
+  設定:
+  - login_view = "auth.login"
+  - セッション有効期限: 24時間
+  - Cookie設定: SameSite=Lax
+  
+  ハンドラ:
+  - user_loader: IDからUser取得
+  - unauthorized_handler: 未認証時処理
+end note
+
+note bottom of Bcrypt
+  パスワードハッシュ化:
+  - アルゴリズム: bcrypt
+  - ソルトラウンド: デフォルト(12)
+  - レインボーテーブル攻撃対策
+end note
+
+note bottom of EnvironmentVariables
+  必須環境変数:
+  - GOOGLE_APPLICATION_CREDENTIALS
+    → Firebase認証情報パス
+  - GEMINI_API_KEY
+    → Gemini API キー
+  
+  オプション:
+  - SECRET_KEY
+    → Flaskセッション暗号化キー
+end note
+
+@enduml

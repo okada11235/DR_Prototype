@@ -1,0 +1,623 @@
+@startuml マップ・ルート管理機能（理想版）
+
+!define ENTITY_COLOR #E8F5E9
+!define SERVICE_COLOR #E3F2FD
+!define EXTERNAL_COLOR #FFF3E0
+!define ABSTRACT_COLOR #FFE0B2
+!define INTERFACE_COLOR #F3E5F5
+
+title マップ・ルート管理機能(実装準拠版) - DriveBuddy
+
+' 抽象ピン基底クラス
+abstract class PinBase <<Abstract>> ABSTRACT_COLOR {
+  #_id: str
+  #_lat: float
+  #_lng: float
+  #_label: str
+  #_created_at: datetime
+  --
+  #{abstract} to_priority_pin() -> PriorityPin: PriorityPin
+  #{abstract} validate() -> bool: bool
+  #{abstract} get_location() -> Tuple[float, float]: tuple
+  +get_id() -> str: str
+  +get_label() -> str: str
+  +set_label(label: str) -> None: void
+  #_validate_coordinates() -> bool: bool
+  #_validate_label_length(min_len: int = 1, max_len: int = 100) -> bool: bool
+}
+
+' ピン変換戦略インターフェース
+interface PinConversionStrategy <<Interface>> INTERFACE_COLOR {
+  +{abstract} convert_to_priority(pin: PinBase) -> PriorityPin: PriorityPin
+  +{abstract} should_convert(pin: PinBase) -> bool: bool
+  +{abstract} get_priority_level() -> int: int
+  +{abstract} calculate_priority_score(pin: PinBase) -> float: float
+  +{abstract} validate_conversion_criteria(pin: PinBase) -> Tuple[bool, str]: tuple
+}
+
+' 距離計算インターフェース
+interface DistanceCalculator <<Interface>> INTERFACE_COLOR {
+  +{abstract} calculate(lat1: float, lng1: float, lat2: float, lng2: float) -> float: float
+  +{abstract} get_unit() -> str: str
+  +{abstract} convert_unit(distance: float, from_unit: str, to_unit: str) -> float: float
+  +{abstract} get_precision() -> int: int
+}
+
+' Priority Pin（統合ピン管理）
+class PriorityPin <<Firestore Document>> ENTITY_COLOR {
+  +id: str
+  +user_id: str
+  +route_id: str
+  +lat: float
+  +lng: float
+  +label: str
+  +focus_type: str
+  +focus_label: str
+  +priority_level: int
+  +created_at: timestamp
+  +source_type: str
+  --
+  【focus_type種類】
+  - brake_soft: 穏やかな減速
+  - stop_smooth: 停止直前の滑らかさ
+  - accel_smooth: 滑らかな発進
+  - turn_stability: カーブの安定性
+  - smooth_overall: 直進の安定性
+  - speed_consistency: 一定速度の維持
+  --
+  【source_type種類】
+  - drive: 運転記録から自動生成
+  - voice: 音声フィードバックから生成
+  - manual: ユーザー手動追加
+  --
+  【priority_level】
+  1: 最重要（赤マーカー）
+  2: 重要（黄マーカー）
+  3: 通常（青マーカー）
+}
+
+' Route（ルート情報）
+class Route <<Firestore Document>> ENTITY_COLOR {
+  +id: str
+  +user_id: str
+  +name: str
+  +path: list<LatLng>
+  +distance_km: float
+  +created_at: timestamp
+  +updated_at: timestamp
+  +pin_count: int
+}
+
+' Drive Pin（運転記録ピン）
+class DrivePin <<Temporary>> ENTITY_COLOR {
+  +session_id: str
+  +user_id: str
+  +lat: float
+  +lng: float
+  +timestamp: timestamp
+  +g_x: float
+  +g_z: float
+  +speed: float
+  +evaluation: str
+  --
+  【処理フロー】
+  1. セッション中に追加
+  2. 一時保存（Firestore）
+  3. セッション終了時に評価
+  4. 基準満たせばPriority Pin化
+}
+' Drive Pin変換戦略
+class DrivePinConversionStrategy <<Strategy>> SERVICE_COLOR {
+  -threshold_g_x: float = 0.3
+  -threshold_g_z: float = 0.3
+  --
+  +convert_to_priority(pin: PinBase): PriorityPin
+  +should_convert(pin: PinBase): bool
+  +get_priority_level(): int
+  -evaluate_driving_quality(g_x: float, g_z: float): int
+}
+' Voice Pin（音声フィードバックピン）
+class VoicePin <<Temporary>> ENTITY_COLOR {
+  +session_id: str
+  +user_id: str
+  +lat: float
+  +lng: float
+  +timestamp: timestamp
+  +audio_record_id: str
+  +speak_time_window: dict
+  +confirmed: bool
+  --
+  【処理フロー】
+  1. 音声フィードバック時に自動生成
+  2. speak_time_window記録
+  3. ユーザーが確認
+  4. 確認後にPriority Pin化
+}
+' Voice Pin変換戦略
+class VoicePinConversionStrategy <<Strategy>> SERVICE_COLOR {
+  --
+  +convert_to_priority(pin: PinBase): PriorityPin
+  +should_convert(pin: PinBase): bool
+  +get_priority_level(): int
+  -extract_focus_from_audio(audio_id: str): str
+}
+' Manual Pin（手動ピン）
+class ManualPin <<Direct>> ENTITY_COLOR {
+  直接PriorityPinとして作成
+  マップエディタから追加
+}
+' ピンマネージャー
+class PinManager <<Manager>> SERVICE_COLOR {
+  -db: FirestoreClient
+  -conversion_strategies: dict
+  --
+  +create_priority_pin(pin_data: dict): PriorityPin
+  +convert_temp_pin(temp_pin: PinBase, strategy: PinConversionStrategy): PriorityPin
+  +get_pins_by_route(route_id: str): list<PriorityPin>
+  +delete_pin(pin_id: str): void
+  +update_pin_label(pin_id: str, label: str): void
+}
+
+' Haversine距離計算器
+class HaversineCalculator <<Calculator>> SERVICE_COLOR {
+  -earth_radius_km: float = 6371.0
+  --
+  +calculate(lat1: float, lng1: float, lat2: float, lng2: float): float
+  +get_unit(): str
+  -deg_to_rad(degrees: float): float
+}
+' ViewsBlueprint（ピン管理API）
+class ViewsBlueprint <<Blueprint>> SERVICE_COLOR {
+  --
+  【Drive Pin API】
+  +add_drive_pin(): JSON
+  +api_drive_pins(): JSON
+  --
+  【Voice Pin API】
+  +add_voice_pin(): JSON
+  +confirm_voice_pin(): JSON
+  +api_voice_pins(session_id): JSON
+  --
+  【Manual Pin API】
+  +add_manual_pin(): JSON
+  --
+  【Priority Pin API】
+  +api_priority_pins(): JSON
+  +api_update_pin_label(): JSON
+  +api_delete_pin(): JSON
+  --
+  【Route API】
+  +api_routes(): JSON
+  +api_save_route(): JSON
+  +api_delete_route(): JSON
+}
+
+' Firestore
+class Firestore <<External>> EXTERNAL_COLOR {
+  --
+  +collection(name: str): CollectionReference
+  +document(path: str): DocumentReference
+  +set(data: dict)
+  +update(data: dict)
+  +delete()
+  +where(filter): Query
+  +stream(): Iterator
+}
+
+' Google Maps
+class GoogleMaps <<External>> EXTERNAL_COLOR {
+  --
+  +Map(element, options): Map
+  +Marker(options): Marker
+  +Polyline(options): Polyline
+  +LatLng(lat, lng): LatLng
+  +event.addListener(instance, event, handler)
+}
+
+' 関係性
+PriorityPin --|> PinBase : 継承
+DrivePin --|> PinBase : 継承
+VoicePin --|> PinBase : 継承
+ManualPin --|> PinBase : 継承
+DrivePinConversionStrategy ..|> PinConversionStrategy : 実装
+VoicePinConversionStrategy ..|> PinConversionStrategy : 実装
+HaversineCalculator ..|> DistanceCalculator : 実装
+PinManager o-- PinConversionStrategy : 戦略保持
+PinManager ..> HaversineCalculator : 距離計算
+PriorityPin --> Route : 所属
+ViewsBlueprint ..> PinManager : 使用
+ViewsBlueprint ..> PriorityPin : 管理
+ViewsBlueprint ..> Route : 管理
+ViewsBlueprint ..> DrivePin : 一時保存
+ViewsBlueprint ..> VoicePin : 一時保存
+ManualPin ..> PriorityPin : 直接作成
+PinManager ..> DrivePin : 変換
+PinManager ..> VoicePin : 変換
+ViewsBlueprint ..> Firestore : データ操作
+ViewsBlueprint ..> GoogleMaps : 地図表示
+
+' ノート
+note right of PriorityPin
+  【priority_pinsコレクション】
+  
+  統合ピン管理システム
+  - すべてのピンタイプを統一管理
+  - AI評価の対象
+  - ルートとの関連付け
+  
+  【作成方法】
+  
+  1. Drive Pin → Priority Pin
+     セッション終了時、評価基準を満たした場合
+     source_type = "drive"
+  
+  2. Voice Pin → Priority Pin
+     ユーザーが確認ボタンをクリック
+     source_type = "voice"
+  
+  3. Manual Pin → Priority Pin
+     マップエディタから直接作成
+     source_type = "manual"
+  
+  【表示色分け】
+  
+  priority_level 1: 赤マーカー（最重要）
+  priority_level 2: 黄マーカー（重要）
+  priority_level 3: 青マーカー（通常）
+  
+  【削除】
+  
+  api_delete_pin()で削除可能
+  ルート削除時は関連ピンも削除
+end note
+
+note right of Route
+  【routesコレクション】
+  
+  ルート情報の管理
+  - ユーザーが保存したルート
+  - パス（緯度経度のリスト）
+  - 関連するピン数
+  
+  【作成】
+  
+  api_save_route():
+    {
+      "name": "通勤ルート",
+      "path": [
+        {"lat": 35.6812, "lng": 139.7671},
+        {"lat": 35.6813, "lng": 139.7672},
+        ...
+      ],
+      "distance_km": 12.5
+    }
+  
+  【取得】
+  
+  api_routes():
+    .where('user_id', '==', user_id)
+    .stream()
+  
+  【削除】
+  
+  api_delete_route(route_id):
+    1. ルート削除
+    2. 関連priority_pins削除
+       .where('route_id', '==', route_id)
+end note
+
+note bottom of DrivePin
+  【add_drive_pin実装】
+  
+  @views_bp.route('/api/add_drive_pin', methods=['POST'])
+  @login_required
+  def add_drive_pin():
+      data = request.json
+      user_id = current_user.uid
+      
+      # 一時保存（セッション中）
+      pin_ref = db.collection("temp_drive_pins")
+                  .document()
+      
+      pin_ref.set({
+          'session_id': data['session_id'],
+          'user_id': user_id,
+          'lat': data['lat'],
+          'lng': data['lng'],
+          'timestamp': firestore.SERVER_TIMESTAMP,
+          'g_x': data.get('g_x', 0.0),
+          'g_z': data.get('g_z', 0.0),
+          'speed': data.get('speed', 0.0),
+          'evaluation': data.get('evaluation', '')
+      })
+      
+      return jsonify({'status': 'success', 'id': pin_ref.id})
+  
+  【セッション終了時の処理】
+  
+  1. temp_drive_pins取得
+  2. 評価基準チェック
+     - 急ハンドル: abs(g_x) > 0.3
+     - 急ブレーキ: g_z < -0.3
+     - 急加速: g_z > 0.3
+  3. 基準満たす → priority_pins作成
+  4. temp_drive_pins削除
+end note
+
+note bottom of VoicePin
+  【add_voice_pin実装】
+  
+  @views_bp.route('/api/add_voice_pin', methods=['POST'])
+  @login_required
+  def add_voice_pin():
+      data = request.json
+      user_id = current_user.uid
+      
+      pin_ref = db.collection("temp_voice_pins")
+                  .document()
+      
+      pin_ref.set({
+          'session_id': data['session_id'],
+          'user_id': user_id,
+          'lat': data['lat'],
+          'lng': data['lng'],
+          'timestamp': firestore.SERVER_TIMESTAMP,
+          'audio_record_id': data.get('audio_record_id'),
+          'speak_time_window': data.get('speak_time_window', {}),
+          'confirmed': False
+      })
+      
+      return jsonify({'status': 'success', 'id': pin_ref.id})
+  
+  【confirm_voice_pin実装】
+  
+  @views_bp.route('/api/confirm_voice_pin', methods=['POST'])
+  @login_required
+  def confirm_voice_pin():
+      data = request.json
+      user_id = current_user.uid
+      pin_id = data['pin_id']
+      
+      # Voice Pin取得
+      voice_pin_ref = db.collection("temp_voice_pins")
+                        .document(pin_id)
+      voice_pin = voice_pin_ref.get()
+      
+      if not voice_pin.exists:
+          return jsonify({'status': 'error', 
+                         'message': 'Pin not found'}), 404
+      
+      pin_data = voice_pin.to_dict()
+      
+      # Priority Pin作成
+      priority_ref = db.collection("priority_pins")
+                       .document()
+      
+      priority_ref.set({
+          'user_id': user_id,
+          'route_id': data.get('route_id', ''),
+          'lat': pin_data['lat'],
+          'lng': pin_data['lng'],
+          'label': data.get('label', '音声フィードバック地点'),
+          'focus_type': data.get('focus_type', 'smooth_overall'),
+          'focus_label': data.get('focus_label', '直進の安定性'),
+          'priority_level': data.get('priority_level', 2),
+          'source_type': 'voice',
+          'created_at': firestore.SERVER_TIMESTAMP
+      })
+      
+      # Voice Pin削除
+      voice_pin_ref.delete()
+      
+      return jsonify({'status': 'success', 'id': priority_ref.id})
+end note
+
+note top of ManualPin
+  【add_manual_pin実装】
+  
+  @views_bp.route('/api/add_manual_pin', methods=['POST'])
+  @login_required
+  def add_manual_pin():
+      data = request.json
+      user_id = current_user.uid
+      
+      # 直接Priority Pin作成
+      pin_ref = db.collection("priority_pins")
+                  .document()
+      
+      pin_ref.set({
+          'user_id': user_id,
+          'route_id': data.get('route_id', ''),
+          'lat': data['lat'],
+          'lng': data['lng'],
+          'label': data.get('label', '手動ピン'),
+          'focus_type': data.get('focus_type', 'smooth_overall'),
+          'focus_label': data.get('focus_label', '直進の安定性'),
+          'priority_level': data.get('priority_level', 3),
+          'source_type': 'manual',
+          'created_at': firestore.SERVER_TIMESTAMP
+      })
+      
+      return jsonify({'status': 'success', 'id': pin_ref.id})
+  
+  【マップエディタからの使用】
+  
+  1. ユーザーが地図上をクリック
+  2. ダイアログ表示
+     - ラベル入力
+     - フォーカスタイプ選択
+     - 優先度選択
+  3. add_manual_pin()呼び出し
+  4. 地図上にマーカー表示
+end note
+
+note left of ViewsBlueprint
+  【api_priority_pins実装】
+  
+  @views_bp.route('/api/priority_pins')
+  @login_required
+  def api_priority_pins():
+      user_id = current_user.uid
+      route_id = request.args.get('route_id')
+      
+      query = db.collection("priority_pins")
+                .where('user_id', '==', user_id)
+      
+      if route_id:
+          query = query.where('route_id', '==', route_id)
+      
+      pins = []
+      for pin in query.stream():
+          data = pin.to_dict()
+          data['id'] = pin.id
+          pins.append(data)
+      
+      return jsonify({
+          'status': 'success',
+          'pins': pins
+      })
+  
+  【api_update_pin_label実装】
+  
+  @views_bp.route('/api/update_pin_label', methods=['POST'])
+  @login_required
+  def api_update_pin_label():
+      data = request.json
+      pin_id = data['pin_id']
+      new_label = data['label']
+      
+      pin_ref = db.collection("priority_pins")
+                  .document(pin_id)
+      
+      pin_ref.update({
+          'label': new_label,
+          'updated_at': firestore.SERVER_TIMESTAMP
+      })
+      
+      return jsonify({'status': 'success'})
+  
+  【api_delete_pin実装】
+  
+  @views_bp.route('/api/delete_pin', methods=['POST'])
+  @login_required
+  def api_delete_pin():
+      data = request.json
+      pin_id = data['pin_id']
+      
+      pin_ref = db.collection("priority_pins")
+                  .document(pin_id)
+      pin_ref.delete()
+      
+      return jsonify({'status': 'success'})
+end note
+
+note left of Firestore
+  【ルート保存実装】
+  
+  @views_bp.route('/api/save_route', methods=['POST'])
+  @login_required
+  def api_save_route():
+      data = request.json
+      user_id = current_user.uid
+      
+      route_ref = db.collection("routes")
+                    .document()
+      
+      # 距離計算（haversine）
+      distance_km = calculate_route_distance(data['path'])
+      
+      route_ref.set({
+          'user_id': user_id,
+          'name': data['name'],
+          'path': data['path'],
+          'distance_km': distance_km,
+          'created_at': firestore.SERVER_TIMESTAMP,
+          'updated_at': firestore.SERVER_TIMESTAMP,
+          'pin_count': 0
+      })
+      
+      return jsonify({
+          'status': 'success',
+          'route_id': route_ref.id
+      })
+  
+  【ルート削除実装】
+  
+  @views_bp.route('/api/delete_route', methods=['POST'])
+  @login_required
+  def api_delete_route():
+      data = request.json
+      route_id = data['route_id']
+      
+      # ルート削除
+      route_ref = db.collection("routes")
+                    .document(route_id)
+      route_ref.delete()
+      
+      # 関連ピン削除
+      pins = db.collection("priority_pins")
+               .where('route_id', '==', route_id)
+               .stream()
+      
+      for pin in pins:
+          pin.reference.delete()
+      
+      return jsonify({'status': 'success'})
+end note
+
+note bottom of GoogleMaps
+  【マーカー表示（maps_pins.js）】
+  
+  function showPriorityPins(map, pins) {
+      pins.forEach(pin => {
+          const color = getPinColor(pin.priority_level);
+          
+          const marker = new google.maps.Marker({
+              position: {lat: pin.lat, lng: pin.lng},
+              map: map,
+              title: pin.label,
+              icon: {
+                  path: google.maps.SymbolPath.CIRCLE,
+                  scale: 8,
+                  fillColor: color,
+                  fillOpacity: 1,
+                  strokeColor: '#fff',
+                  strokeWeight: 2
+              }
+          });
+          
+          marker.addListener('click', () => {
+              showPinInfo(pin);
+          });
+      });
+  }
+  
+  function getPinColor(level) {
+      switch(level) {
+          case 1: return '#F44336'; // 赤
+          case 2: return '#FFC107'; // 黄
+          case 3: return '#2196F3'; // 青
+          default: return '#9E9E9E'; // グレー
+      }
+  }
+  
+  【ルート描画】
+  
+  function drawRoute(map, route) {
+      const path = route.path.map(p => 
+          new google.maps.LatLng(p.lat, p.lng)
+      );
+      
+      const polyline = new google.maps.Polyline({
+          path: path,
+          geodesic: true,
+          strokeColor: '#4CAF50',
+          strokeOpacity: 0.8,
+          strokeWeight: 4
+      });
+      
+      polyline.setMap(map);
+  }
+end note
+
+@enduml

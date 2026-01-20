@@ -1,0 +1,266 @@
+@startuml ユーザーフィードバック機能
+
+!define ENTITY_COLOR #E8F5E9
+!define SERVICE_COLOR #E3F2FD
+!define EXTERNAL_COLOR #FFF3E0
+
+' タイトル
+title ユーザーフィードバック機能 - DriveBuddy
+
+' Blueprintクラス
+class ViewsBlueprint <<Blueprint>> SERVICE_COLOR {
+  --
+  【運転フィードバック表示】
+  +feedback_detail_result(session_id: str, pin_id: str): Response
+  +feedback_detail_completed(session_id: str, pin_id: str): Response
+  --
+  【ユーザーフィードバック収集】
+  +feedback_page(): Response
+  +feedback_log(): Response
+  +feedback_detail(feedback_id: str): Response
+}
+
+' 運転フィードバック（重点ポイント評価）
+class FocusFeedback <<Firestore Document>> ENTITY_COLOR {
+  +created_at: timestamp
+  +pin_label: str
+  +focus_type: str
+  +focus_label: str
+  +stats: StatisticsData
+  +diff: dict
+  +rating: str
+  +score: int
+  +ai_comment: str
+  +short_comment: str
+  +passed: bool
+}
+
+' ユーザーフィードバック（被験者評価）
+class UserFeedback <<Firestore Document>> ENTITY_COLOR {
+  +user_id: str
+  +real_name: str
+  +device_type: str
+  +browser: str
+  +browser_other: str
+  +drive_times: list~DriveTime~
+  +evaluations: EvaluationMap
+  +post_drive_feedback: PostFeedbackMap
+  +focus_point_evaluation: FocusPointMap
+  +map_pin_evaluation: MapPinMap
+  +solution_evaluation: SolutionMap
+  +advice_comment: str
+  +post_feedback_comment: str
+  +focus_point_comment: str
+  +map_pin_comment: str
+  +desired_features: str
+  +unclear_features: str
+  +difficult_operation: str
+  +overall_impression: str
+  +other_comments: str
+  +satisfaction: str
+  +image_base64_list: list~str~
+  +video_base64_list: list~str~
+  +created_at: timestamp
+}
+
+' 統計データ
+class StatisticsData <<Data Class>> ENTITY_COLOR {
+  +avg_speed: float
+  +mean_gx: float
+  +mean_gz: float
+  +std_gx: float
+  +std_gz: float
+  +max_gx: float
+  +max_gz: float
+  +acceleration_count: int
+  +deceleration_count: int
+  +sharp_turn_count: int
+  +data_points: int
+  ...
+}
+
+' 運転時間情報
+class DriveTime <<Data Class>> ENTITY_COLOR {
+  +start_datetime: str
+  +end_datetime: str
+}
+
+' 評価マップ（リアルタイムアドバイス）
+class EvaluationMap <<Data Class>> ENTITY_COLOR {
+  +hard_brake: str
+  +hard_curve: str
+  +hard_accel: str
+  +good_decel: str
+  +good_curve: str
+  +good_accel: str
+}
+
+' 運転後フィードバック評価
+class PostFeedbackMap <<Data Class>> ENTITY_COLOR {
+  +overall: str
+  +clarity: str
+  +accuracy: str
+  +helpfulness: str
+}
+
+' 重点ポイント評価
+class FocusPointMap <<Data Class>> ENTITY_COLOR {
+  +ease_view: str
+  +ease_edit: str
+  +ease_check: str
+}
+
+' マップピン評価
+class MapPinMap <<Data Class>> ENTITY_COLOR {
+  +ease_add: str
+  +ease_edit: str
+  +speak_useful: str
+  +advanced_settings: str
+}
+
+' 課題解決評価
+class SolutionMap <<Data Class>> ENTITY_COLOR {
+  +focus_awareness: str
+note right of ViewsBlueprint
+  画面遷移:
+  
+  【運転フィードバック表示】
+  1. /feedback_detail_result/<session_id>/<pin_id>
+     → feedback_detail_result.html
+     リザルト画面からの遷移
+  
+  2. /feedback_detail_completed/<session_id>/<pin_id>
+     → feedback_detail_completed.html
+     記録完了画面からの遷移
+  
+  【ユーザーフィードバック収集】
+  1. GET/POST /feedback
+     → user_feedback.html
+     被験者が評価を入力
+  
+  2. GET /feedback_log?start_date=xxx&end_date=xxx
+     → feedback_log.html
+     収集したフィードバックを集計表示
+  
+  3. GET /feedback_detail/<feedback_id>
+     → feedback_detail.html
+     個別フィードバック詳細表示
+end note
+
+note right of FocusFeedback
+  評価:
+  - rating: とてもいい/いい/ふつう/わるい/なし
+  - score: 0-100点（点数から評価決定）
+  
+  コメント:
+  - ai_comment: Gemini生成の詳細コメント
+  - short_comment: 要約コメント（3行）
+  
+  通過判定:
+  - passed: true/false（30m以内）
+end note
+  +focus_label: str
+  +lat: float
+  +lng: float
+}
+
+' Firestore
+class Firestore <<External>> EXTERNAL_COLOR {
+  --
+  +collection(name: str): CollectionReference
+  +document(path: str): DocumentReference
+  +where(field, op, value): Query
+  +order_by(field: str): Query
+  +limit(count: int): Query
+}
+
+' 関係性
+ViewsBlueprint ..> FocusFeedback : 取得/表示
+ViewsBlueprint ..> Session : 取得
+ViewsBlueprint ..> PriorityPin : 取得
+ViewsBlueprint ..> Firestore : データ取得
+FocusFeedback *-- StatisticsData : 含む
+Session "1" *-- "*" FocusFeedback : 含む
+FocusFeedback ..> PriorityPin : 参照
+
+' ノート
+note right of ViewsBlueprint
+  画面遷移:
+  
+  1. /user_feedback
+     → セッション一覧（完了済み）
+  
+  2. /feedback_log
+     → フィードバック一覧
+  
+  3. /feedback_detail/<session_id>
+     → セッション詳細
+  
+  4. /feedback_detail_result/<session_id>/<pin_id>
+     → 個別フィードバック詳細
+  
+  5. /feedback_detail_completed/<session_id>/<pin_id>
+     → 完了画面用詳細
+end note
+
+note right of FocusFeedback
+  評価:
+  - rating: とてもいい/いい/ふつう/わるい/なし
+  - score: 0-100点（点数から評価決定）
+  
+  コメント:
+
+note right of UserFeedback
+  ユーザーフィードバック項目:
+  
+  【基本情報】
+  - 実名、デバイス種類、ブラウザ
+  - 運転時間（複数記録可能）
+  
+  【評価項目】
+  1. リアルタイムアドバイス評価
+     急ブレーキ/急カーブ/急加速/
+     良い減速/良いカーブ/良い加速
+  
+  2. 運転後フィードバック評価
+     全体評価/明瞭性/正確性/有用性
+  
+  3. 重点ポイント設定評価
+     閲覧しやすさ/編集しやすさ/確認しやすさ
+  
+  4. マップピン機能評価
+     追加しやすさ/編集しやすさ/
+     読み上げ有用性/高度設定
+  
+  5. 課題解決評価
+     注意喚起/リアルタイム改善/参照頻度
+  
+  【自由記述】
+  - 各機能への感想
+  - 要望、不明点、操作困難点
+  - 全体印象、その他
+  
+  【添付ファイル】
+  - 画像（複数可、Base64）
+  - 動画（複数可、Base64）
+end note
+
+note bottom of DriveTime
+  運転時間の記録例:
+  {
+    "start_datetime": "2026-01-15 10:00",
+    "end_datetime": "2026-01-15 10:30"
+  }
+  
+  複数の運転記録を配列で保持
+end note
+
+note bottom of StatisticsData
+  詳細統計:
+  - 加速度（平均、標準偏差、最大、最小）
+  - 速度（平均、標準偏差、範囲）
+  - イベント回数（急加速、急ブレーキ、急ハンドル）
+  - データ点数、時系列トレンド
+end note
+
+@enduml

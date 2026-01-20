@@ -1,0 +1,670 @@
+@startuml ユーザーフィードバック機能（理想版）
+
+!define ENTITY_COLOR #E8F5E9
+!define SERVICE_COLOR #E3F2FD
+!define EXTERNAL_COLOR #FFF3E0
+!define ABSTRACT_COLOR #FFE0B2
+!define INTERFACE_COLOR #F3E5F5
+
+title ユーザーフィードバック機能(実装準拠版) - DriveBuddy
+
+' 抽象フィードバック基底クラス
+abstract class FeedbackBase <<Abstract>> ABSTRACT_COLOR {
+  #_session_id: str
+  #_user_id: str
+  #_created_at: timestamp
+  #_feedback_type: str
+  --
+  #{abstract} validate() -> bool: bool
+  #{abstract} to_dict() -> Dict[str, any]: dict
+  +get_session_id() -> str: str
+  +get_user_id() -> str: str
+  +get_created_at() -> timestamp: timestamp
+  +get_feedback_type() -> str: str
+  #_validate_session_exists() -> bool: bool
+  #_validate_user_exists() -> bool: bool
+}
+
+' フィードバック処理戦略インターフェース
+interface FeedbackProcessingStrategy <<Interface>> INTERFACE_COLOR {
+  +{abstract} process_feedback(feedback: FeedbackBase) -> Dict[str, any]: dict
+  +{abstract} generate_response(feedback: FeedbackBase) -> str: str
+  +{abstract} should_notify_user() -> bool: bool
+  +{abstract} get_processing_priority() -> int: int
+  +{abstract} validate_feedback_data(feedback: FeedbackBase) -> Tuple[bool, str]: tuple
+  +{abstract} process_async(feedback: FeedbackBase) -> asyncio.Task: Task
+}
+
+' Focus Feedback（AI運転評価）
+class FocusFeedback <<Firestore Subcollection>> ENTITY_COLOR {
+  +id: str (priority_pin_id)
+  +created_at: timestamp
+  +pin_label: str
+  +focus_type: str
+  +focus_label: str
+  +stats: StatisticsData
+  +diff: dict
+  +rating: str
+  +score: int
+  +ai_comment: str
+  +short_comment: str
+  +passed: bool
+  --
+  【親コレクション】
+  sessions/{session_id}/focus_feedbacks/
+  
+  【AI生成フィールド】
+  - ai_comment: Gemini 2.0 Flash生成
+  - short_comment: 要約版（2-3行）
+  - rating: ⭐⭐⭐⭐ / ⭐⭐⭐ / ⭐⭐ / ⭐ / なし
+  - score: 0-100点
+  
+  【統計フィールド】
+  - stats: 詳細統計（15項目以上）
+  - diff: 過去データとの比較
+  - passed: ピン通過判定（30m以内）
+}
+
+' User Feedback（ユーザーアンケート）
+class UserFeedback <<Firestore Document>> ENTITY_COLOR {
+  +id: str
+  +session_id: str
+  +user_id: str
+  +created_at: timestamp
+  +evaluation_maps: dict
+  +drive_times: list<str>
+  +feedback_text: str
+  +image_base64: str
+  +video_base64: str
+  +feedback_status: str
+  +ai_response: str
+  +ai_response_created_at: timestamp
+  --
+  【コレクション】
+  user_feedbacks/
+  
+  【評価マップ（5種類）】
+  1. 乗り心地: rating_comfort (1-5)
+  2. 燃費: rating_fuel (1-5)
+  3. 安全性: rating_safety (1-5)
+  4. 時間効率: rating_time (1-5)
+  5. ストレス: rating_stress (1-5)
+  
+  【運転頻度】
+  drive_times: ["朝", "夕方", "夜"]
+  
+  【メディア添付】
+  - image_base64: 写真（Base64）
+  - video_base64: 動画（Base64）
+  
+  【ステータス】
+  - pending: 未処理
+  - completed: AI応答済み
+}
+' AI運転評価処理戦略
+class AIFocusFeedbackStrategy <<Strategy>> SERVICE_COLOR {
+  -ai_evaluation: AIEvaluation
+  --
+  +process_feedback(feedback: FeedbackBase): dict
+  +generate_response(feedback: FeedbackBase): str
+  +should_notify_user(): bool
+  -analyze_driving_patterns(focus_feedback: FocusFeedback): dict
+}
+
+' ユーザーアンケート処理戦略
+class UserSurveyFeedbackStrategy <<Strategy>> SERVICE_COLOR {
+  -gemini_api: GeminiAPI
+  --
+  +process_feedback(feedback: FeedbackBase): dict
+  +generate_response(feedback: FeedbackBase): str
+  +should_notify_user(): bool
+  -integrate_with_focus_feedback(user_feedback: UserFeedback): dict
+}
+
+' フィードバックマネージャー
+class FeedbackManager <<Manager>> SERVICE_COLOR {
+  -db: FirestoreClient
+  -processing_strategies: dict
+  --
+  +save_focus_feedback(session_id: str, feedback: FocusFeedback): void
+  +save_user_feedback(feedback: UserFeedback): str
+  +get_feedbacks_by_session(session_id: str): list
+  +process_pending_feedbacks(): void
+  +set_strategy(feedback_type: str, strategy: FeedbackProcessingStrategy): void
+}
+' ViewsBlueprint（フィードバックAPI）
+class ViewsBlueprint <<Blueprint>> SERVICE_COLOR {
+  --
+  【Focus Feedback API】
+  +api_focus_feedbacks(session_id): JSON
+  +api_analyze_focus_points(session_id): JSON
+  --
+  【User Feedback API】
+  +api_save_user_feedback(): JSON
+  +api_user_feedback(session_id): JSON
+  +api_user_feedback_log(): JSON
+  --
+  【画面表示】
+  +user_feedback_page(session_id): render_template
+  +user_feedback_log_page(): render_template
+  +feedback_detail_page(session_id): render_template
+  +feedback_detail_result_page(feedback_id): render_template
+  +feedback_detail_completed_page(feedback_id): render_template
+}
+
+' AIEvaluation
+class AIEvaluation <<Module>> SERVICE_COLOR {
+  --
+  +analyze_focus_points_for_session(session_id, user_id): list
+  +generate_ai_focus_feedback(...): str
+  +summarize_feedback(ai_comment, diff_text): str
+}
+
+' Firestore
+class Firestore <<External>> EXTERNAL_COLOR {
+  --
+  +collection(name: str): CollectionReference
+  +document(path: str): DocumentReference
+  +set(data: dict)
+  +update(data: dict)
+  +where(filter): Query
+  +order_by(field): Query
+  +stream(): Iterator
+}
+
+' Gemini API
+class GeminiAPI <<External>> EXTERNAL_COLOR {
+  --
+  +GenerativeModel(model_name: str): GenerativeModel
+  +generate_content(prompt: str): Response
+}
+
+' 関係性
+FocusFeedback --|> FeedbackBase : 継承
+UserFeedback --|> FeedbackBase : 継承
+AIFocusFeedbackStrategy ..|> FeedbackProcessingStrategy : 実装
+UserSurveyFeedbackStrategy ..|> FeedbackProcessingStrategy : 実装
+FeedbackManager o-- FeedbackProcessingStrategy : 戦略保持
+ViewsBlueprint ..> FeedbackManager : 使用
+FeedbackManager ..> FocusFeedback : 取得/保存
+FeedbackManager ..> UserFeedback : 保存/取得
+AIFocusFeedbackStrategy ..> AIEvaluation : 呼び出し
+UserSurveyFeedbackStrategy ..> GeminiAPI : AI応答生成
+ViewsBlueprint ..> Firestore : データ操作
+AIEvaluation ..> FocusFeedback : 生成
+AIEvaluation ..> GeminiAPI : AI生成
+
+' ノート
+note right of FocusFeedback
+  【ai_evaluation.pyで生成】
+  
+  analyze_focus_points_for_session(session_id, user_id):
+    1. priority_pins取得
+    2. avg_g_logs取得
+    3. 各ピンについて:
+       - 通過判定（30m以内）
+       - 統計計算
+       - AI評価・採点
+       - Firestoreに保存
+  
+  【保存先】
+  sessions/{session_id}/focus_feedbacks/{pin_id}
+  
+  【focus_type一覧】
+  - brake_soft: 穏やかな減速
+  - stop_smooth: 停止直前の滑らかさ
+  - accel_smooth: 滑らかな発進
+  - turn_stability: カーブの安定性
+  - smooth_overall: 直進の安定性
+  - speed_consistency: 一定速度の維持
+  
+  【rating評価】
+  95点以上: とてもいい ⭐⭐⭐⭐
+  80点以上: いい ⭐⭐⭐
+  60点以上: ふつう ⭐⭐
+  60点未満: わるい ⭐
+  0点: なし（未通過）
+  
+  【ai_comment例】
+  「今回の減速操作は非常にスムーズでした。
+  平均加速度0.12G、標準偏差0.04Gと、
+  前回と比較して20%改善しています。
+  この調子で穏やかな運転を継続してください。」
+  
+  【short_comment例】
+  「とても滑らかな減速でした。
+  前回より20%改善しています。」
+end note
+
+note right of UserFeedback
+  【ユーザーアンケート機能】
+  
+  目的:
+  - ユーザーの主観的評価収集
+  - AI評価との比較分析
+  - 運転パターン分析
+  
+  【入力画面: user_feedback.html】
+  
+  1. 5段階評価（5種類）
+     - 乗り心地: ⭐⭐⭐⭐⭐
+     - 燃費: ⭐⭐⭐⭐
+     - 安全性: ⭐⭐⭐⭐⭐
+     - 時間効率: ⭐⭐⭐
+     - ストレス: ⭐⭐
+  
+  2. 運転時間帯（複数選択）
+     □ 朝 □ 昼 □ 夕方 □ 夜
+  
+  3. フリーテキスト
+     「今日の運転で気になったこと」
+  
+  4. メディア添付
+     - カメラで写真撮影
+     - ビデオ録画
+  
+  【保存形式】
+  {
+    "evaluation_maps": {
+      "rating_comfort": 5,
+      "rating_fuel": 4,
+      "rating_safety": 5,
+      "rating_time": 3,
+      "rating_stress": 2
+    },
+    "drive_times": ["朝", "夕方"],
+    "feedback_text": "渋滞が多かった",
+    "image_base64": "data:image/png;base64,...",
+    "video_base64": "data:video/mp4;base64,...",
+    "feedback_status": "pending"
+  }
+end note
+
+note bottom of ViewsBlueprint
+  【api_save_user_feedback実装】
+  
+  @views_bp.route('/api/save_user_feedback', methods=['POST'])
+  @login_required
+  def api_save_user_feedback():
+      data = request.json
+      user_id = current_user.uid
+      
+      feedback_ref = db.collection("user_feedbacks")
+                       .document()
+      
+      feedback_ref.set({
+          'session_id': data['session_id'],
+          'user_id': user_id,
+          'created_at': firestore.SERVER_TIMESTAMP,
+          'evaluation_maps': data.get('evaluation_maps', {}),
+          'drive_times': data.get('drive_times', []),
+          'feedback_text': data.get('feedback_text', ''),
+          'image_base64': data.get('image_base64', ''),
+          'video_base64': data.get('video_base64', ''),
+          'feedback_status': 'pending'
+      })
+      
+      return jsonify({
+          'status': 'success',
+          'feedback_id': feedback_ref.id
+      })
+  
+  【api_user_feedback実装】
+  
+  @views_bp.route('/api/user_feedback/<session_id>')
+  @login_required
+  def api_user_feedback(session_id):
+      user_id = current_user.uid
+      
+      feedbacks = db.collection("user_feedbacks")
+                    .where('session_id', '==', session_id)
+                    .where('user_id', '==', user_id)
+                    .stream()
+      
+      result = []
+      for fb in feedbacks:
+          data = fb.to_dict()
+          data['id'] = fb.id
+          result.append(data)
+      
+      return jsonify({
+          'status': 'success',
+          'feedbacks': result
+      })
+  
+  【api_user_feedback_log実装】
+  
+  @views_bp.route('/api/user_feedback_log')
+  @login_required
+  def api_user_feedback_log():
+      user_id = current_user.uid
+      
+      feedbacks = db.collection("user_feedbacks")
+                    .where('user_id', '==', user_id)
+                    .order_by('created_at', direction='DESCENDING')
+                    .limit(50)
+                    .stream()
+      
+      result = []
+      for fb in feedbacks:
+          data = fb.to_dict()
+          data['id'] = fb.id
+          
+          # セッション情報取得
+          session = db.collection("sessions")
+                      .document(data['session_id'])
+                      .get()
+          if session.exists:
+              data['session'] = session.to_dict()
+          
+          result.append(data)
+      
+      return jsonify({
+          'status': 'success',
+          'feedbacks': result
+      })
+end note
+
+note bottom of AIEvaluation
+  【Focus Feedback生成フロー】
+  
+  analyze_focus_points_for_session(session_id, user_id):
+    
+    results = []
+    
+    # 1. priority_pins取得
+    pins = db.collection("priority_pins")
+             .where('user_id', '==', user_id)
+             .stream()
+    
+    # 2. avg_g_logs取得
+    logs = get_avg_g_logs_for_session(session_id)
+    
+    # 3. 各ピンについて処理
+    for pin in pins:
+        pin_data = pin.to_dict()
+        pin_id = pin.id
+        
+        # a. 通過判定
+        passed, closest_log = check_pin_passed(
+            pin_data, logs, threshold_m=30
+        )
+        
+        if not passed:
+            # 未通過 → NOT_PASSED
+            feedback = create_not_passed_feedback(pin_data)
+        else:
+            # b. 時間窓取得
+            before_sec, after_sec = get_time_window_for_focus(
+                pin_data['focus_type']
+            )
+            
+            # c. データ抽出
+            window_logs = extract_time_window(
+                logs, closest_log.timestamp,
+                before_sec, after_sec
+            )
+            
+            # d. 統計計算
+            stats = calculate_detailed_stats(
+                window_logs['gx'],
+                window_logs['gz'],
+                window_logs['speeds']
+            )
+            
+            # e. 評価・採点
+            rating, score = get_focus_rating(
+                stats, pin_data['focus_type']
+            )
+            
+            # f. 履歴取得
+            history = get_historical_stats(
+                user_id, session_id, pin_id, limit=5
+            )
+            
+            # g. 比較分析
+            diff, diff_text = compare_focus_stats(
+                history, stats
+            )
+            
+            # h. AIコメント生成
+            ai_comment = generate_ai_focus_feedback(
+                pin_data['focus_type'],
+                stats, diff_text, rating, score
+            )
+            
+            # i. 要約生成
+            short_comment = summarize_feedback(
+                ai_comment, diff_text
+            )
+            
+            # j. フィードバック構築
+            feedback = {
+                'pin_label': pin_data['label'],
+                'focus_type': pin_data['focus_type'],
+                'focus_label': pin_data['focus_label'],
+                'stats': stats,
+                'diff': diff,
+                'rating': rating,
+                'score': score,
+                'ai_comment': ai_comment,
+                'short_comment': short_comment,
+                'passed': True,
+                'created_at': firestore.SERVER_TIMESTAMP
+            }
+        
+        # k. Firestoreに保存
+        db.collection("sessions")
+          .document(session_id)
+          .collection("focus_feedbacks")
+          .document(pin_id)
+          .set(feedback)
+        
+        results.append(feedback)
+    
+    return results
+end note
+
+note left of Firestore
+  【Focus Feedbacks取得】
+  
+  feedbacks_ref = db.collection("sessions")
+                    .document(session_id)
+                    .collection("focus_feedbacks")
+  
+  feedbacks = list(feedbacks_ref.stream())
+  
+  for fb in feedbacks:
+      data = fb.to_dict()
+      data['id'] = fb.id
+      print(f"Pin: {data['pin_label']}")
+      print(f"Score: {data['score']}")
+      print(f"Rating: {data['rating']}")
+      print(f"AI Comment: {data['ai_comment']}")
+  
+  【User Feedbacks取得】
+  
+  feedbacks = db.collection("user_feedbacks")
+                .where('user_id', '==', user_id)
+                .order_by('created_at', direction='DESCENDING')
+                .stream()
+  
+  【データ構造】
+  
+  sessions/
+    {session_id}/
+      focus_feedbacks/
+        {pin_id}/
+          - created_at
+          - pin_label
+          - stats
+          - rating
+          - score
+          - ai_comment
+  
+  user_feedbacks/
+    {feedback_id}/
+      - session_id
+      - user_id
+      - evaluation_maps
+      - drive_times
+      - feedback_text
+      - image_base64
+      - video_base64
+end note
+
+note left of GeminiAPI
+  【AI応答生成（将来実装）】
+  
+  目的:
+  - ユーザーフィードバックへの自動返信
+  - Focus FeedbackとUser Feedbackの統合分析
+  
+  実装案:
+  
+  def generate_user_feedback_response(
+      feedback_id: str
+  ) -> str:
+      # User Feedback取得
+      uf_ref = db.collection("user_feedbacks")
+                 .document(feedback_id)
+      uf = uf_ref.get().to_dict()
+      
+      # Focus Feedbacks取得
+      ffs = db.collection("sessions")
+              .document(uf['session_id'])
+              .collection("focus_feedbacks")
+              .stream()
+      
+      # プロンプト構築
+      prompt = f"""
+      ユーザーの主観評価:
+      - 乗り心地: {uf['evaluation_maps']['rating_comfort']}
+      - 燃費: {uf['evaluation_maps']['rating_fuel']}
+      ...
+      
+      ユーザーコメント:
+      {uf['feedback_text']}
+      
+      AI運転評価:
+      {[ff['ai_comment'] for ff in ffs]}
+      
+      上記を統合して、ユーザーへの
+      フィードバックを生成してください。
+      """
+      
+      # Gemini呼び出し
+      model = genai.GenerativeModel("gemini-2.0-flash")
+      response = model.generate_content(prompt)
+      
+      # 保存
+      uf_ref.update({
+          'ai_response': response.text,
+          'ai_response_created_at': firestore.SERVER_TIMESTAMP,
+          'feedback_status': 'completed'
+      })
+      
+      return response.text
+end note
+
+note top of ViewsBlueprint
+  【画面遷移フロー】
+  
+  1. セッション終了
+     → recording_completed.html
+  
+  2. 「結果を見る」ボタン
+     → result.html
+     （overall_score表示）
+  
+  3. 「詳細を見る」ボタン
+     → detail_result.html
+     （jerk_stats、focus_feedbacks表示）
+  
+  4. 「フィードバックを送る」ボタン
+     → user_feedback.html
+     （5段階評価、テキスト入力、メディア添付）
+  
+  5. 送信
+     → feedback_detail.html
+     （送信完了確認）
+  
+  6. 「フィードバック履歴」
+     → feedback_log.html
+     （過去のフィードバック一覧）
+  
+  7. フィードバック選択
+     → feedback_detail_result.html
+     （AI応答表示）
+  
+  【API呼び出しタイミング】
+  
+  - detail_result.html読み込み時:
+    api_focus_feedbacks(session_id)
+  
+  - AI評価ボタンクリック時:
+    api_analyze_focus_points(session_id)
+  
+  - フィードバック送信時:
+    api_save_user_feedback()
+  
+  - 履歴画面読み込み時:
+    api_user_feedback_log()
+end note
+
+note bottom of FocusFeedback
+  【データ例】
+  
+  {
+    "id": "pin_abc123",
+    "created_at": Timestamp(...),
+    "pin_label": "交差点A",
+    "focus_type": "brake_soft",
+    "focus_label": "穏やかな減速",
+    "stats": {
+      "mean_gz": -0.15,
+      "std_gz": 0.04,
+      "max_gz": -0.28,
+      "min_gz": -0.05,
+      "data_points": 80,
+      ...
+    },
+    "diff": {
+      "mean_gz_change": -0.03,
+      "std_gz_change": -0.01,
+      "improvement_rate": 0.20
+    },
+    "rating": "とてもいい ⭐⭐⭐⭐",
+    "score": 96,
+    "ai_comment": "今回の減速操作は...",
+    "short_comment": "とても滑らかな減速でした。",
+    "passed": true
+  }
+end note
+
+note bottom of UserFeedback
+  【データ例】
+  
+  {
+    "id": "feedback_xyz789",
+    "session_id": "session_abc123",
+    "user_id": "user_def456",
+    "created_at": Timestamp(...),
+    "evaluation_maps": {
+      "rating_comfort": 5,
+      "rating_fuel": 4,
+      "rating_safety": 5,
+      "rating_time": 3,
+      "rating_stress": 2
+    },
+    "drive_times": ["朝", "夕方"],
+    "feedback_text": "今日は渋滞が多く、ストレスを感じた。",
+    "image_base64": "data:image/png;base64,iVBORw0...",
+    "video_base64": "",
+    "feedback_status": "pending",
+    "ai_response": null,
+    "ai_response_created_at": null
+  }
+end note
+
+@enduml

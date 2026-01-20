@@ -1,0 +1,153 @@
+@startuml AI評価・フィードバック機能
+
+!define ENTITY_COLOR #E8F5E9
+!define SERVICE_COLOR #E3F2FD
+!define EXTERNAL_COLOR #FFF3E0
+
+' タイトル
+title AI評価・フィードバック機能 - ドライブバディ
+
+' メインモジュール
+class AIEvaluation <<Module>> SERVICE_COLOR {
+  --
+  +get_gemini_model(model_name: str): GenerativeModel
+  +get_time_window_for_focus(focus_type: str): tuple
+  +get_focus_rating(stats: dict, focus_type: str): tuple
+  +calculate_detailed_stats(gx_vals, gz_vals, speeds): dict
+  +get_historical_stats(user_id, session_id, pin_id, limit): list
+  +compare_focus_stats(prev_stats, current_stats): tuple
+  +generate_ai_focus_feedback(...): str
+  +summarize_feedback(ai_comment, diff_text): str
+  +analyze_focus_points_for_session(session_id, user_id): dict
+}
+
+' 評価タイプ
+enum FocusType <<Enumeration>> {
+  brake_soft
+  stop_smooth
+  accel_smooth
+  turn_stability
+  smooth_overall
+  speed_consistency
+}
+
+' 統計データ
+class StatisticsData <<Data Class>> ENTITY_COLOR {
+  +avg_speed: float
+  +mean_gx: float
+  +mean_gz: float
+  +std_gx: float
+  +std_gz: float
+  +max_gx: float
+  +max_gz: float
+  +min_gx: float
+  +min_gz: float
+  +median_gx: float
+  +median_gz: float
+  +std_speed: float
+  +max_speed: float
+  +min_speed: float
+  +median_speed: float
+  +speed_range: float
+  +acceleration_count: int
+  +deceleration_count: int
+  +sharp_turn_count: int
+  +data_points: int
+  +gx_stability_trend: float
+  +gz_stability_trend: float
+}
+
+' 評価結果
+class FocusFeedback <<Firestore Document>> ENTITY_COLOR {
+  +created_at: timestamp
+  +pin_label: str
+  +focus_type: str
+  +focus_label: str
+  +stats: StatisticsData
+  +diff: dict
+  +rating: str
+  +score: int
+  +ai_comment: str
+  +short_comment: str
+  +passed: bool
+}
+
+' Gemini API
+class GeminiAPI <<External>> EXTERNAL_COLOR {
+  --
+  +configure(api_key: str)
+  +GenerativeModel(model_name: str): GenerativeModel
+}
+
+class GenerativeModel <<External>> EXTERNAL_COLOR {
+  --
+  +generate_content(prompt: str): Response
+}
+
+' Firestore
+class Firestore <<External>> EXTERNAL_COLOR {
+  --
+  +collection(name: str): CollectionReference
+  +get(): DocumentSnapshot
+  +set(data: dict)
+}
+
+' NumPy
+class NumPy <<External>> EXTERNAL_COLOR {
+  --
+  +array(data: list): ndarray
+  +mean(arr): float
+  +std(arr): float
+  +median(arr): float
+  +max(arr): float
+  +min(arr): float
+}
+
+' 関係性
+AIEvaluation ..> FocusType : 評価タイプ判定
+AIEvaluation ..> StatisticsData : 統計計算
+AIEvaluation ..> FocusFeedback : 生成
+AIEvaluation ..> GeminiAPI : API初期化
+AIEvaluation ..> GenerativeModel : コメント生成
+AIEvaluation ..> Firestore : データ取得/保存
+AIEvaluation ..> NumPy : 統計計算
+FocusFeedback *-- StatisticsData : 含む
+
+' ノート
+note right of AIEvaluation
+  主要関数:
+  - analyze_focus_points_for_session()
+    セッション全体の評価
+  - get_focus_rating()
+    点数・評価算出
+  - generate_ai_focus_feedback()
+    Geminiコメント生成
+end note
+
+note right of FocusType
+  評価タイプ:
+  - brake_soft: やさしいブレーキ
+  - stop_smooth: スムーズな停止
+  - accel_smooth: スムーズな加速
+  - turn_stability: 安定したカーブ
+  - smooth_overall: 全体の滑らかさ
+  - speed_consistency: 速度の一定性
+end note
+
+note bottom of StatisticsData
+  各重点ポイントで計算:
+  - 平均値、標準偏差
+  - 最大値、最小値、中央値
+  - 急加速/急ブレーキ/急ハンドル回数
+  - 時系列安定性トレンド
+end note
+
+note bottom of FocusFeedback
+  評価:
+  - 95点以上: とてもいい ⭐⭐⭐⭐
+  - 80点以上: いい ⭐⭐⭐
+  - 60点以上: ふつう ⭐⭐
+  - 60点未満: わるい ⭐
+end note
+
+@enduml
