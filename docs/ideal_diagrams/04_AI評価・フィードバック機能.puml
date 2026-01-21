@@ -109,20 +109,21 @@ class GeminiAIStrategy <<Strategy>> SERVICE_COLOR {
   -_validate_api_key() -> bool: bool
 }
 
-' 運転統計計算器
-class DrivingStatisticsCalculator <<Calculator>> SERVICE_COLOR {
+' 詳細統計計算器
+class DetailedStatisticsCalculator <<Calculator>> SERVICE_COLOR {
   -_confidence_threshold: int = 10
   -_cache: Dict[str, dict]
+  +MIN_SAMPLE_SIZE: int = 2
+  +THRESHOLD_ACCELERATION: float = 0.25
   +PRECISION: int = 4
-  +ACCELERATION_THRESHOLD: float = 0.25
-  +SHARP_TURN_THRESHOLD: float = 0.25
   --
-  +calculate(data: List[dict]) -> Dict[str, float]: dict
+  +calculate(gx_vals: np.ndarray, gz_vals: np.ndarray, speeds: np.ndarray) -> Dict[str, float]: dict
   +validate_sample_size(data: List[dict]) -> bool: bool
   +get_confidence_level() -> float: float
   +clear_cache() -> None: void
   -_calculate_events(gx: np.ndarray, gz: np.ndarray) -> Dict[str, int]: dict
-  -_calculate_trends(data: List[float]) -> Dict[str, float]: dict
+  -_calculate_trends(data: np.ndarray) -> Dict[str, float]: dict
+  -_calculate_stability(gx: np.ndarray, gz: np.ndarray) -> float: float
   -_round_result(value: float, precision: int) -> float: float
   -_handle_calculation_error(error: Exception) -> Dict[str, float]: dict
 }
@@ -230,10 +231,10 @@ class PriorityPin <<Firestore Document>> ENTITY_COLOR {
 ' 関係性
 FocusEvaluator --|> EvaluatorBase : 継承
 GeminiAIStrategy ..|> AIGenerationStrategy : 実装
-DrivingStatisticsCalculator ..|> StatisticsCalculator : 実装
+DetailedStatisticsCalculator ..|> StatisticsCalculator : 実装
 AIEvaluation ..> FocusEvaluator : 使用
 AIEvaluation ..> GeminiAIStrategy : 使用
-AIEvaluation ..> DrivingStatisticsCalculator : 使用
+AIEvaluation ..> DetailedStatisticsCalculator : 使用
 FocusEvaluator o-- FocusType : フォーカス保持
 FocusEvaluator ..> StatisticsCalculator : 統計委譲
 AIEvaluation ..> StatisticsData : 統計計算
@@ -241,7 +242,7 @@ AIEvaluation ..> FocusFeedback : 生成
 GeminiAIStrategy ..> GeminiAPI : API初期化
 GeminiAIStrategy ..> GenerativeModel : コメント生成
 AIEvaluation ..> Firestore : データ取得/保存
-DrivingStatisticsCalculator ..> NumPy : 統計計算
+DetailedStatisticsCalculator ..> NumPy : 統計計算
 AIEvaluation ..> PriorityPin : 参照
 FocusFeedback *-- StatisticsData : 含む
 GeminiAPI ..> GenerativeModel : 提供
@@ -280,6 +281,96 @@ note right of AIEvaluation
   【エラー処理】
   try-exceptで各ピン個別にエラー処理
   失敗したピンはスキップして続行
+end note
+
+note right of FocusEvaluator
+  【FocusEvaluator実装】
+  
+  コンストラクタ:
+  - focus_type: str
+  - statistics_calculator: StatisticsCalculator
+  - score_cache: Dict[str, float]
+  
+  evaluate(data):
+    1. データ検証 validate_data()
+    2. 統計計算委譲 statistics_calculator.calculate()
+    3. スコア計算 calculate_score()
+    4. 評価レベル取得 get_rating_from_score()
+    5. 結果辞書返却
+  
+  calculate_score(stats):
+    1. フォーカス基準適用 _apply_focus_criteria()
+    2. スコア制限 _clamp_score(40, 100)
+    3. キャッシュ保存
+  
+  get_rating_from_score(score):
+    95以上 → "とてもいい"
+    80以上 → "いい"
+    60以上 → "ふつう"
+    40以上 → "わるい"
+    0 → "なし"
+end note
+
+note right of GeminiAIStrategy
+  【GeminiAIStrategy実装】
+  
+  コンストラクタ:
+  - model_name: str = "gemini-2.0-flash"
+  - api_key: Optional[str]
+  - prompt_template: str
+  - MAX_RETRIES: int = 3
+  - TIMEOUT_SECONDS: int = 30
+  - MAX_TOKENS: int = 500
+  
+  generate_comment(stats, context):
+    1. API キー検証 _validate_api_key()
+    2. プロンプト構築 _build_prompt()
+    3. モデル初期化（初回のみ）
+    4. リトライ付き生成 _retry_with_backoff()
+    5. レスポンス解析
+  
+  _build_prompt(stats, context):
+    - focus_type の説明
+    - 現在の統計データ
+    - 過去データとの比較 diff_text
+    - 評価点数と rating
+    - 出力フォーマット指示
+  
+  summarize(text, max_length):
+    1. 要約プロンプト作成
+    2. Gemini に要約依頼
+    3. max_length 制限適用
+end note
+
+note right of DetailedStatisticsCalculator
+  【DetailedStatisticsCalculator実装】
+  
+  calculate(gx_vals, gz_vals, speeds):
+    1. サンプルサイズ検証 validate_sample_size()
+    2. 基本統計計算:
+       - mean, std, max, min, median
+       - gx, gz, speed それぞれ
+    3. イベントカウント _calculate_events():
+       - acceleration_count (gz > 0.25)
+       - brake_count (gz < -0.25)
+       - sharp_turn_count (|gx| > 0.25)
+    4. 安定性トレンド _calculate_trends():
+       - gx_stability_trend
+       - gz_stability_trend
+       - speed_stability_trend
+    5. 総合安定性 _calculate_stability()
+    6. 丸め処理 _round_result(precision=4)
+    7. 結果辞書返却（18項目以上）
+  
+  validate_sample_size(data):
+    len(data) >= MIN_SAMPLE_SIZE (2)
+  
+  get_confidence_level():
+    データ点数に基づく信頼度
+    10点以上 → 1.0
+    5-9点 → 0.7
+    2-4点 → 0.5
+    1点以下 → 0.0
 end note
 
 note right of FocusType

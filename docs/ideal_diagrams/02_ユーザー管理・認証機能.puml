@@ -28,8 +28,6 @@ interface AuthenticationStrategy <<Interface>> INTERFACE_COLOR {
   +{abstract} authenticate(username: str, password: str) -> Optional[User]: User
   +{abstract} create_user(username: str, password: str, email: Optional[str] = None) -> User: User
   +{abstract} validate_credentials(credentials: Dict[str, str]) -> bool: bool
-  +{abstract} validate_password_strength(password: str) -> Tuple[bool, str]: tuple
-  +{abstract} is_user_locked(username: str) -> bool: bool
 }
 
 ' モデルクラス
@@ -72,22 +70,12 @@ class AuthBlueprint <<Blueprint>> SERVICE_COLOR {
 class BcryptAuthStrategy <<Strategy>> SERVICE_COLOR {
   -_bcrypt: Bcrypt
   -_db: FirestoreClient
-  -_failed_attempts: Dict[str, int]
-  +SALT_ROUNDS: int = 12
-  +MAX_FAILED_ATTEMPTS: int = 5
-  +LOCKOUT_DURATION_MINUTES: int = 30
-  +MIN_PASSWORD_LENGTH: int = 8
   --
   +authenticate(username: str, password: str) -> Optional[User]: User
   +create_user(username: str, password: str, email: Optional[str] = None) -> User: User
   +validate_credentials(credentials: Dict[str, str]) -> bool: bool
-  +validate_password_strength(password: str) -> Tuple[bool, str]: tuple
-  +is_user_locked(username: str) -> bool: bool
   -_hash_password(password: str) -> str: str
   -_verify_password(password: str, hash: str) -> bool: bool
-  -_increment_failed_attempts(username: str) -> None: void
-  -_reset_failed_attempts(username: str) -> None: void
-  -_check_password_complexity(password: str) -> bool: bool
 }
 
 ' Firebase認証戦略
