@@ -77,17 +77,7 @@ class BcryptAuthStrategy(AuthenticationStrategy):
     
     def create_user(self, username: str, password: str, email: Optional[str] = None) -> User:
         """新規ユーザーを作成"""
-        # パスワード強度検証
-        is_valid, message = self.validate_password_strength(password)
-        if not is_valid:
-            raise ValueError(f"Invalid password: {message}")
-        
         # ユーザー名重複チェック
-        users_ref = self._db.collection('users')
-        existing_user_query = users_ref.where(filter=FieldFilter('username', '==', username)).limit(1).stream()
-        existing_users = list(existing_user_query)
-        
-        ifユーザー名重複チェック
         users_ref = self._db.collection('users')
         existing_user_query = users_ref.where(filter=FieldFilter('username', '==', username)).limit(1).stream()
         existing_users = list(existing_user_query)
@@ -111,7 +101,17 @@ class BcryptAuthStrategy(AuthenticationStrategy):
                 'username': username,
                 'email': user_email,
                 'created_at': firestore.SERVER_TIMESTAMP,
-                'password_hash': hashed_passwordials: Dict[str, str]) -> bool:
+                'password_hash': hashed_password,
+                'last_login': None
+            })
+            
+            return User(user_uid, username, user_email)
+            
+        except Exception as e:
+            print(f"❌ User creation failed for {username}: {str(e)}")
+            raise
+    
+    def validate_credentials(self, credentials: Dict[str, str]) -> bool:
         """認証情報の基本検証"""
         required_fields = ['username', 'password']
         if not all(field in credentials for field in required_fields):
@@ -125,13 +125,7 @@ class BcryptAuthStrategy(AuthenticationStrategy):
             return False
         
         # パスワード検証
-        if not password or len(password) < self.MIN_PASSWORD_LENGTH:
-            return False
-        
-        return True
-    
-    def validate_password_strength(self, password: str) -> Tuple[bool, str]:
-        """パスワード強度を検証"""3:
+        if not password or len(password) < 3:
             return False
         
         return True
@@ -143,6 +137,12 @@ class BcryptAuthStrategy(AuthenticationStrategy):
     def _verify_password(self, password: str, password_hash: str) -> bool:
         """パスワードを検証"""
         return self._bcrypt.check_password_hash(password_hash, password)
+
+
+# ===== 初期化関数 =====
+def init_auth(bcrypt: Bcrypt):
+    """認証モジュールの初期化（bcryptインスタンスを受け取る）"""
+    global bcrypt_instance, auth_strategy
     bcrypt_instance = bcrypt
     auth_strategy = BcryptAuthStrategy(bcrypt, db)
     print("✅ Auth module initialized with BcryptAuthStrategy")
@@ -186,11 +186,6 @@ def login():
         password = request.form['password']
         
         try:
-            # アカウントロックチェック
-            if auth_strategy.is_user_locked(username):
-                flash(f'アカウントがロックされています。{BcryptAuthStrategy.LOCKOUT_DURATION_MINUTES}分後に再試行してください。')
-                return redirect(url_for('auth.login'))
-            
             # 認証実行
             user = auth_strategy.authenticate(username, password)
             
