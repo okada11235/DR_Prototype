@@ -83,7 +83,7 @@ class BcryptAuthStrategy(AuthenticationStrategy):
         existing_users = list(existing_user_query)
         
         if existing_users:
-            raise ValueError("Username already exists")
+            raise ValueError("入力されたユーザー名は既に存在しています。")
         
         try:
             # Firebase Authentication でユーザー作成

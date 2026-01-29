@@ -27,40 +27,532 @@ tailwind.config = {
   }
 }
 </script>
+<style>
+  /* 画面幅いっぱいの正円ボウル（最大幅 420px くらいに制限） */
+  #gBowlArea {
+      position: relative;
+      width: 100%;
+      max-width: 420px;
+      aspect-ratio: 1 / 1;
+      border-radius: 50%;
+      background: radial-gradient(circle,
+          #303030 0%,
+          #222 70%,
+          #111 100%);
+      border: 2px solid #555;
+      z-index: 10;
+      margin: 0 auto;
+      display: block;      /* ← これを追加 */
+      transition: opacity 0.2s ease;
+  }
+
+  /* 中のロボボール */
+  #gBall {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    overflow: hidden;
+    z-index: 5;
+    background: orange;
+  }
+
+  .gBallImg {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  /* Gリング */
+  .gRing {
+    position: absolute;
+    border: 1.4px solid rgba(255,255,255,0.35);
+    border-radius: 50%;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 1;
+  }
+
+  /* リングコンテナ */
+  #gRings {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* ラベル */
+  .gLabel {
+    position: absolute;
+    color: #8b8b8b;
+    font-size: 12px;
+    font-weight: 700;
+    pointer-events: none;
+    z-index: 2;
+    padding: 2px 4px;
+    border-radius: 4px;
+    transform: translate(-50%, -50%); /* 中央基準にする */
+  }
+
+  #gTrailCanvas {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 2;   /* ボウル < 軌跡 < ボール */
+    pointer-events: none;
+  }
+</style>
 </head>
 <body class="bg-bg-light text-gray-800 font-sans flex flex-col items-center justify-center min-h-screen p-4">
 
-  <h1 class="text-3xl font-bold text-primary-green mb-6">記録中</h1>
-
-  <!-- キャラアイコン -->
-  <div class="w-36 h-36 rounded-full bg-white shadow-md flex items-center justify-center overflow-hidden mb-6">
-    <img src="{{ url_for('static', filename='img/robot_active.png') }}" alt="ロボット" class="object-cover w-full h-full">
+  <!-- 記録中タイトル（スタート後に表示） -->
+  <div id="recordingHeader"
+      class="flex items-center gap-4 text-primary-green text-3xl font-bold mt-6 mb-4"
+      style="display:none;">
+    <span>記録中</span>
+    <span id="timer" class="text-gray-700 text-2xl font-bold">00:00</span>
   </div>
 
-  <!-- 情報ボックス -->
-  <div class="flex justify-center gap-6 mb-6">
-    <div class="bg-card-light rounded-lg px-6 py-3 shadow">
-      <p class="text-sm text-gray-700">速度</p>
-      <p class="text-2xl font-bold"><span id="speed">0.0</span> km/h</p>
-    </div>
-    <div class="bg-card-light rounded-lg px-6 py-3 shadow text-center">
-      <p class="text-sm text-gray-700">記録時間</p>
-      <p class="text-2xl font-bold" id="timer">00:00</p>
-    </div>
+  <!-- G-Bowl エリア（スタート後に表示） -->
+  <div id="gBowlArea" class="mt-2 opacity-0 transition-opacity duration-300">
+      <!-- Gボールの軌道 -->
+      <canvas id="gTrailCanvas"></canvas>
+      <!-- Gボール（ロボ画像） -->
+      <div id="gBall">
+        <img src="{{ url_for('static', filename='img/robot_orange.png') }}" class="gBallImg">
+      </div>
+
+      <!-- G目盛リング（JSで生成する）-->
+      <div id="gRings"></div>
   </div>
 
-  <!-- G値 -->
-  <div class="bg-card-light rounded-lg p-4 text-gray-800 shadow mb-8 w-72 text-center">
-    横G：<span id="g-x">0.00</span>
-    前後G：<span id="g-z">0.00</span>
-    上下G：<span id="g-y">0.00</span>
+  <!-- ==== G値リアルタイム表示 ==== -->
+  <div id="gValueDisplay"
+      class="mt-4 text-center text-xl font-bold text-gray-800"
+      style="display:none;">
+    <div>横G (gx): <span id="g-x">0.00</span></div>
+    <div>上下G (gy): <span id="g-z">0.00</span></div>
+    <div>前後G (gz): <span id="g-y">0.00</span></div>
   </div>
 
-  <!-- 停止ボタン -->
-  <button id="StopBtn"
-          class="bg-danger-red text-white text-xl font-bold py-3 px-10 rounded-xl shadow-lg hover:bg-red-500 transition">
-    記録を終了する
+  <!-- スタートボタン（最初のタッチ用） -->
+  <button id="startBtn"
+    class="bg-primary-green text-white text-3xl font-bold rounded-full shadow-lg hover:bg-cyan-400 transition"
+    style="width: 220px; height: 220px;">
+    スタート
   </button>
+
+  <!-- コントロールボタンエリア（スタート後に表示） -->
+  <div id="controlButtons" style="display:none;" class="flex gap-6 mt-8 mb-4">
+    <!-- 一時停止ボタン -->
+    <button id="pauseBtn"
+      class="bg-yellow-500 text-white text-xl font-bold rounded-xl shadow-lg hover:bg-yellow-400 transition"
+      style="min-width: 150px; min-height: 70px; padding: 16px 24px;">
+      一時停止
+    </button>
+    
+    <!-- 終了ボタン -->
+    <button id="StopBtn"
+            class="bg-danger-red text-white text-xl font-bold rounded-xl shadow-lg hover:bg-red-500 transition"
+            style="min-width: 150px; min-height: 70px; padding: 16px 24px;">
+      終了
+    </button>
+  </div>
+
+  <!-- 一時停止中の表示（オーバーレイ内に再開ボタンを配置し、オーバーレイがクリックを妨げないようにする） -->
+  <div id="pausedOverlay" style="display:none;" class="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
+    <div class="bg-white rounded-xl p-8 shadow-lg text-center">
+      <div class="text-2xl font-bold text-primary-green mb-6">記録は一時停止中です</div>
+      <button id="resumeBtn" class="bg-primary-green text-white text-xl font-bold rounded-xl shadow-lg hover:bg-cyan-400 transition"
+              style="min-width: 150px; min-height: 70px; padding: 16px 32px;">
+        再開
+      </button>
+    </div>
+  </div>
+
+  <button onclick="setPlaybackRate(1)">×1</button>
+  <button onclick="setPlaybackRate(2)">×2</button>
+  <button onclick="setPlaybackRate(4)">×4</button>
+
+  <!-- スタートボタンの動作 -->
+  <script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const startBtn = document.getElementById("startBtn");
+    const pauseBtn = document.getElementById("pauseBtn");
+    const endBtn   = document.getElementById("end-button");
+
+    let hasStarted = false;
+
+    startBtn.addEventListener("click", async () => {
+      if (hasStarted) return;
+      hasStarted = true;
+
+      const isiOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+
+      // 🔊 iOS オーディオアンロック
+      if (isiOS) {
+        try {
+          if (!window.audioContext) {
+            window.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          }
+          if (window.audioContext.state === "suspended") {
+            await window.audioContext.resume();
+          }
+
+          const buffer = window.audioContext.createBuffer(1, 1, 22050);
+          const source = window.audioContext.createBufferSource();
+          source.buffer = buffer;
+          source.connect(window.audioContext.destination);
+          source.start(0);
+
+          window.audioUnlocked = true;
+          localStorage.setItem("audioUnlocked", "true");
+        } catch(e) {
+          console.warn("iOS audio unlock failed:", e);
+        }
+      }
+
+      // 🍏 ルート設定モードかどうか判定
+      const isRouteMode = localStorage.getItem("priorityRouteRecordingActive") === "true";
+
+      // 🔥 UI 切り替え
+      startBtn.style.display = "none";
+
+      const ctrl = document.getElementById("controlButtons");
+      if (ctrl) ctrl.style.display = "flex";
+
+      const header = document.getElementById("recordingHeader");
+      if (header) header.style.display = "";
+
+      const timer = document.getElementById("timerDisplay");
+      if (timer) timer.style.display = "";
+
+      // === 🟢 通常運転 / ルート設定 モード別に表示 ===
+      const bowl = document.getElementById("gBowlArea");
+      const routeBubble = document.getElementById("routeModeBubble"); // ルート用の吹き出し
+      const routeRobot  = document.getElementById("routeModeRobot");  // ルート用ロボ
+      const gVal = document.getElementById("gValueDisplay");
+
+      if (isRouteMode) {
+        console.log("🚗 Route mode: show robot + bubble on start");
+
+        // 🔵 Gボウルは非表示
+        if (bowl) bowl.style.display = "none";
+
+        // 🟢 ルート設定専用 UI を表示
+        if (routeBubble) routeBubble.style.display = "";
+        if (routeRobot)  routeRobot.style.display = "";
+      } else {
+        console.log("🚗 Normal mode: show G-bowl");
+
+        // 🔵 通常運転では Gボウル表示
+        if (bowl) bowl.classList.remove("opacity-0");
+
+        // 🔵 通常運転のG値
+        if (gVal) gVal.style.display = "";
+      }
+    });
+  });
+  </script>
+
+  <!-- 一時停止・再開機能のJS -->
+  <script>
+    let isPaused = false;
+    function pauseRecording() {
+      if (isPaused) return;
+      isPaused = true;
+      // reflect globally for timer logic
+      try { window.isPaused = true; } catch (e) {}
+      // pause timer: record pause start
+      try {
+        const now = Date.now();
+        // set pauseStart to same reference time used to compute frozen to avoid timing drift
+        window.pauseStart = now;
+        try {
+          const pausedMsSoFar = window.pauseAccumulatedMs || 0;
+          const frozen = Math.max(0, now - (window.startTime || now) - pausedMsSoFar);
+          // freeze to integer seconds (floor)
+          window._frozenTimerMs = Math.floor(frozen/1000)*1000;
+          console.log('⏸ pause at ms:', now, ' frozenMs:', window._frozenTimerMs, ' pausedMsSoFar:', pausedMsSoFar);
+        } catch (e) { window._frozenTimerMs = null; }
+        if (window.stopTimer) window.stopTimer();
+        // immediately update DOM to frozen value
+        try { if (window.updateTimerDisplay) window.updateTimerDisplay(); } catch (e) {}
+      } catch (e) {}
+      // 停止対象: モーション検出と録音ボタンを無効化
+      if (window.stopMotionDetection) window.stopMotionDetection();
+      // 音声認識は停止しない（再開コマンドを受け取るため）
+      // if (window.voiceRecognition?.stop) window.voiceRecognition.stop();
+      document.getElementById('pausedOverlay').style.display = '';
+      const controlButtons = document.getElementById('controlButtons');
+      if (controlButtons) controlButtons.style.display = 'none';
+      // 録音ボタン等も必要に応じて無効化
+      const recordBtn = document.getElementById('recordBtn');
+      if (recordBtn) recordBtn.disabled = true;
+    }
+    function resumeRecording() {
+      if (!isPaused) return;
+      isPaused = false;
+      try { window.isPaused = false; } catch (e) {}
+      // resume timer: accumulate paused duration and restart
+      try {
+        if (window.pauseStart) {
+          window.pauseAccumulatedMs = (window.pauseAccumulatedMs || 0) + (Date.now() - window.pauseStart);
+          window.pauseStart = null;
+        }
+        if (window.startTimer) window.startTimer();
+        // clear frozen display value and force immediate update to avoid short freeze
+        try { window._frozenTimerMs = null; } catch (e) {}
+        try { if (window.updateTimerDisplay) window.updateTimerDisplay(); } catch (e) {}
+      } catch (e) {}
+      if (window.startMotionDetection) window.startMotionDetection();
+      // 音声認識は既に動いているか、必要なら再起動
+      try { if (window.voiceRecognition?.start) window.voiceRecognition.start(); } catch(e){}
+      document.getElementById('pausedOverlay').style.display = 'none';
+      const controlButtons = document.getElementById('controlButtons');
+      if (controlButtons) controlButtons.style.display = '';
+      const recordBtn = document.getElementById('recordBtn');
+      if (recordBtn) recordBtn.disabled = false;
+      // 自動一時停止フラグをリセット
+      try { window.autoPausedByVisibility = false; } catch(e){}
+    }
+    document.addEventListener('DOMContentLoaded', function() {
+      const pauseBtn = document.getElementById('pauseBtn');
+      const resumeBtn = document.getElementById('resumeBtn');
+      const endBtn = document.getElementById('end-button');
+      if (pauseBtn) pauseBtn.onclick = pauseRecording;
+      if (resumeBtn) resumeBtn.onclick = resumeRecording;
+      // 終了ボタンは既存のイベントリスナーを使用
+    });
+    // 音声認識コマンド連携
+    window._origVoiceOnResult = window.voiceRecognition?.onresult;
+    function voicePauseResumeHandler(event) {
+      try {
+        const transcript = event.results[event.results.length - 1][0].transcript.trim();
+        if (transcript.includes('停止')) pauseRecording();
+        if (transcript.includes('再開')) resumeRecording();
+      } catch(e) {}
+      if (typeof window._origVoiceOnResult === 'function') window._origVoiceOnResult(event);
+    }
+    // If voiceRecognition already exists, attach handler; otherwise attach when DOM is ready
+    function attachVoiceHandlerIfAvailable() {
+      try {
+        if (window.voiceRecognition) {
+          window._origVoiceOnResult = window.voiceRecognition.onresult;
+          window.voiceRecognition.onresult = voicePauseResumeHandler;
+          console.log('🔊 voicePauseResumeHandler attached');
+          return true;
+        }
+      } catch (e) { console.warn(e); }
+      return false;
+    }
+    if (!attachVoiceHandlerIfAvailable()) {
+      document.addEventListener('DOMContentLoaded', () => {
+        attachVoiceHandlerIfAvailable();
+      });
+    }
+
+    
+  </script>
+
+  <script>
+  // ボールの軌道
+  (function(){
+      const canvas = document.getElementById("gTrailCanvas");
+      const ball = document.getElementById("gBall");
+
+      let ctx = null;
+      let width = 0;
+      let height = 0;
+
+      function resizeCanvas() {
+          if (!canvas) return;
+          const rect = canvas.parentElement.getBoundingClientRect();
+          canvas.width = rect.width;
+          canvas.height = rect.height;
+          width = rect.width;
+          height = rect.height;
+
+          ctx = canvas.getContext("2d");
+          ctx.lineWidth = 4;
+          ctx.lineCap = "round";
+      }
+
+      window.addEventListener("load", resizeCanvas);
+      window.addEventListener("resize", resizeCanvas);
+
+      let lastX = null;
+      let lastY = null;
+
+      // === 軌跡ボール ===
+      let trailBalls = [];
+
+      function drawTrail() {
+          const cfg = window._gBowlConfig;
+          if (!cfg) {
+              requestAnimationFrame(drawTrail);
+              return;
+          }
+
+          const gx = window.smoothBallGX ?? 0;
+          const gz = window.smoothBallGZ ?? 0;
+
+          const { CENTER, SCALE, MAX_R } = cfg;
+
+          let px = gx * SCALE;
+          let py = gz * SCALE;
+
+          // 🟡 追加：まず距離を算出
+          const dist = Math.sqrt(px * px + py * py);
+
+          // 🛑 範囲外なら軌道を描かない
+          if (dist > MAX_R) {
+              // ロボのボールはクランプされて描画される → でも軌道は出さない
+              requestAnimationFrame(drawTrail);
+              return;
+          }
+
+          const x = CENTER + px;
+          const y = CENTER + py;
+
+          // --- 軌跡ボールを追加 ---
+          trailBalls.push({
+              x: x,
+              y: y,
+              alpha: 0.40,
+              scale: 1.0
+          });
+
+          // --- フェードアウト & 縮小 ---
+          trailBalls = trailBalls
+              .map(b => ({
+                  ...b,
+                  alpha: b.alpha - 0.015,
+                  scale: b.scale - 0.015
+              }))
+              .filter(b => b.alpha > 0 && b.scale > 0);
+
+          // --- Canvas クリア ---
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+          // --- 描画 ---
+          const BASE_SIZE = 72;
+
+          for (const b of trailBalls) {
+              const size = BASE_SIZE * b.scale;
+
+              ctx.beginPath();
+              ctx.fillStyle = `rgba(255,153,51, ${b.alpha})`;
+              ctx.arc(b.x, b.y, size / 2, 0, Math.PI * 2);
+              ctx.fill();
+          }
+
+          requestAnimationFrame(drawTrail);
+      }
+
+      requestAnimationFrame(drawTrail);
+  })();
+  </script>
+
+  <!-- ボールを動かすスクリプト -->
+  <script>
+    // =====================================
+    //  Gリング生成（0.1G ～ 0.5G）※リサイズ対応
+    // =====================================
+    (function () {
+      const area          = document.getElementById("gBowlArea");
+      const ringContainer = document.getElementById("gRings");
+      const ball          = document.getElementById("gBall");
+
+      function rebuildRings() {
+        if (!area || !ringContainer || !ball) return;
+
+        const rect   = area.getBoundingClientRect();
+        const AREA   = rect.width;          // 正円なので width = height
+        const CENTER = AREA / 2;
+        const BALL_R = ball.getBoundingClientRect().width / 2 || 24;
+        const MAX_R  = CENTER - BALL_R;     // ボールの端がふちに届く位置を0.5Gに
+        const SCALE  = MAX_R / 0.5;         // 0.5G → MAX_R
+
+        // 他スクリプトから参照できるように保存
+        window._gBowlConfig = { AREA, CENTER, BALL_R, MAX_R, SCALE };
+
+        // 既存リング・ラベルクリア
+        ringContainer.innerHTML = "";
+
+        for (let g = 0.1; g <= 0.5 + 0.0001; g += 0.1) {
+          const radiusPx = g * SCALE;
+
+          const ring = document.createElement("div");
+          ring.className = "gRing";
+          ring.style.width  = (radiusPx * 2) + "px";
+          ring.style.height = (radiusPx * 2) + "px";
+          ring.style.left   = CENTER + "px";
+          ring.style.top    = CENTER + "px";
+
+          const label = document.createElement("div");
+          label.className   = "gLabel";
+          label.textContent = g.toFixed(1) + "G";
+          label.style.left  = CENTER + "px";
+          label.style.top   = (CENTER - radiusPx) + "px";
+
+          ringContainer.appendChild(ring);
+          ringContainer.appendChild(label);
+        }
+      }
+
+      window.addEventListener("load", rebuildRings);
+      window.addEventListener("resize", () => {
+        clearTimeout(window._gBowlResizeTimer);
+        window._gBowlResizeTimer = setTimeout(rebuildRings, 150);
+      });
+    })();
+
+    // =====================================
+    //  ボール移動（latestGX / latestGZ を使用）
+    // =====================================
+    (function(){
+      const ball = document.getElementById("gBall");
+
+      function updateGBall(){
+        const cfg = window._gBowlConfig;
+        if (!ball || !cfg) {
+          requestAnimationFrame(updateGBall);
+          return;
+        }
+
+        const { CENTER, MAX_R, SCALE } = cfg;
+
+        const gx = window.smoothBallGX ?? 0;
+        const gz = window.smoothBallGZ ?? 0;
+
+        let px = gx * SCALE;
+        let py = gz * SCALE;
+
+        // 0.5G を超えたら外周でクランプ
+        const dist = Math.sqrt(px * px + py * py);
+        if (dist > MAX_R){
+          const r = MAX_R / dist;
+          px *= r;
+          py *= r;
+        }
+
+        ball.style.left = (CENTER + px) + "px";
+        ball.style.top  = (CENTER + py) + "px";
+
+        requestAnimationFrame(updateGBall);
+      }
+
+      requestAnimationFrame(updateGBall);
+    })();
+  </script>
 
   <script>
     window.isReplayMode = true;

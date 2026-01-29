@@ -11,6 +11,7 @@ let paused = false;
 let timer = null;
 let idx = 0;
 let t0 = 0, t1 = 0, startReal = 0;
+window.playbackRate = 1.0; // 1.0=等倍, 2.0=2倍...
 
 /**
  * サーバーから再生に必要なavg_g_logsとgps_logsを取得
@@ -39,7 +40,6 @@ function fmt(ms) {
  * UIのG値と速度を更新
  */
 function updateUI(log) {
-  document.getElementById('speed').textContent = (log.speed || 0).toFixed(1);
   document.getElementById('g-x').textContent = (log.g_x || 0).toFixed(2);
   document.getElementById('g-z').textContent = (log.g_z || 0).toFixed(2);
   document.getElementById('g-y').textContent = (log.g_y || 0).toFixed(2);
@@ -53,16 +53,57 @@ function step() {
 
   const now = Date.now();
   // 仮想時刻: ログの開始時刻(t0) + (実時間経過)
-  const virtualT = t0 + (now - startReal);
+  const rate = Number(window.playbackRate) || 1.0;
+  const virtualT = t0 + (now - startReal) * rate;
   
   // UIのタイマーを更新
-  document.getElementById('timer').textContent = fmt(virtualT - t0); 
+  const base = Number(window.replaySessionStart) || t0;  // セッション開始基準（なければt0）
+  document.getElementById('timer').textContent = fmt(virtualT - base);
 
   let prevLog = idx > 0 ? logs[idx - 1] : null;
 
   while (idx < logs.length && logs[idx].timestamp_ms <= virtualT) {
     const log = logs[idx];
     updateUI(log);
+
+    // 🟢 GボウルにG値を流し込む（スムージング付き）
+    const gxs = log.g_x ?? 0;
+    const gzs = log.g_z ?? 0;
+
+    // 初回はジャンプ防止のため初期化
+    if (window.smoothBallGX == null) window.smoothBallGX = gxs;
+    if (window.smoothBallGZ == null) window.smoothBallGZ = gzs;
+
+    // === ボール専用のスムースG（滑らかにする） ===
+    const SMOOTH_FACTOR = 0.90; // 0.85〜0.93 が最適
+
+    window.smoothBallGX = window.smoothBallGX * SMOOTH_FACTOR + gxs * (1 - SMOOTH_FACTOR);
+    window.smoothBallGZ = window.smoothBallGZ * SMOOTH_FACTOR + gzs * (1 - SMOOTH_FACTOR);
+
+    function applyGColor(elem, g) {
+      if (!elem) return;
+
+      const absG = Math.abs(g);
+
+      let color = "#00c853";   // 緑
+      if (absG >= 0.15) {
+        color = "#ff5252";     // 赤
+      } else if (absG >= 0.08) {
+        color = "#ffca28";     // 黄
+      }
+
+      elem.style.color = color;
+    }
+
+    // 🎨 G表示の色を変える（スムージング値で判定するとチラつかない）
+    const gxEl = document.getElementById("g-x");
+    const gyEl = document.getElementById("g-y");
+    const gzEl = document.getElementById("g-z");
+
+    applyGColor(gxEl, window.smoothBallGX);
+    applyGColor(gzEl, window.smoothBallGZ);
+    // 前後G(gy)も色付けしたいならこれ（スムージングしてないので生値）
+    applyGColor(gyEl, log.g_y ?? 0);
 
     // --- ★ 判定ロジックを動かす ★ ---
     const gx = log.g_x;
@@ -110,6 +151,20 @@ function step() {
     stopAndRedirect();
   }
 }
+
+window.setPlaybackRate = (newRate) => {
+  newRate = Number(newRate) || 1.0;
+
+  // 今の仮想時刻を維持したまま倍率だけ変更
+  const now = Date.now();
+  const oldRate = Number(window.playbackRate) || 1.0;
+  const currentVirtualT = t0 + (now - startReal) * oldRate;
+
+  window.playbackRate = newRate;
+  startReal = now - (currentVirtualT - t0) / newRate;
+
+  console.log("▶ rate =", newRate);
+};
 
 /**
  * 再生開始処理
