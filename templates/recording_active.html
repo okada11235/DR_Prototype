@@ -743,7 +743,6 @@ tailwind.config = {
             // UI: resume ボタンを目立たせる
             try {
               document.getElementById('resumeBtn').style.display = '';
-              document.getElementById('pauseBtn').style.display = 'none';
               document.getElementById('pausedOverlay').style.display = '';
             } catch (e) {}
             console.log('▶️ visible again - kept paused (autoPausedByVisibility=true)');

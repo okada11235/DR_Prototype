@@ -108,6 +108,99 @@ tailwind.config = {
     z-index: 2;   /* ボウル < 軌跡 < ボール */
     pointer-events: none;
   }
+  /* ✅ 判定イベントのトースト表示 */
+  .eventToast{
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9999;
+
+    width: min(92vw, 420px);
+    padding: 12px 14px;
+    border-radius: 14px;
+    box-shadow: 0 10px 24px rgba(0,0,0,0.25);
+
+    background: rgba(255,255,255,0.92);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(0,0,0,0.08);
+
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .18s ease, transform .18s ease;
+  }
+
+  .eventToast.show{
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  .eventToast.hidden{
+    display: none;
+  }
+
+  .eventToastTitle{
+    font-size: 12px;
+    font-weight: 800;
+    color: rgba(0,0,0,0.55);
+    letter-spacing: .06em;
+  }
+
+  .eventToastText{
+    margin-top: 2px;
+    font-size: 20px;
+    font-weight: 900;
+  }
+
+  /* 種別で色だけ変える（背景は白のままでも十分見やすい） */
+  .event-good  .eventToastText{ color: #00c853; }
+  .event-warn  .eventToastText{ color: #ffca28; }
+  .event-bad   .eventToastText{ color: #ff5252; }
+
+  /* ✅ ピン読み上げのトースト表示（イベントトーストの少し下） */
+  .pinToast{
+    position: fixed;
+    top: 78px; /* eventToast(top:16px) の下に表示 */
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9999;
+
+    width: min(92vw, 420px);
+    padding: 12px 14px;
+    border-radius: 14px;
+    box-shadow: 0 10px 24px rgba(0,0,0,0.25);
+
+    background: rgba(255,255,255,0.92);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(0,0,0,0.08);
+
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .18s ease, transform .18s ease;
+  }
+
+  .pinToast.show{
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  .pinToast.hidden{
+    display: none;
+  }
+
+  .pinToastTitle{
+    font-size: 12px;
+    font-weight: 800;
+    color: rgba(0,0,0,0.55);
+    letter-spacing: .06em;
+  }
+
+  .pinToastText{
+    margin-top: 2px;
+    font-size: 18px;
+    font-weight: 900;
+    color: #2962ff; /* ピンは青系で区別 */
+  }
 </style>
 </head>
 <body class="bg-bg-light text-gray-800 font-sans flex flex-col items-center justify-center min-h-screen p-4">
@@ -118,6 +211,18 @@ tailwind.config = {
       style="display:none;">
     <span>記録中</span>
     <span id="timer" class="text-gray-700 text-2xl font-bold">00:00</span>
+  </div>
+
+  <!-- ✅ 判定イベント表示（トースト） -->
+  <div id="eventToast" class="eventToast hidden">
+    <div class="eventToastTitle">判定</div>
+    <div id="eventToastText" class="eventToastText">---</div>
+  </div>
+
+  <!-- ✅ ピン読み上げ表示（トースト） -->
+  <div id="pinToast" class="pinToast hidden">
+    <div class="pinToastTitle">ピン</div>
+    <div id="pinToastText" class="pinToastText">---</div>
   </div>
 
   <!-- G-Bowl エリア（スタート後に表示） -->
@@ -138,8 +243,8 @@ tailwind.config = {
       class="mt-4 text-center text-xl font-bold text-gray-800"
       style="display:none;">
     <div>横G (gx): <span id="g-x">0.00</span></div>
-    <div>上下G (gy): <span id="g-z">0.00</span></div>
-    <div>前後G (gz): <span id="g-y">0.00</span></div>
+    <div>前後G (gz): <span id="g-z">0.00</span></div>
+    <div>上下G (gy): <span id="g-y">0.00</span></div>
   </div>
 
   <!-- スタートボタン（最初のタッチ用） -->

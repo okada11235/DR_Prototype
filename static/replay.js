@@ -36,6 +36,96 @@ function fmt(ms) {
   return `${String(Math.floor(totalSeconds/60)).padStart(2,'0')}:${String(totalSeconds%60).padStart(2,'0')}`;
 }
 
+// ✅ イベント表示（日本語ラベル）
+const EVENT_LABELS = {
+  excellent_turn:  "旋回：とても良い",
+  smooth_turn:     "旋回：良い",
+  normal_turn:     "旋回：普通",
+  sharp_turn:      "旋回：指摘",
+
+  excellent_accel: "加速：とても良い",
+  smooth_accel:    "加速：良い",
+  normal_accel:    "加速：普通",
+  sudden_accel:    "加速：指摘",
+
+  excellent_brake: "減速：とても良い",
+  smooth_brake:    "減速：良い",
+  normal_brake:    "減速：普通",
+  sudden_brake:    "減速：指摘",
+};
+
+// ===============================
+// 保存イベントの連続再生防止
+// ===============================
+const lastPlayedAtByEvent = new Map();
+
+function shouldPlayEvent(event, tMs) {
+  if (!event || event === "normal") return false;
+
+  const last = lastPlayedAtByEvent.get(event) ?? -Infinity;
+  if (tMs - last < 1500) return false;
+
+  lastPlayedAtByEvent.set(event, tMs);
+  return true;
+}
+
+// ✅ 色カテゴリ（良/注意/悪）
+function eventLevel(ev){
+  if (!ev) return "warn";
+  if (ev.startsWith("excellent") || ev.startsWith("smooth") || ev === "stable_drive") return "good";
+  if (ev.startsWith("normal")) return "warn";
+  if (ev.startsWith("sudden") || ev.startsWith("sharp") || ev === "unstable_drive") return "bad";
+  return "warn";
+}
+
+// ✅ ピン表示トースト
+let _pinToastTimer = null;
+
+function showPinToast(label){
+  const toast = document.getElementById("pinToast");
+  const text  = document.getElementById("pinToastText");
+  if (!toast || !text) return;
+
+  text.textContent = label || "(未入力ピン)";
+
+  toast.classList.remove("hidden");
+  requestAnimationFrame(() => toast.classList.add("show"));
+
+  if (_pinToastTimer) clearTimeout(_pinToastTimer);
+  _pinToastTimer = setTimeout(() => {
+    toast.classList.remove("show");
+    setTimeout(() => toast.classList.add("hidden"), 180);
+  }, 2600);
+}
+
+let _toastTimer = null;
+
+function showEventToast(ev){
+  const toast = document.getElementById("eventToast");
+  const text  = document.getElementById("eventToastText");
+  if (!toast || !text) return;
+
+  const label = EVENT_LABELS[ev] || ev;
+
+  // 表示内容
+  text.textContent = label;
+
+  // 色クラスを付け替え
+  toast.classList.remove("event-good", "event-warn", "event-bad");
+  toast.classList.add(`event-${eventLevel(ev)}`);
+
+  // 表示
+  toast.classList.remove("hidden");
+  requestAnimationFrame(() => toast.classList.add("show"));
+
+  // 数秒で消す（連続イベントでもちゃんと更新されるようにタイマーは毎回リセット）
+  if (_toastTimer) clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => {
+    toast.classList.remove("show");
+    setTimeout(() => toast.classList.add("hidden"), 180);
+  }, 2200);
+}
+
 /**
  * UIのG値と速度を更新
  */
@@ -112,7 +202,7 @@ function step() {
     const speed = log.speed;
     const rotZ = log.rot_z || 0; // avg_g_logsに保存されている平均角速度を使用
 
-    const deltaSpeed = log.delta_speed ?? 0; // Firestoreに保存したdeltaSpeedを使う（最新版）
+    // const deltaSpeed = log.delta_speed ?? 0; // Firestoreに保存したdeltaSpeedを使う（最新版）
 
     // 保存されてるデータから計算し直して判定する（旧）
     // let deltaSpeed = 0;
@@ -125,15 +215,33 @@ function step() {
     // }
 
     // ★ 修正点2: 直近のログをスライスして渡す (100ms間隔で30サンプル=3秒 + 現在ログ)
-    const recentLogs = logs.slice(Math.max(0, idx - 30), idx + 1);
+    // const recentLogs = logs.slice(Math.max(0, idx - 30), idx + 1);
     
-    // sensors.jsの判定関数を実行。8番目の引数に過去ログを渡す。
-    const event = detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, virtualT, recentLogs); 
+    // const event = detectDrivingPattern(gx, gy, gz, speed, deltaSpeed, rotZ, virtualT, recentLogs);
 
-    if (event && event !== 'normal') {
-      console.log("判定イベント:", event);
-      // ★ 修正箇所: playRandomAudio のコメントアウトを解除
-      playRandomAudio(event); 
+    // if (event && event !== "normal") {
+    //   console.log("判定イベント:", event);
+
+    //   // ✅ 視覚表示（動画なし資料用）
+    //   showEventToast(event);
+
+    //   // 🔊 音声（今まで通り）
+    //   playRandomAudio(event);
+    // }
+
+    // === 保存済みイベントから音声・表示 ===
+    if (log.event && log.event !== "normal") {
+      // 連続鳴り防止
+      if (shouldPlayEvent(log.event, log.timestamp_ms)) {
+
+        console.log("📦 保存イベント再生:", log.event);
+
+        // 視覚表示
+        showEventToast(log.event);
+
+        // 音声再生
+        playRandomAudio(log.event);
+      }
     }
 
     // --- ★ ピン読み上げも追加 ---
@@ -293,6 +401,8 @@ function checkPinSpeech(lat, lng) {
     if (d < 20 && !notifiedPins.has(p.id)) {
       notifiedPins.add(p.id);
       console.log("📢 ピン読み上げシミュレーション:", p.label);
+      // ✅ 追加：ピン名を画面表示
+      showPinToast(p.label);
       speak(p.label);
     }
   }
